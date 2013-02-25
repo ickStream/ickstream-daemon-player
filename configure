@@ -131,6 +131,7 @@ CONFIG_INFO="# DO NOT EDIT (generated on `date` by $PWD/configure)"
 
 echo '------------------- '
 echo -n 'Writing config.status : '
+mkdir -p scripts
 cat > scripts/config.status << eof
 #!/bin/sh
 dest=\`basename \$1 .in\`
