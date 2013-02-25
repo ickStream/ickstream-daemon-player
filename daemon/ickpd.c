@@ -182,8 +182,8 @@ int main( int argc, char *argv[] )
   if_name = playerGetInterface();
   if( !if_name ) {
     if_name = "eth0";
-    fprintf( stderr, "Need interface name, using \"%s\" as default...\n",
-                     if_name );
+    srvmsg( LOG_WARNING, "Need interface name, using \"%s\" as default...",
+                         if_name );
     playerSetInterface( if_name );
   }
   srvmsg( LOG_INFO, "Using interface: \"%s\"", if_name );
@@ -197,6 +197,8 @@ int main( int argc, char *argv[] )
   if( !player_uuid && playerGetHWID() ) {  // use hardware ID as fallback
   	playerSetUUID( playerGetHWID() );
   	player_uuid = playerGetUUID();
+        srvmsg( LOG_WARNING, "Need UUID, using MAC \"%s\" as default...",
+                             player_uuid );
   } 
   if( !player_uuid ) {
      fprintf( stderr, "Need player uuid!\n" );
@@ -211,10 +213,15 @@ int main( int argc, char *argv[] )
     playerSetName( player_name );
   player_name = playerGetName();  
   if( !player_name ) {
-    player_name = "ickpd";
-    fprintf( stderr, "Need player name, using \"%s\" as default...\n",
-                     player_name );
-    playerSetName( player_name );
+    char buf[128], hname[100];
+    if( gethostname(hname,sizeof(hname)) )
+      strcpy( buf, "ickpd" );
+    else 
+      sprintf( buf, "ickpd @ %s", hname );
+    srvmsg( LOG_WARNING, "Need player name, using \"%s\" as default...",
+                         buf );
+    playerSetName( buf );
+    player_name = playerGetName();
   }
   srvmsg( LOG_INFO, "Using name     : \"%s\"", player_name );  
 
