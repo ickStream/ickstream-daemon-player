@@ -1,0 +1,180 @@
+#!/bin/sh
+# --------------------------------------------------------------
+#
+# Script          : configure
+#
+# Description     : configures the ickstream player deamon
+#
+# Comments        : -
+#
+# Date            : 13.02.2013
+#
+# Updates         : -
+#
+# Author          : //maf
+#                  
+# Remarks         : -
+#
+#
+# Copyright (c) 2013 ickStream GmbH.
+# All rights reserved.
+# ------------------------------------------------------------------------
+
+contact='sales@ickstream.com'
+PCKNAME = ickpd
+
+PWD=`pwd`
+
+echo '------------------- '
+echo 'Hello, now is ' `date`
+echo 'Configuration tool for the ickstream player deamon started. '
+echo Distribution: THIS_IS_VERSION*
+
+memdebug=0
+while test $# -gt 0; do 
+  if test "$1" = "debug"; then
+    memdebug=1
+    echo debugging enabled.
+  fi
+  shift
+done
+
+echo '------------------- '
+echo -n 'determine system type           : '
+
+
+systype=`uname -s`
+mchtype=`uname -m`
+reltype=`uname -r`
+mchname=`uname -n`
+
+# generic parameters 
+CC="cc"
+CFLAGS="-g -Wall"
+ACFLAGS="-O2 -g"
+LDFLAGS="-g -rdynamic"
+RANLIB="ranlib"
+INCLUDES=""
+EXTRALIBS=""
+
+case $systype-$reltype-$mchname in
+
+  Linux-*)
+        echo "this seems to be a Linux machine, fine."
+        CFLAGS="-pipe -g -Wall"
+        ACFLAGS="-pipe -O2 -g"
+        ;;
+   *)
+	echo "so far your system is neither known nor supported by the"
+	echo "ickstream team. We'll proceed with generic settings."
+	echo "Feel free to add optimized settings for $systype-$reltype-$mchname"
+        ;;
+
+esac
+
+if test $memdebug = 1; then
+  CFLAGS="$CFLAGS -DMEM_DEBUG"
+  ACFLAGS="$ACFLAGS -DMEM_DEBUG"
+fi
+
+
+# ----------------------------------------
+echo -n 'check for makedepend            : '
+
+MAKEDEPEND=true
+IFS="${IFS=	 }"; saveIFS="$IFS"; IFS="${IFS}:"
+for path in $PATH; do
+  if test -r $path/makedepend; then
+    MAKEDEPEND=makedepend
+    break;
+  fi
+done
+IFS="${saveIFS}"
+if test $MAKEDEPEND = 'true'; then
+  echo not found.
+else
+  echo found.
+fi
+
+
+# ----------------------------------------
+echo -n 'check for ickstream libraries   : '
+for i in $ICK_ROOT $PWD/ickstream-p2p $PWD/../ickstream-p2p;
+do
+  if test -r $i/lib/libickstreamp2p.a\
+       -a -r $i/include/ickDiscovery.h; then
+    _ICK_ROOT=$i
+    break;
+  fi
+done
+if [ -z "$_ICK_ROOT" ]; then
+  echo please define '$ICK_ROOT' in your environment
+  echo "   ... or install the ickstream-p2p package in ./ickstream-p2p or ../ickstream-p2p"
+  echo "   you'll need lib/libickstreamp2p.a and include/ickDiscovery.h in this directory"
+  exit 1
+else
+  echo $_ICK_ROOT
+fi
+ICK_ROOT=$_ICK_ROOT
+
+INCLUDES="$INCLUDES $ICK_ROOT/include"
+
+
+# ----------------------------------------
+echo 'Used include directories        :' $INCLUDES
+for path in $INCLUDES
+do
+  CINCL="$CINCL -I$path"
+done
+
+CONFIG_INFO="# DO NOT EDIT (generated on `date` by $PWD/configure)"
+
+echo '------------------- '
+echo -n 'Writing config.status : '
+cat > scripts/config.status << eof
+#!/bin/sh
+dest=\`basename \$1 .in\`
+if test -r \$dest; then
+  mv -f \$dest \$dest.bak
+fi
+echo Creating \$dest from \$1
+sed -e 's,@cinfo@,$CONFIG_INFO,g' \\
+    -e 's,@icklibroot@,$ICK_ROOT,g' \\
+    -e 's,@pkgname@,$PKGNAME,g' \\
+    -e 's,@ickpdroot@,$PWD,g' \\
+    -e 's,@includes@,$CINCL,g' \\
+    -e 's,@ranlib@,$RANLIB,g' \\
+    -e 's,@cc@,$CC,g' \\
+    -e 's,@extralibs@,$EXTRALIBS,g' \\
+    -e 's,@cflags@,$CFLAGS,g' \\
+    -e 's,@acflags@,$ACFLAGS,g' \\
+    -e 's,@makedepend@,$MAKEDEPEND,g' \\
+    -e 's,@ldflags@,$LDFLAGS,g' \\
+	< \$1 > \$dest
+if [ -x \$1 ]; then
+  chmod +x \$dest
+fi
+eof
+chmod +x scripts/config.status
+echo done.
+
+echo '------------------- '
+echo 'Running config.status : '
+ROOTDIR=$PWD
+for a in *.in `find daemon -name '*.in' -print`; do
+  echo -n "./`dirname $a` : "
+  cd `dirname $a`
+  $ROOTDIR/scripts/config.status `basename $a`
+  cd $ROOTDIR
+done
+echo '------------------- '
+echo Makefiles are configured for your system environment now. Type 
+echo '  make' 
+echo to build the library and executables
+echo
+echo 'Have fun!  <c>2013 ickstream GmbH'
+echo '------------------- '
+echo
+
+
+# ======================== END OF SCRIPT ======================
