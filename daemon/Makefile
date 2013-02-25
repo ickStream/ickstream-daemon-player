@@ -15,7 +15,7 @@
 # Copyright (c) 2013 ickStream GmbH.
 # All rights reserved.
 # ------------------------------------------------------------------------
-# DO NOT EDIT (generated on So 24. Feb 19:57:04 CET 2013 by /home/maf/Projects/ickstream/ickpd/configure)
+# DO NOT EDIT (generated on Mo 25. Feb 22:36:27 CET 2013 by /home/maf/Projects/ickstream/ickpd/configure)
 
 SHELL=/bin/sh
 
@@ -81,19 +81,3 @@ cleanall: clean
 	rm -rf $(EXECUTABLE)
 
 # End of Makefile -- makedepend output might follow ...
-# DO NOT DELETE
-
-config.o: ickpd.h config.h
-persist.o: ickpd.h persist.h
-ickDevice.o: ickpd.h
-ickDevice.o: /home/maf/Projects/ickstream/ickstream-p2p/include/ickDiscovery.h
-ickDevice.o: ickDevice.h
-ickMessage.o: /home/maf/Projects/ickstream/ickstream-p2p/include/ickDiscovery.h
-ickMessage.o: ickpd.h ickMessage.h audio.h playlist.h player.h
-playlist.o: /home/maf/Projects/ickstream/ickstream-p2p/include/ickDiscovery.h
-playlist.o: ickpd.h persist.h playlist.h
-audio.o: ickpd.h audio.h persist.h
-player.o: ickpd.h persist.h player.h
-ickpd.o: /home/maf/Projects/ickstream/ickstream-p2p/include/ickDiscovery.h
-ickpd.o: ickpd.h config.h persist.h ickDevice.h ickMessage.h playlist.h
-ickpd.o: audio.h player.h

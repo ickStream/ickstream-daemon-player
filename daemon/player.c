@@ -109,7 +109,10 @@ const char *playerGetHWID( void )
 /*------------------------------------------------------------------------*\
     Create ioctl dtata structure and open an INET socket
 \*------------------------------------------------------------------------*/
-  strncpy( request.ifr_name, playerGetInterface(), IFNAMSIZ-1 );
+  const char *ifname = playerGetInterface();
+  if( !ifname )
+    return NULL;
+  strncpy( request.ifr_name, ifname, IFNAMSIZ-1 );
   fd = socket(PF_INET, SOCK_DGRAM, IPPROTO_IP);
 
 /*------------------------------------------------------------------------*\

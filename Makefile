@@ -15,7 +15,7 @@
 # Copyright (c) 2013 ickStream GmbH.
 # All rights reserved.
 # ------------------------------------------------------------------------
-# DO NOT EDIT (generated on So 24. Feb 19:57:04 CET 2013 by /home/maf/Projects/ickstream/ickpd/configure)
+# DO NOT EDIT (generated on Mo 25. Feb 22:36:27 CET 2013 by /home/maf/Projects/ickstream/ickpd/configure)
 
 SHELL=/bin/sh
 

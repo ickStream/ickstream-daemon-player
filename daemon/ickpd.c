@@ -175,6 +175,20 @@ int main( int argc, char *argv[] )
     return -1;
       
 /*------------------------------------------------------------------------*\
+    Interface changed or unavailabale ?
+\*------------------------------------------------------------------------*/
+  if( if_name )
+    playerSetInterface( if_name );
+  if_name = playerGetInterface();
+  if( !if_name ) {
+    if_name = "eth0";
+    fprintf( stderr, "Need interface name, using \"%s\" as default...\n",
+                     if_name );
+    playerSetInterface( if_name );
+  }
+  srvmsg( LOG_INFO, "Using interface: \"%s\"", if_name );
+
+/*------------------------------------------------------------------------*\
     Uuid changed or unavilabale ?
 \*------------------------------------------------------------------------*/  
   if( player_uuid )                  // comand line or config file argument
@@ -197,24 +211,12 @@ int main( int argc, char *argv[] )
     playerSetName( player_name );
   player_name = playerGetName();  
   if( !player_name ) {
-     fprintf( stderr, "Need player name!\n" );
-     return 1;
+    player_name = "ickpd";
+    fprintf( stderr, "Need player name, using \"%s\" as default...\n",
+                     player_name );
+    playerSetName( player_name );
   }
   srvmsg( LOG_INFO, "Using name     : \"%s\"", player_name );  
-
-/*------------------------------------------------------------------------*\
-    Interface changed or unavailabale ?
-\*------------------------------------------------------------------------*/  
-  if( if_name )
-    playerSetInterface( if_name );
-  if_name = playerGetInterface();  
-  if( !if_name ) {
-  	if_name = "eth0";
-    fprintf( stderr, "Need interface name, using \"%s\" as default...\n", 
-                     if_name );
-    playerSetInterface( if_name );
-  }
-  srvmsg( LOG_INFO, "Using interface: \"%s\"", if_name );  
 
 /*------------------------------------------------------------------------*\
     Init audio module
