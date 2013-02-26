@@ -162,8 +162,12 @@ int main( int argc, char *argv[] )
   	n = audioGetDeviceList( &devList, &dscrList );       
     if( n<0 )
       return -1;
-    for( i=0; i<n; i++ )
-      printf( "%-30s - %s\n", devList[i], dscrList[i] );
+    for( i=0; i<n; i++ ) {
+      char *descrLine = strtok( dscrList[i], "\n" ); 	
+      printf( "%-30s - %s\n", devList[i], descrLine );
+      while( (descrLine=strtok(NULL,"\n")) )
+        printf( "%33s%s\n", "", descrLine );
+    }
     if( !n )
       printf( "No audio devices found." );
     audioFreeStringList( devList );
