@@ -51,11 +51,16 @@ Remarks         : -
 \************************************************************************/
 
 #include <stdio.h>
+#include <string.h>
 #include <strings.h>
 
 #include "ickpd.h"
 #include "audio.h"
 #include "persist.h"
+
+#ifdef ALSA
+#include "alsa.h"
+#endif
 
 
 /*=========================================================================*\
@@ -98,6 +103,79 @@ void audioShutdown( void )
 {
   srvmsg( LOG_INFO, "Shutting down audio module...");
 }
+
+
+/*=========================================================================*\
+      Get List of available devices
+        returns length of device list or -1 on error
+        deviceListPtr is ruturned as NULL terminated array of device names
+\*=========================================================================*/
+int audioGetDeviceList( char ***deviceListPtr, char ***descrListPtr )
+{
+
+#ifdef ALSA
+  return alsaGetDeviceList( deviceListPtr, descrListPtr );
+#else
+  srvmsg( LOG_ERR, "No audio module available - please recompile." );
+  return -1;
+#endif
+	
+}
+
+/*=========================================================================*\
+      Free list of strings as received from audioGetDeviceList
+        returns length of device list or -1 on error 
+\*=========================================================================*/
+void audioFreeStringList( char **stringList )
+{
+  char **ptr;
+
+/*------------------------------------------------------------------------*\
+    Loop over elements 
+\*------------------------------------------------------------------------*/
+  for( ptr=stringList; ptr && *ptr; ptr++ )
+    Sfree(*ptr );  		
+    
+/*------------------------------------------------------------------------*\
+    Free the list itself 
+\*------------------------------------------------------------------------*/
+  Sfree( stringList );  
+}
+
+
+/*=========================================================================*\
+      Use a device 
+\*=========================================================================*/
+int audioUseDevice( const char *deviceName )
+{
+  char **deviceList;
+  char **ptr;
+  int    retval;
+  
+/*------------------------------------------------------------------------*\
+    Check if device is actually available 
+\*------------------------------------------------------------------------*/
+  retval = audioGetDeviceList( &deviceList, NULL );
+  if( retval<0 )
+    return -1;
+  for( ptr=deviceList; ptr && *ptr; ptr++ )
+    if( !strcmp(*ptr,deviceName) )
+      break;
+  audioFreeStringList( deviceList );   
+  if( !ptr ) {   // dangling, but not dereferenced...
+    srvmsg( LOG_INFO, "Device not available: \"%s\"", deviceName );
+    return -1;
+  }    
+
+/*------------------------------------------------------------------------*\
+    That's all 
+\*------------------------------------------------------------------------*/
+  return 0;
+}
+
+
+
+
 
 
 /*=========================================================================*\

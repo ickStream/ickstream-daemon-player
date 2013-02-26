@@ -50,18 +50,18 @@ mchname=`uname -n`
 
 # generic parameters 
 CC="cc"
-CFLAGS="-g -Wall"
+CFLAGS="-g -Wall -DALSA"
 ACFLAGS="-O2 -g"
 LDFLAGS="-g -rdynamic"
 RANLIB="ranlib"
 INCLUDES=""
-EXTRALIBS=""
+EXTRALIBS="-lasound"
 
 case $systype-$reltype-$mchname in
 
   Linux-*)
         echo "this seems to be a Linux machine, fine."
-        CFLAGS="-pipe -g -Wall"
+        CFLAGS="-pipe -g -Wall -DALSA"
         ACFLAGS="-pipe -O2 -g"
         ;;
    *)

@@ -108,6 +108,8 @@ int main( int argc, char *argv[] )
   const char *if_name      = NULL;
   const char *verb_arg     = "4";
   const char *vers_flag    = NULL;
+  const char *adev_name     = "default";
+  const char *adev_flag    = NULL;
   char       *eptr;
   int         cpid;
   int         fd;
@@ -118,11 +120,13 @@ int main( int argc, char *argv[] )
 	Set up commandline switches (leading * allows option in config file)
 \*-------------------------------------------------------------------------*/
   addarg( "help",     "-?",  &help_flag,   NULL,       "Show this help message and quit" );
+  addarg( "devices",  "-al", &adev_flag,   NULL,       "List audio devices and quit" );
   addarg( "config",   "-c",  &cfg_fname,   "filename", "Set name of configuration file" );
   addarg( "*pers",    "-p",  &pers_fname,  "filename", "Set name of persistency file" );
   addarg( "*uuid",    "-u",  &player_uuid, "uuid",     "Init/change UUID for this player" );
   addarg( "*name",    "-n",  &player_name, "name",     "Init/change Name for this player" );
-  addarg( "*uuid",    "-i",  &if_name,     "interface","Init/change network interface." );
+  addarg( "*uuid",    "-i",  &if_name,     "interface","Init/change network interface" );
+  addarg( "*adev",    "-ad", &adev_name,   "name",     "Init/change audio device name" );
   addarg( "daemon",   "-d",  &daemon_flag, NULL,       "Start in daemon mode" );
   addarg( "*pfile",   "-pid",&pid_fname,   "filename", "Filename to store process ID" );
   addarg( "*verbose", "-v",  &verb_arg,    "level",    "Set logging level (0-7)" );
@@ -146,6 +150,24 @@ int main( int argc, char *argv[] )
   }
   if( help_flag ) {
     usage( argv[0], 0 );
+    return 0;
+  }
+
+/*-------------------------------------------------------------------------*\
+    List available audio devices and exit
+\*-------------------------------------------------------------------------*/
+  if( adev_flag ) {
+  	char **devList, **dscrList;
+  	int    i, n; 
+  	n = audioGetDeviceList( &devList, &dscrList );       
+    if( n<0 )
+      return -1;
+    for( i=0; i<n; i++ )
+      printf( "%-30s - %s\n", devList[i], dscrList[i] );
+    if( !n )
+      printf( "No audio devices found." );
+    audioFreeStringList( devList );
+    audioFreeStringList( dscrList );
     return 0;
   }
   

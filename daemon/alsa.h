@@ -2,13 +2,13 @@
 
 Name            : -
 
-Source File     : audio.h
+Source File     : alsa.h
 
-Description     : Main include file for audio.c 
+Description     : Main include file for alsa.c 
 
 Comments        : -
 
-Date            : 20.02.2013 
+Date            : 26.02.2013 
 
 Updates         : -
 
@@ -46,8 +46,8 @@ Remarks         : -
 \************************************************************************/
 
 
-#ifndef __AUDIO_H
-#define __AUDIO_H
+#ifndef __ALSA_H
+#define __ALSA_H
 
 /*=========================================================================*\
 	Includes needed by definitions from this file
@@ -57,24 +57,11 @@ Remarks         : -
 /*=========================================================================*\
        Global symbols 
 \*=========================================================================*/
-int    audioInit( void );
-void   audioShutdown( void );
-
-int    audioGetDeviceList( char ***deviceListPtr, char ***descrListPtr );
-void   audioFreeStringList( char **stringList );
-int    audioUseDevice( const char *device );
+int alsaGetDeviceList( char ***deviceListPtr, char ***descrListPtr );
 
 
-double audioGetVolume( void ); 
-double audioSetVolume( double volume );
-bool   audioGetMuting( void );
-bool   audioSetMuting( bool mute );
-double audioGetLastChange( void );
 
-bool   audioGetPlayingState( void );
-double audioGetSeekPos( void );
-
-#endif  /* __AUDIO_H */
+#endif  /* __ALSA_H */
 
 
 /*========================================================================*\

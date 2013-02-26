@@ -210,7 +210,7 @@ int addarg( const char *name, const char *sname, void *buffer, const char *valna
   newarg->buffer  = buffer;
   newarg->valname = valname;
   newarg->help    = help;
-  newarg->defval  = valname?strdup(*(char**)buffer?*(char**)buffer:"<none>"):NULL;
+  newarg->defval  = (valname&&buffer&&*(char**)buffer)?strdup(*(char**)buffer):NULL;
 
 /*-------------------------------------------------------------------------*\
     That's all ...
