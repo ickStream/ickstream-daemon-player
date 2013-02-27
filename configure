@@ -21,26 +21,28 @@
 # ------------------------------------------------------------------------
 
 contact='sales@ickstream.com'
-PCKNAME = ickpd
+PCKNAME=ickpd
 
 PWD=`pwd`
 
 echo '------------------- '
-echo 'Hello, now is ' `date`
 echo 'Configuration tool for the ickstream player deamon started. '
-echo Distribution: THIS_IS_VERSION*
+#echo Distribution: `git rev-list --all | head -1`
 
-memdebug=0
+debug=0
 while test $# -gt 0; do 
   if test "$1" = "debug"; then
-    memdebug=1
+    debug=1
     echo debugging enabled.
+  else 
+    echo "unknown parameter $1"
+    exit 1
   fi
   shift
 done
 
 echo '------------------- '
-echo -n 'determine system type           : '
+echo -n 'Determine system type           : '
 
 
 systype=`uname -s`
@@ -50,8 +52,7 @@ mchname=`uname -n`
 
 # generic parameters 
 CC="cc"
-CFLAGS="-g -Wall -DALSA"
-ACFLAGS="-O2 -g"
+CFLAGS="-Wall -DALSA"
 LDFLAGS="-g -rdynamic"
 RANLIB="ranlib"
 INCLUDES=""
@@ -60,26 +61,31 @@ EXTRALIBS="-lasound"
 case $systype-$reltype-$mchname in
 
   Linux-*)
-        echo "this seems to be a Linux machine, fine."
-        CFLAGS="-pipe -g -Wall -DALSA"
-        ACFLAGS="-pipe -O2 -g"
-        ;;
-   *)
+    echo "this seems to be a Linux machine, fine."
+    if test $debug = 1; then
+      CFLAGS="-g -pipe -Wall"
+      LDFLAGS="-g -rdynamic"
+    else
+      CFLAGS="-pipe -Wall"
+      LDFLAGS="-rdynamic"
+    fi
+    ;;
+
+  *)
 	echo "so far your system is neither known nor supported by the"
 	echo "ickstream team. We'll proceed with generic settings."
 	echo "Feel free to add optimized settings for $systype-$reltype-$mchname"
-        ;;
+    if test $debug = 1; then
+      CFLAGS="-g $CFLAGS"
+      LDFLAGS="-g $LDFLAGS"    
+    fi
+    ;;
 
 esac
 
-if test $memdebug = 1; then
-  CFLAGS="$CFLAGS -DMEM_DEBUG"
-  ACFLAGS="$ACFLAGS -DMEM_DEBUG"
-fi
-
 
 # ----------------------------------------
-echo -n 'check for makedepend            : '
+echo -n 'Check for makedepend            : '
 
 MAKEDEPEND=true
 IFS="${IFS=	 }"; saveIFS="$IFS"; IFS="${IFS}:"
@@ -98,9 +104,12 @@ fi
 
 
 # ----------------------------------------
-echo -n 'check for ickstream libraries   : '
+echo -n 'Check for ickstream libraries   : '
 for i in $ICK_ROOT $PWD/ickstream-p2p $PWD/../ickstream-p2p;
 do
+  if readlink -f /dev/null >/dev/null; then
+    i=$(readlink -f "$i")
+  fi
   if test -r $i/lib/libickstreamp2p.a\
        -a -r $i/include/ickDiscovery.h; then
     _ICK_ROOT=$i
@@ -117,10 +126,20 @@ else
 fi
 ICK_ROOT=$_ICK_ROOT
 
-INCLUDES="$INCLUDES $ICK_ROOT/include"
+
+# ----------------------------------------
+echo -n 'Check for alsa                  : '
+if ldconfig -p | grep libasound -q; then
+  CFLAGS="$CFLAGS -DALSA"
+  echo 'found.'
+else
+  echo 'not found.'
+
+fi
 
 
 # ----------------------------------------
+INCLUDES="$INCLUDES $ICK_ROOT/include"
 echo 'Used include directories        :' $INCLUDES
 for path in $INCLUDES
 do
@@ -129,8 +148,12 @@ done
 
 CONFIG_INFO="# DO NOT EDIT (generated on `date` by $PWD/configure)"
 
+# ----------------------------------------
+echo 'Used compiler flags             :' $CFLAGS
+echo 'Used linker flags               :' $LDFLAGS
+
+
 echo '------------------- '
-echo -n 'Writing config.status : '
 mkdir -p scripts
 cat > scripts/config.status << eof
 #!/bin/sh
@@ -148,7 +171,6 @@ sed -e 's,@cinfo@,$CONFIG_INFO,g' \\
     -e 's,@cc@,$CC,g' \\
     -e 's,@extralibs@,$EXTRALIBS,g' \\
     -e 's,@cflags@,$CFLAGS,g' \\
-    -e 's,@acflags@,$ACFLAGS,g' \\
     -e 's,@makedepend@,$MAKEDEPEND,g' \\
     -e 's,@ldflags@,$LDFLAGS,g' \\
 	< \$1 > \$dest
@@ -157,10 +179,9 @@ if [ -x \$1 ]; then
 fi
 eof
 chmod +x scripts/config.status
-echo done.
 
-echo '------------------- '
-echo 'Running config.status : '
+# ----------------------------------------
+# echo 'Running config.status : '
 ROOTDIR=$PWD
 for a in *.in `find daemon -name '*.in' -print`; do
   echo -n "./`dirname $a` : "

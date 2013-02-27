@@ -66,12 +66,14 @@ void        playerShutdown( void );
 void        playerSetUUID( const char *name );
 void        playerSetName( const char *name );
 void        playerSetInterface( const char *name );
+void        playerSetAudioDevice( const char *name );
 void        playerSetModel( const char *name );
 void        playerSetToken( const char *token );
 const char *playerGetHWID( void );
 const char *playerGetUUID( void );
 const char *playerGetName( void );
 const char *playerGetInterface( void );
+const char *playerGetAudioDevice( void );
 const char *playerGetModel( void );
 const char *playerGetToken( void );
 

@@ -74,6 +74,7 @@ Remarks         : -
 \*=========================================================================*/
 static const char *playerUUID;  
 static const char *playerInterface;  
+static const char *playerAudioDevice;  
 static const char *playerHWID;  
 static const char *playerModel;  
 static const char *playerName;
@@ -182,6 +183,17 @@ const char *playerGetInterface( void )
 
 
 /*=========================================================================*\
+    Get audio device name
+\*=========================================================================*/
+const char *playerGetAudioDevice( void )
+{
+  if( !playerAudioDevice )
+    playerAudioDevice = persistGetString( "PlayerAudioDevice" );
+  return playerAudioDevice;
+}
+
+
+/*=========================================================================*\
     Get player name
 \*=========================================================================*/
 const char *playerGetName( void )
@@ -250,6 +262,17 @@ void playerSetInterface( const char *name )
   }
   playerInterface = name;  
   persistSetString( "PlayerInterface", name );
+}
+
+
+/*=========================================================================*\
+    Set audio device name
+\*=========================================================================*/
+void playerSetAudioDevice( const char *name )
+{
+  srvmsg( LOG_INFO, "Setting audio device to \"%s\"", name );
+  playerAudioDevice = name;  
+  persistSetString( "PlayerAudioDevice", name );
 }
 
 

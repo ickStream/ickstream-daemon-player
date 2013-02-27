@@ -108,7 +108,7 @@ int main( int argc, char *argv[] )
   const char *if_name      = NULL;
   const char *verb_arg     = "4";
   const char *vers_flag    = NULL;
-  const char *adev_name     = "default";
+  const char *adev_name    = NULL;
   const char *adev_flag    = NULL;
   char       *eptr;
   int         cpid;
@@ -117,7 +117,7 @@ int main( int argc, char *argv[] )
   int         retval = 0;
   
 /*-------------------------------------------------------------------------*\
-	Set up commandline switches (leading * allows option in config file)
+	Set up commandline switches (leading * flags availability in config file)
 \*-------------------------------------------------------------------------*/
   addarg( "help",     "-?",  &help_flag,   NULL,       "Show this help message and quit" );
   addarg( "devices",  "-al", &adev_flag,   NULL,       "List audio devices and quit" );
@@ -126,7 +126,7 @@ int main( int argc, char *argv[] )
   addarg( "*uuid",    "-u",  &player_uuid, "uuid",     "Init/change UUID for this player" );
   addarg( "*name",    "-n",  &player_name, "name",     "Init/change Name for this player" );
   addarg( "*uuid",    "-i",  &if_name,     "interface","Init/change network interface" );
-  addarg( "*adev",    "-ad", &adev_name,   "name",     "Init/change audio device name" );
+  addarg( "*adevice", "-ad", &adev_name,   "name",     "Init/change audio device name" );
   addarg( "daemon",   "-d",  &daemon_flag, NULL,       "Start in daemon mode" );
   addarg( "*pfile",   "-pid",&pid_fname,   "filename", "Filename to store process ID" );
   addarg( "*verbose", "-v",  &verb_arg,    "level",    "Set logging level (0-7)" );
@@ -252,9 +252,23 @@ int main( int argc, char *argv[] )
   srvmsg( LOG_INFO, "Using name     : \"%s\"", player_name );  
 
 /*------------------------------------------------------------------------*\
+    Player device changed or unavailabale ?
+\*------------------------------------------------------------------------*/  
+  if( adev_name )
+    playerSetAudioDevice( adev_name );
+  adev_name = playerGetAudioDevice();  
+  if( !adev_name ) {
+    adev_name = "null";
+    srvmsg( LOG_WARNING, "Need audio device name, using \"%s\" as default...",
+                         adev_name );
+    playerSetAudioDevice( adev_name );
+  }
+  srvmsg( LOG_INFO, "Using audio dev: \"%s\"", adev_name );
+
+/*------------------------------------------------------------------------*\
     Init audio module
 \*------------------------------------------------------------------------*/
-  if( audioInit() )
+  if( audioInit(adev_name) )
     return -1;
 
 /*------------------------------------------------------------------------*\

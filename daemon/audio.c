@@ -77,10 +77,11 @@ static bool   playerMuted;
 static bool   playerPlaying;
 static double playerSeekPos;
 
+
 /*=========================================================================*\
-      init audio module 
+      Init audio module 
 \*=========================================================================*/
-int audioInit( void )
+int audioInit( const char *deviceName )
 {
 
 /*------------------------------------------------------------------------*\
@@ -90,9 +91,9 @@ int audioInit( void )
   playerMuted  = persistGetBool( "AudioMuted" );  	
 
 /*------------------------------------------------------------------------*\
-    That's it 
+    Try to initialize audio device
 \*------------------------------------------------------------------------*/
-  return 0;
+  return audioUseDevice( deviceName );
 }
 
 

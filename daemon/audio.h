@@ -57,7 +57,7 @@ Remarks         : -
 /*=========================================================================*\
        Global symbols 
 \*=========================================================================*/
-int    audioInit( void );
+int    audioInit( const char *deviceName );
 void   audioShutdown( void );
 
 int    audioGetDeviceList( char ***deviceListPtr, char ***descrListPtr );
