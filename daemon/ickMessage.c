@@ -118,16 +118,20 @@ void ickMessage( const char *szDeviceId, const void *message,
 /*------------------------------------------------------------------------*\
     Init JSON interpreter
 \*------------------------------------------------------------------------*/
-  jRoot = json_loads(message, 0, &error);
+  jRoot = json_loads( message, 0, &error );
   if( !jRoot ) {
-    srvmsg( LOG_ERR, "ickMessage from %s: currupt line %d: %s", szDeviceId, error.line, error.text );
+    srvmsg( LOG_ERR, "ickMessage from %s: currupt line %d: %s", 
+                     szDeviceId, error.line, error.text );
     return;
   }
   if( !json_is_object(jRoot) ) {
+  	srvmsg( LOG_ERR, "ickMessage from %s: could not parse to object: %s", 
+  	                 szDeviceId, (const char *)message );
     json_decref( jRoot );
     return;
   } 
-
+  DBGMSG( "ickMessage from %s: parsed.", szDeviceId );
+  
 /*------------------------------------------------------------------------*\
     Get request ID
 \*------------------------------------------------------------------------*/
@@ -138,6 +142,7 @@ void ickMessage( const char *szDeviceId, const void *message,
     json_decref( jRoot );
     return;
   }
+  DBGMSG( "ickMessage from %s: found id.", szDeviceId );
   
 /*------------------------------------------------------------------------*\
     Check for result field: this is an answer to a command we've issued
@@ -202,6 +207,7 @@ void ickMessage( const char *szDeviceId, const void *message,
     return;
   }
   method = json_string_value( jObj );
+  DBGMSG( "ickMessage from %s: Executing command \"%s\"", szDeviceId, method );
 
   jParams = json_object_get( jRoot, "params" );
   if( !jParams || !json_is_object(jParams) ) {
@@ -731,15 +737,22 @@ void ickMessage( const char *szDeviceId, const void *message,
 /*------------------------------------------------------------------------*\
    Broadcast changes in playlist 
 \*------------------------------------------------------------------------*/
+  DBGMSG( "ickMessage from %s: need to update playlist: %s", 
+            szDeviceId, playlistChanged?"Yes":"No" );
   if( playlistChanged )
     ickMessageNotifyPlaylist();
+
     
 /*------------------------------------------------------------------------*\
    Broadcast changes in player state
 \*------------------------------------------------------------------------*/
-  if( playerStateTimestamp!=playerGetLastChange() )
+  double newTimeStamp =  playerGetLastChange();
+  DBGMSG( "ickMessage from %s: checking player timestamps: %lf <? %lf", 
+          szDeviceId, playerStateTimestamp, newTimeStamp );
+  if( playerStateTimestamp!=newTimeStamp )
     ickMessageNotifyPlayerState();
-    
+
+  
 /*------------------------------------------------------------------------*\
     Clean up: Free JSON message object and check for timedout requsts
 \*------------------------------------------------------------------------*/
@@ -753,12 +766,15 @@ void ickMessage( const char *szDeviceId, const void *message,
 \*=========================================================================*/
 void ickMessageNotifyPlaylist( void )
 {
-  Playlist *plst = playerGetQueue();
+  Playlist *plst;;
   json_t   *jMsg;
+
+  DBGMSG( "ickMessageNotifyPlaylist" );    
 
 /*------------------------------------------------------------------------*\
     Set up parameters
 \*------------------------------------------------------------------------*/
+  plst = playerGetQueue( );
   jMsg = json_pack( "{sf si}",
                       "lastChanged", (double) playlistGetLastChange(plst), 
                       "countAll", playlistGetLength(plst) );
@@ -789,9 +805,13 @@ void ickMessageNotifyPlaylist( void )
 \*=========================================================================*/
 void ickMessageNotifyPlayerState( void )
 {
-    json_t *jMsg = _jPlayerStatus();                        
-    sendIckMessage( NULL, jMsg );
-    json_decref( jMsg );                       	
+  json_t *jMsg;
+  
+  DBGMSG( "ickMessageNotifyPlayerState" );    
+  
+  jMsg = _jPlayerStatus();                        
+  sendIckMessage( NULL, jMsg );
+  json_decref( jMsg );                       	
 }
 
 
@@ -861,7 +881,7 @@ enum ickMessage_communicationstate sendIckMessage( const char *szDeviceId, json_
 /*------------------------------------------------------------------------*\
     Clean up and that's all
 \*------------------------------------------------------------------------*/
-  free( message );
+  Sfree( message );
   return result;
 }
 
@@ -953,7 +973,7 @@ void _unlinkOpenRequest( OpenRequest *request )
   else {
   	char *txt = json_dumps( request->jCommand, JSON_PRESERVE_ORDER | JSON_COMPACT | JSON_ENSURE_ASCII );
     srvmsg( LOG_WARNING, "Cannot unlink straying open request #%d: %s", request->id, txt );
-    free( txt );
+    Sfree( txt );
   }
     
 /*------------------------------------------------------------------------*\
@@ -1008,7 +1028,7 @@ void _timeoutOpenRequest( int timeout )
 \*------------------------------------------------------------------------*/
     char *txt = json_dumps( element->jCommand, JSON_PRESERVE_ORDER | JSON_COMPACT | JSON_ENSURE_ASCII );  
     srvmsg( LOG_WARNING, "ickRequest #%d timed out: %s", element->id, txt );
-    free( txt );
+    Sfree( txt );
   	
 /*------------------------------------------------------------------------*\
     Unlink timedout element

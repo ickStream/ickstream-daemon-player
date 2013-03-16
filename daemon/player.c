@@ -103,16 +103,16 @@ typedef enum {
 \*=========================================================================*/
 
 // persistent
-static const char   *playerUUID;  
-static const char   *playerInterface;  
-static const char   *playerAudioDevice;  
-static const char   *playerHWID;  
-static const char   *playerModel;  
-static const char   *playerName;
-static const char   *accessToken;
-static double        playerVolume;
-static bool          playerMuted;
-static Playlist     *playerQueue;
+static const char    *playerUUID;  
+static const char    *playerInterface;  
+static const char    *playerAudioDevice;  
+static const char    *playerHWID;  
+static const char    *playerModel;  
+static const char    *playerName;
+static const char    *accessToken;
+static double         playerVolume;
+static bool           playerMuted;
+static Playlist      *playerQueue;
 
 // transient
 pthread_mutex_t       playerMutex;
@@ -288,7 +288,7 @@ const char *playerGetHWID( void )
 /*------------------------------------------------------------------------*\
     Store and return result
 \*------------------------------------------------------------------------*/
-  srvmsg( LOG_INFO, "Hardware ID is \"%s\"", hwid );
+  DBGMSG(  "playerGetHWID: \"%s\"", hwid );
   playerHWID = strdup( hwid );
   return playerHWID;
 }
@@ -300,8 +300,8 @@ const char *playerGetHWID( void )
 const char *playerGetUUID( void )
 {
   if( !playerUUID )
-    playerUUID = persistGetString( "PlayerName" );
-  DBGMSG( "playerGetUUID: \"%s\"", playerUUID );
+    playerUUID = persistGetString( "DeviceUUID" );
+  DBGMSG( "playerGetUUID: \"%s\"", playerUUID?playerUUID:"(null)" );
   return playerUUID;
 }
 
@@ -313,7 +313,7 @@ const char *playerGetModel( void )
 {
   if( !playerModel )
     playerModel = "Generic UN*X Player";
-  DBGMSG( "playerGetModel: \"%s\"", playerModel );
+  DBGMSG( "playerGetModel: \"%s\"", playerModel?playerModel:"(null)" );
   return playerModel;
 }
 
@@ -325,7 +325,7 @@ const char *playerGetInterface( void )
 {
   if( !playerInterface )
     playerInterface = persistGetString( "PlayerInterface" );
-  DBGMSG( "playerGetInterface: \"%s\"", playerInterface );
+  DBGMSG( "playerGetInterface: \"%s\"", playerInterface?playerInterface:"(null)" );
   return playerInterface;
 }
 
@@ -337,6 +337,7 @@ const char *playerGetAudioDevice( void )
 {
   if( !playerAudioDevice )
     playerAudioDevice = persistGetString( "PlayerAudioDevice" );
+  DBGMSG( "playerGetAudioDevice: \"%s\"", playerAudioDevice?playerAudioDevice:"(null)" );
   return playerAudioDevice;
 }
 
@@ -348,7 +349,7 @@ const char *playerGetName( void )
 {
   if( !playerName )
     playerName = persistGetString( "PlayerName" );
-  DBGMSG( "playerGetName: \"%s\"", playerName );
+  DBGMSG( "playerGetName: \"%s\"", playerName?playerName:"(null)" );
   return playerName;
 }
 
@@ -360,7 +361,7 @@ const char *playerGetToken( void )
 {
   if( !accessToken )
     accessToken = persistGetString( "IckAccessToken" );
-  DBGMSG( "playerGetToken: \"%s\"", accessToken );
+  DBGMSG( "playerGetToken: \"%s\"", accessToken?accessToken:"(null)" );
   return accessToken;
 }
 

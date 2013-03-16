@@ -208,7 +208,6 @@ int audioGetDeviceList( const AudioBackend *backend, char ***deviceListPtr, char
 
 /*=========================================================================*\
       Free list of strings as received from audioGetDeviceList
-        returns length of device list or -1 on error 
 \*=========================================================================*/
 void audioFreeStringList( char **stringList )
 {
@@ -218,7 +217,7 @@ void audioFreeStringList( char **stringList )
     Loop over elements 
 \*------------------------------------------------------------------------*/
   for( ptr=stringList; ptr && *ptr; ptr++ )
-    Sfree(*ptr );  		
+    Sfree( *ptr );  		
     
 /*------------------------------------------------------------------------*\
     Free the list itself 

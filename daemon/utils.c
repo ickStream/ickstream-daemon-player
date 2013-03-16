@@ -51,6 +51,8 @@ Remarks         : -
 \************************************************************************/
 
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 #include <stdarg.h>
 #include <pthread.h>
 #include <sys/time.h>
@@ -111,8 +113,8 @@ void _srvlog( const char *file, int line,  int prio, const char *fmt, ... )
 /*------------------------------------------------------------------------*\
     Clean variable argument list, unlock mutex
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &loggerMutex );
   va_end ( a_list );
+  pthread_mutex_unlock( &loggerMutex );
 }
 
 
@@ -126,6 +128,40 @@ double srvtime( void )
   return tv.tv_sec+10e-6*tv.tv_usec;
 }
 
+/*========================================================================*\
+   Log memory usage (by this code only)
+\*========================================================================*/
+#undef malloc
+void *_smalloc( const char *file, int line, size_t s )
+{
+  void *ptr = malloc( s );
+  _srvlog( file, line, LOG_DEBUG, "malloc(%ld) = %p", (long) s, ptr );	
+  return ptr;
+}
+
+#undef calloc
+void  *_scalloc( const char *file, int line, size_t n, size_t s )
+{
+  void *ptr = calloc( n, s );
+  _srvlog( file, line, LOG_DEBUG, "calloc(%ld,%ld) = %p", (long)n, (long)s, ptr );	
+  return ptr;
+}
+
+#undef realloc
+void  *_srealloc( const char *file, int line, void *optr, size_t s )
+{
+  void *ptr = realloc( optr, s );
+  _srvlog( file, line, LOG_DEBUG, "realloc(%p,%ld) = %p", optr, (long)s, ptr );	
+  return ptr;
+}
+
+#undef strdup
+char  *_sstrdup( const char *file, int line, const char *s )
+{
+  void *ptr = strdup( s );
+  _srvlog( file, line, LOG_DEBUG, "strdup(%s (%p)) = %p", s, s, ptr );	
+  return ptr;
+}
 
 
 

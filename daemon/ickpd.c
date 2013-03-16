@@ -125,7 +125,7 @@ int main( int argc, char *argv[] )
   addarg( "*pers",    "-p",  &pers_fname,  "filename", "Set name of persistency file" );
   addarg( "*uuid",    "-u",  &player_uuid, "uuid",     "Init/change UUID for this player" );
   addarg( "*name",    "-n",  &player_name, "name",     "Init/change Name for this player" );
-  addarg( "*uuid",    "-i",  &if_name,     "interface","Init/change network interface" );
+  addarg( "*idev",    "-i",  &if_name,     "interface","Init/change network interface" );
   addarg( "*adevice", "-ad", &adev_name,   "name",     "Init/change audio device name" );
   addarg( "daemon",   "-d",  &daemon_flag, NULL,       "Start in daemon mode" );
   addarg( "*pfile",   "-pid",&pid_fname,   "filename", "Filename to store process ID" );
@@ -144,9 +144,9 @@ int main( int argc, char *argv[] )
     Show version and/or help
 \*-------------------------------------------------------------------------*/
   if( vers_flag ) {
-    printf( "%s version %g (using ickstrem lib version %s)\n", 
+    printf( "%s version %g (using ickstream lib version %s)\n", 
       argv[0], ICKPD_VERSION, "??" );
-    printf( "<c> 2013 by //MAF\n\n" );
+    printf( "<c> 2013 by //MAF, ickStream GmbH\n\n" );
   }
   if( help_flag ) {
     usage( argv[0], 0 );

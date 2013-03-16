@@ -59,7 +59,6 @@ Remarks         : -
 /*=========================================================================*\
        Macro and type definitions 
 \*=========================================================================*/
-#define Sfree(p) ((p)?free(p),(p)=NULL:NULL)
 
 #define MAX(a,b) ((a)>(b)?(a):(b))
 #define MIN(a,b) ((a)<(b)?(a):(b))
@@ -72,6 +71,15 @@ Remarks         : -
 #define DBGMSG( args... ) { ;}
 #endif
 
+#if MEMDEBUG
+#define Sfree(p) {DBGMSG("free %p", (p)); if(p)free(p); (p)=NULL;}
+#define malloc(s)    _smalloc( __FILE__, __LINE__, (s) )
+#define calloc(n,s)  _scalloc( __FILE__, __LINE__, (n), (s) )
+#define realloc(p,s) _smalloc( __FILE__, __LINE__, (p), (s) )
+#define strdup( s )  _sstrdup( __FILE__, __LINE__, (s) )
+#else
+#define Sfree(p) {if(p)free(p); (p)=NULL;}
+#endif
 
 /*=========================================================================*\
        Global symbols 
@@ -84,8 +92,10 @@ extern int  srvloglevel;
 \*========================================================================*/
 double srvtime( void );
 void   _srvlog( const char *file, int line, int prio, const char *fmt, ... );
-
-
+void  *_smalloc( const char *file, int line, size_t s );
+void  *_scalloc( const char *file, int line, size_t n, size_t s );
+void  *_srealloc( const char *file, int line, void *p, size_t s );
+char  *_sstrdup( const char *file, int line, const char *s );
 
 #endif  /* __UTILS_H */
 
