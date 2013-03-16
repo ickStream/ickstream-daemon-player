@@ -71,11 +71,11 @@ Remarks         : -
 #include <ickDiscovery.h>
 
 #include "ickpd.h"
+#include "utils.h"
 #include "config.h"
 #include "persist.h"
 #include "ickDevice.h"
 #include "ickMessage.h"
-#include "playlist.h"
 #include "audio.h"
 #include "player.h"
 
@@ -83,7 +83,7 @@ Remarks         : -
 /*=========================================================================*\
 	Global symbols
 \*=========================================================================*/
-int    srvloglevel = LOG_NOTICE;
+// none
 
 
 /*=========================================================================*\
@@ -144,8 +144,8 @@ int main( int argc, char *argv[] )
     Show version and/or help
 \*-------------------------------------------------------------------------*/
   if( vers_flag ) {
-    printf( "%s version %g protocol %g  (using ickstrem lib version %s)\n", 
-      argv[0], ICKPD_VERSION, ICKPD_PROTOVER, "??" );
+    printf( "%s version %g (using ickstrem lib version %s)\n", 
+      argv[0], ICKPD_VERSION, "??" );
     printf( "<c> 2013 by //MAF\n\n" );
   }
   if( help_flag ) {
@@ -157,21 +157,35 @@ int main( int argc, char *argv[] )
     List available audio devices and exit
 \*-------------------------------------------------------------------------*/
   if( adev_flag ) {
-  	char **devList, **dscrList;
-  	int    i, n; 
-  	n = audioGetDeviceList( &devList, &dscrList );       
-    if( n<0 )
+    const AudioBackend *backend;
+    int                 tot = 0;
+    if( audioInit(NULL) ) {
+      printf( "Could not init audio moule for testing devices.\n" );
       return -1;
-    for( i=0; i<n; i++ ) {
-      char *descrLine = strtok( dscrList[i], "\n" ); 	
-      printf( "%-30s - %s\n", devList[i], descrLine );
-      while( (descrLine=strtok(NULL,"\n")) )
-        printf( "%33s%s\n", "", descrLine );
     }
-    if( !n )
-      printf( "No audio devices found." );
-    audioFreeStringList( devList );
-    audioFreeStringList( dscrList );
+    backend = audioBackendsRoot( );
+    while( backend ) {
+      char **devList, **dscrList;
+      int    i, n; 
+      n = audioGetDeviceList( backend, &devList, &dscrList );       
+      if( n<0 )
+        return -1;
+      for( i=0; i<n; i++ ) {
+        char *descrLine = strtok( dscrList[i], "\n" );
+        char *res = malloc( strlen(backend->name)+2+strlen(devList[i]) );
+        sprintf( res, "%s:%s", backend->name, devList[i] );    
+        printf( "%-30s - %s\n", res, descrLine );
+        Sfree( res );
+        while( (descrLine=strtok(NULL,"\n")) )
+          printf( "%33s%s\n", "", descrLine );
+      }
+      audioFreeStringList( devList );
+      audioFreeStringList( dscrList );
+      tot += n;
+      backend = backend->next;
+    }
+    if( !tot )
+      printf( "No audio devices found.\n" );
     return 0;
   }
   
@@ -193,6 +207,12 @@ int main( int argc, char *argv[] )
       return 1;
     }
   }
+#ifndef DEBUG
+  if( srvloglevel>=LOG_DEBUG ) {
+     fprintf( stderr, "%s: binary not compiled for debugging, loglevel %d might be too high!\n", 
+                      argv[0], srvloglevel );
+  } 
+#endif  
 
 /*------------------------------------------------------------------------*\
     Set persistence filename 
@@ -266,7 +286,7 @@ int main( int argc, char *argv[] )
   srvmsg( LOG_INFO, "Using audio dev: \"%s\"", adev_name );
 
 /*------------------------------------------------------------------------*\
-    Init audio module
+    Init audio module: check for interface
 \*------------------------------------------------------------------------*/
   if( audioInit(adev_name) )
     return -1;
@@ -320,9 +340,11 @@ int main( int argc, char *argv[] )
   ickDiscoveryAddService( ICKDEVICE_PLAYER );
 
 /*------------------------------------------------------------------------*\
-    Get and distribute playlist from persistence storage
+    Init player and announce state
 \*------------------------------------------------------------------------*/
+  playerInit();
   ickMessageNotifyPlaylist();
+  ickMessageNotifyPlayerState();
   
 /*------------------------------------------------------------------------*\
     Mainloop:
@@ -346,9 +368,8 @@ int main( int argc, char *argv[] )
 /*------------------------------------------------------------------------*\
     ... and other modules.
 \*------------------------------------------------------------------------*/
-  playlistFreePlayerQueue( true );
   playerShutdown();
-  audioShutdown();
+  audioShutdown( AudioDrain );
   persistShutdown();
 
 
@@ -390,16 +411,6 @@ static void  sig_handler( int sig )
 \*------------------------------------------------------------------------*/  
 } 
 
-
-/*========================================================================n
-   Utility: get time including frational seconds
-\*========================================================================*/
-double srvtime( void )
-{
-  struct timeval tv;
-  gettimeofday( &tv, NULL );
-  return tv.tv_sec+10e-6*tv.tv_usec;
-}
 
 /*=========================================================================*\
                                     END OF FILE

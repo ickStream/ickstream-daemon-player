@@ -53,6 +53,7 @@ Remarks         : -
 	Includes needed by definitions from this file
 \*=========================================================================*/
 #include <stdbool.h>
+#include <jansson.h>
 #include "audio.h"
 #include "fifo.h"
 
@@ -60,14 +61,18 @@ Remarks         : -
        Macro and type definitions 
 \*=========================================================================*/
 struct  _codec;
+struct  _codecinstance;
 
 typedef enum {
   CodecInitialized,
   CodecRunning,
+  CodecEndOfTrack,
   CodecTerminating,
   CodecTerminatedOk,
   CodecTerminatedError
 } CodecInstanceState;
+
+typedef int    (*CodecMetaCallback)( struct _codecinstance *instance, AudioFormat *format, json_t *meta );
 
 typedef struct _codecInstance {
   struct _codecinstance  *next;
@@ -75,9 +80,12 @@ typedef struct _codecInstance {
   struct _codec          *codec;            // weak
   void                   *instanceData;     // handled by individual codec
   Fifo                   *fifoOut;          // weak
+  int                     endOfInput;
+  CodecMetaCallback       metaCallback;
   AudioFormat             format;
   pthread_t               thread;
   pthread_mutex_t         mutex;
+  pthread_cond_t          condEndOfTrack;
 } CodecInstance;
  
 typedef int    (*CodecInit)( void );
@@ -117,6 +125,8 @@ Codec *codecFind( const char *type, const AudioFormat *format, Codec *codec );
 CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format );
 int            codecDeleteInstance(CodecInstance *instance, bool wait );
 int            codecFeedInput( CodecInstance *instance, void *content, size_t size, size_t *accepted );
+void           codecSetEndOfInput( CodecInstance *instance );
+int            codecWaitForEnd( CodecInstance *instance, int timeout );
 int            codecSetVolume( CodecInstance *instance, double volume );
 int            codecGetSeekTime( CodecInstance *instance, double *pos );
 

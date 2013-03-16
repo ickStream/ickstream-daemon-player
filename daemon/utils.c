@@ -84,22 +84,24 @@ void _srvlog( const char *file, int line,  int prio, const char *fmt, ... )
 /*------------------------------------------------------------------------*\
     Init arguments, lock mutex
 \*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &loggerMutex );
   va_list a_list;
   va_start( a_list, fmt );
-  pthread_mutex_lock( &loggerMutex );
   
 /*------------------------------------------------------------------------*\
     select stream due to priority
 \*------------------------------------------------------------------------*/
-  FILE *f = (prio<LOG_INFO) ? stderr : stdout;
-
+  // FILE *f = (prio<LOG_INFO) ? stderr : stdout;
+  FILE *f = stderr;
+  
 /*------------------------------------------------------------------------*\
     prepend location to message (if available)
 \*------------------------------------------------------------------------*/
   if( file )
-    fprintf( f, "%s,%d: ", file, line );
+    fprintf( f, "%.4f [%p] %s,%d: ", srvtime(), (void*)pthread_self(), file, line );
   vfprintf( f, fmt, a_list);
   fprintf( f, "\n");
+  fflush( f );
 
 /*------------------------------------------------------------------------*\
     use syslog facility

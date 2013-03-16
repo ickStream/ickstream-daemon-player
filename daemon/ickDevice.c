@@ -51,12 +51,14 @@ Remarks         : -
 \************************************************************************/
 
 #include <stdio.h>
-#include "ickpd.h"
-
-#include <ickDiscovery.h>
 #include <jansson.h>
+#include <ickDiscovery.h>
 
+#include "utils.h"
 #include "ickDevice.h"
+#include "ickMessage.h"
+#include "ickService.h"
+
 
 /*=========================================================================*\
 	Global symbols
@@ -66,7 +68,8 @@ Remarks         : -
 /*=========================================================================*\
 	Private symbols
 \*=========================================================================*/
-// none
+void _handleGetServiceInformation( const char *szDeviceId, json_t *jCmd, json_t *jResult );
+
 
 /*=========================================================================*\
         Handle device annuncements
@@ -74,11 +77,17 @@ Remarks         : -
 void ickDevice( const char *szDeviceId, enum ickDiscovery_command cmd, 
                  enum ickDevice_servicetype type )
 {
-
+  
   switch( cmd ) {
 
     case ICKDISCOVERY_ADD_DEVICE:
       srvmsg( LOG_INFO, "ickDevice %s (type %d) added", szDeviceId, type );
+
+      // New server found: request service descriptor
+      if( type==ICKDEVICE_SERVER_GENERIC ) {
+        sendIckCommand( szDeviceId, "getServiceInformation", NULL, NULL, 
+                                    &_handleGetServiceInformation );
+      }
       break;
 
     case ICKDISCOVERY_REMOVE_DEVICE:
@@ -98,6 +107,31 @@ void ickDevice( const char *szDeviceId, enum ickDiscovery_command cmd,
     That's it.
 \*------------------------------------------------------------------------*/
 }
+
+
+/*=========================================================================*\
+        Call back for get service info
+\*=========================================================================*/
+void _handleGetServiceInformation( const char *szDeviceId, json_t *jCmd, json_t *jResult)
+{ 
+  json_t *jObj;
+  
+/*------------------------------------------------------------------------*\
+    Get result object
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( jResult, "result" );
+  if( !jObj || !json_is_object(jObj) ) {
+    srvmsg( LOG_ERR, "getServiceInformation from %s: no result field", 
+                     szDeviceId );
+    return;
+  } 
+
+/*------------------------------------------------------------------------*\
+    Add new service
+\*------------------------------------------------------------------------*/
+  ickServiceAdd( jObj );
+}
+
 
 
 /*=========================================================================*\

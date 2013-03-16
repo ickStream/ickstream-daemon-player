@@ -59,7 +59,7 @@ Remarks         : -
 #include <unistd.h>
 #include <jansson.h>
 
-#include "ickpd.h"
+#include "utils.h"
 #include "persist.h"
 
 
@@ -87,7 +87,7 @@ int persistSetFilename( const char *name )
 {
   struct stat buf;
   
-  srvmsg( LOG_DEBUG, "persistSetFilename: \"%s\"", name ); 
+  DBGMSG( "persistSetFilename: \"%s\"", name ); 
   
 /*------------------------------------------------------------------------*\
     Defensively dump to an existing file name
@@ -173,7 +173,7 @@ int persistSetJSON( const char *key, json_t *jObj )
 \*=========================================================================*/
 int persistSetJSON_new( const char *key, json_t *value )
 {
-  srvmsg( LOG_DEBUG, "persistSetJSON_new: (%s)", key ); 
+  DBGMSG( "persistSetJSON_new: (%s)", key ); 
    
 /*------------------------------------------------------------------------*\
     Create repository if not available
@@ -210,7 +210,7 @@ int persistSetString( const char *key, const char *value )
 {
   json_t *jObj;
 
-  srvmsg( LOG_DEBUG, "persistSetString: (%s)=\"%s\"", key, value ); 
+  DBGMSG( "persistSetString: (%s)=\"%s\"", key, value ); 
     
 /*------------------------------------------------------------------------*\
     Convert value to JSON
@@ -235,7 +235,7 @@ int persistSetInteger( const char *key, int value )
 {
   json_t *jObj;
 
-  srvmsg( LOG_DEBUG, "persistSetInteger: (%s)=%d", key, value ); 
+  DBGMSG( "persistSetInteger: (%s)=%d", key, value ); 
     
 /*------------------------------------------------------------------------*\
     Convert value to JSON
@@ -260,7 +260,7 @@ int persistSetReal( const char *key, double value )
 {
   json_t *jObj;
 
-  srvmsg( LOG_DEBUG, "persistSetreal: (%s)=%g", key, value ); 
+  DBGMSG( "persistSetreal: (%s)=%g", key, value ); 
     
 /*------------------------------------------------------------------------*\
     Convert value to JSON
@@ -285,7 +285,7 @@ int persistSetBool( const char *key, bool value )
 {
   json_t *jObj;
     
-  srvmsg( LOG_DEBUG, "persistSetBool: (%s)=%s", key, value?"True":"False" ); 
+  DBGMSG( "persistSetBool: (%s)=%s", key, value?"True":"False" ); 
 
 /*------------------------------------------------------------------------*\
     Convert value to JSON
@@ -310,7 +310,7 @@ int persistSetBool( const char *key, bool value )
 int persistRemove( const char *key )
 {
 
-  srvmsg( LOG_DEBUG, "persistRemove: (%s)", key ); 
+  DBGMSG( "persistRemove: (%s)", key ); 
 
 /*------------------------------------------------------------------------*\
     Repository needs to be available
@@ -349,7 +349,7 @@ json_t *persistGetJSON( const char *key )
     Lookup
 \*------------------------------------------------------------------------*/
   json_t *jObj = json_object_get( jRepository, key );
-  srvmsg( LOG_DEBUG, "persistGetJSON: (%s)=%p", key, jObj ); 
+  DBGMSG( "persistGetJSON: (%s)=%p", key, jObj ); 
   return jObj;
 }
 
@@ -369,7 +369,7 @@ const char *persistGetString( const char *key )
 \*------------------------------------------------------------------------*/
   jObj = persistGetJSON( key );
   if( !jObj ) {
-  	srvmsg( LOG_DEBUG, "persistGetString: (%s) not set", key );
+  	DBGMSG( "persistGetString: (%s) not set", key );
     return NULL;  
   }
 
@@ -387,7 +387,7 @@ const char *persistGetString( const char *key )
     return string value as reference
 \*------------------------------------------------------------------------*/
   const char *value = json_string_value( jObj );
-  srvmsg( LOG_DEBUG, "persistGetString: (%s)=\"%s\"", key, value?value:"" ); 
+  DBGMSG( "persistGetString: (%s)=\"%s\"", key, value?value:"" ); 
   return value;
 }
 
@@ -405,7 +405,7 @@ int persistGetInteger( const char *key )
 \*------------------------------------------------------------------------*/
   jObj = persistGetJSON( key );
   if( !jObj ) {
-  	srvmsg( LOG_DEBUG, "persistGetInteger: (%s) not set", key );
+  	DBGMSG( "persistGetInteger: (%s) not set", key );
     return 0;  
   }
 
@@ -422,7 +422,7 @@ int persistGetInteger( const char *key )
     return integer value 
 \*------------------------------------------------------------------------*/
   int value = json_integer_value( jObj );  
-  srvmsg( LOG_DEBUG, "persistGetInteger: (%s)=%d", key, value ); 
+  DBGMSG( "persistGetInteger: (%s)=%d", key, value ); 
   return value;
 }
 
@@ -440,7 +440,7 @@ double persistGetReal( const char *key )
 \*------------------------------------------------------------------------*/
   jObj = persistGetJSON( key );
   if( !jObj ) {
-  	srvmsg( LOG_DEBUG, "persistGetReal: (%s) not set", key );
+  	DBGMSG( "persistGetReal: (%s) not set", key );
     return 0;  
   }
 
@@ -457,7 +457,7 @@ double persistGetReal( const char *key )
     return real value 
 \*------------------------------------------------------------------------*/
   double value = json_real_value( jObj );
-  srvmsg( LOG_DEBUG, "persistGetReal: (%s)=%g", key, value ); 
+  DBGMSG( "persistGetReal: (%s)=%g", key, value ); 
   return value;
 }
 
@@ -470,14 +470,14 @@ bool persistGetBool( const char *key )
 {
   json_t *jObj;
 
-  srvmsg( LOG_DEBUG, "persistGetBool: (%s)", key ); 
+  DBGMSG( "persistGetBool: (%s)", key ); 
     
 /*------------------------------------------------------------------------*\
     Get Object
 \*------------------------------------------------------------------------*/
   jObj = persistGetJSON( key );
   if( !jObj ) {
-  	srvmsg( LOG_DEBUG, "persistGetBool: (%s) not set", key );
+  	DBGMSG( "persistGetBool: (%s) not set", key );
     return false;  
   }
   
@@ -494,7 +494,7 @@ bool persistGetBool( const char *key )
     return real value 
 \*------------------------------------------------------------------------*/
   bool value = json_is_true( jObj );
-  srvmsg( LOG_DEBUG, "persistGetBool: (%s)=%s", key, value?"True":"False" ); 
+  DBGMSG( "persistGetBool: (%s)=%s", key, value?"True":"False" ); 
   return value;
 }
 
@@ -506,7 +506,7 @@ static int _dumpRepository( const char *name )
 {
   int retcode = 0;
   
-  srvmsg( LOG_DEBUG, "Dumping persistency file: \"%s\"", name ); 
+  DBGMSG( "Dumping persistency file: \"%s\"", name ); 
 
 /*------------------------------------------------------------------------*\
     No name given? 
@@ -574,7 +574,7 @@ static int _readRepository( const char *name )
   json_t       *jObj;  
   json_error_t  error;
   
-  srvmsg( LOG_DEBUG, "Reading persistency file: \"%s\"", name ); 
+  DBGMSG( "Reading persistency file: \"%s\"", name ); 
 
 /*------------------------------------------------------------------------*\
     No name given? 

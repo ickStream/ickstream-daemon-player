@@ -52,12 +52,13 @@ Remarks         : -
 /*=========================================================================*\
 	Includes needed by definitions from this file
 \*=========================================================================*/
-#include <stdbool.h>
+// none
+
 
 /*=========================================================================*\
        Global symbols 
 \*=========================================================================*/
-int alsaGetDeviceList( char ***deviceListPtr, char ***descrListPtr );
+AudioBackend *alsaDescriptor( void );
 
 
 

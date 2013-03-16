@@ -16,7 +16,7 @@ Error Messages  : -
   
 Date            : 22.02.2013
 
-Updates         : 14.02.2013 make queue persistent // MAF
+Updates         : 14.03.2013 protext list modifications by mutex //MAF
                   
 Author          : //MAF 
 
@@ -55,8 +55,7 @@ Remarks         : -
 #include <strings.h>
 #include <ickDiscovery.h>
 
-#include "ickpd.h"
-#include "persist.h"
+#include "utils.h"
 #include "playlist.h"
 
 
@@ -65,115 +64,16 @@ Remarks         : -
 \*=========================================================================*/
 // none
 
-/*=========================================================================*\
-	private symbols
-\*=========================================================================*/
-static Playlist *playerQueue;
-
 
 /*=========================================================================*\
-       Get player queue 
+	Private definitions and symbols
 \*=========================================================================*/
-Playlist *playlistGetPlayerQueue( void )
-{
-  json_t   *jQueue;
-  json_t   *jObj;
-  int       i;
-  
-/*------------------------------------------------------------------------*\
-    Return queue if alredy initialized
-\*------------------------------------------------------------------------*/
-  if( playerQueue )
-    return playerQueue;
-  
-/*------------------------------------------------------------------------*\
-    Lazy init: Create queue
-\*------------------------------------------------------------------------*/
-  playerQueue = playlistNew();   
-      
-/*------------------------------------------------------------------------*\
-    Lazy init: If not in persistent repository return empty list
-\*------------------------------------------------------------------------*/
-  jQueue = persistGetJSON( "PlayerQueue" );
-  if( !jQueue )
-    return playerQueue; 
- 
-/*------------------------------------------------------------------------*\
-    Lazy init: Create playlist header from JSON 
-\*------------------------------------------------------------------------*/
-
-  // ID
-  jObj = json_object_get( jQueue, "playlistId" );
-  if( jObj && json_is_string(jObj) )
-    playlistSetId( playerQueue, json_string_value(jObj) );
-  else
-  	srvmsg( LOG_ERR, "Playlist: missing field \"playlistId\"" );
-
-  // Name
-  jObj = json_object_get( jQueue, "playlistName" );
-  if( jObj && json_is_string(jObj) )
-    playlistSetName( playerQueue, json_string_value(jObj) );
-  else
-  	srvmsg( LOG_ERR, "Playlist: missing field \"playlistName\"" );
-
-  // Position (optional)
-  jObj = json_object_get( jQueue, "playlistPos" );
-  if( jObj && json_is_string(jObj) )
-    playlistSetCursorPos( playerQueue, json_integer_value(jObj) );
-    
-  // Last Modification
-  jObj = json_object_get( jQueue, "lastChanged" );
-  if( jObj && json_is_real(jObj) )
-    playerQueue->lastChange = json_real_value( jObj );
-  else
-  	srvmsg( LOG_ERR, "Playlist: missing field \"playlistName\"" );
-    
-  // Get list of items
-  jObj = json_object_get( jQueue, "items" );
-  if( jObj && json_is_array(jObj) ) {
-  
-    // Loop over all utems and add them to list	
-  	for( i=0; i<json_array_size(jObj); i++ ) {
-      json_t       *jItem = json_array_get( jObj, i );
-      PlaylistItem *pItem = playlistItemFromJSON( jItem );
-      if( pItem )
-        playlistAddItemAfter( playerQueue, NULL, pItem );
-      else
-        srvmsg( LOG_ERR, "Playlist: could not parse item #%d", i+1 );
-    } 
-  }
-  else
-    srvmsg( LOG_ERR, "Playlist: missing field \"items\"" );
-
-/*------------------------------------------------------------------------*\
-    That's all 
-\*------------------------------------------------------------------------*/
-  return playerQueue;
-}
+// none
 
 /*=========================================================================*\
-       Free player queue 
+        Private prototypes
 \*=========================================================================*/
-void playlistFreePlayerQueue( bool usePersistence )
-{
-  if( !playerQueue )
-    return;
-  
-/*------------------------------------------------------------------------*\
-    Write to persistent storage
-\*------------------------------------------------------------------------*/
-  if( usePersistence )
-    persistSetJSON_new( "PlayerQueue", playlistGetJSON(playerQueue,0,0) ); 
-  else
-    persistRemove( "PlayerQueue" );
-      
-/*------------------------------------------------------------------------*\
-    Free playlist in memory
-\*------------------------------------------------------------------------*/
-  playlistDelete( playerQueue );
-  playerQueue = NULL;
-}
-
+static int _playlistGetCursorPos( Playlist *plst );
 
 
 /*=========================================================================*\
@@ -188,15 +88,87 @@ Playlist *playlistNew( void )
 /*------------------------------------------------------------------------*\
     Init header fields
 \*------------------------------------------------------------------------*/
-  plst->id   = strdup( "<undefined>" );
-  plst->name = strdup( "ickpd player queue" );
-  
+  // plst->id   = strdup( "<undefined>" );
+  // plst->name = strdup( "ickpd player queue" );
+ 
+/*------------------------------------------------------------------------*\
+    init mutex and conditions 
+\*------------------------------------------------------------------------*/
+  pthread_mutex_init( &plst->mutex, NULL );
+ 
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/
-  srvmsg( LOG_DEBUG, "playlistNew: %p", plst );
+  DBGMSG( "playlistNew: %p", plst );
   return plst; 
 }
+
+
+/*=========================================================================*\
+       Get playlist from JSON buffer
+         if jQueue is NULL, a new playlist is created
+\*=========================================================================*/
+Playlist *playlistFromJSON( json_t *jQueue )
+{
+  Playlist *plst;
+  json_t   *jObj;
+  int       i;
+    
+/*------------------------------------------------------------------------*\
+    Create header
+\*------------------------------------------------------------------------*/
+  plst = playlistNew();   
+      
+/*------------------------------------------------------------------------*\
+    No json date?
+\*------------------------------------------------------------------------*/
+  if( !jQueue )
+    return plst;
+    
+/*------------------------------------------------------------------------*\
+    Lazy init: Create playlist header from JSON 
+\*------------------------------------------------------------------------*/
+
+  // ID (optional)
+  jObj = json_object_get( jQueue, "playlistId" );
+  if( jObj && json_is_string(jObj) )
+    playlistSetId( plst, json_string_value(jObj) );
+
+  // Name (optional)
+  jObj = json_object_get( jQueue, "playlistName" );
+  if( jObj && json_is_string(jObj) )
+    playlistSetName( plst, json_string_value(jObj) );
+    
+  // Last Modification
+  jObj = json_object_get( jQueue, "lastChanged" );
+  if( jObj && json_is_real(jObj) )
+    plst->lastChange = json_real_value( jObj );
+  else
+  	srvmsg( LOG_ERR, "Playlist: missing field \"playlistName\"" );
+    
+  // Get list of items
+  jObj = json_object_get( jQueue, "items" );
+  if( jObj && json_is_array(jObj) ) {
+  
+    // Loop over all utems and add them to list	
+  	for( i=0; i<json_array_size(jObj); i++ ) {
+      json_t       *jItem = json_array_get( jObj, i );
+      PlaylistItem *pItem = playlistItemFromJSON( jItem );
+      if( pItem )
+        playlistAddItemAfter( plst, NULL, pItem );
+      else
+        srvmsg( LOG_ERR, "Playlist: could not parse item #%d", i+1 );
+    } 
+  }
+  else
+    srvmsg( LOG_ERR, "Playlist: missing field \"items\"" );
+
+/*------------------------------------------------------------------------*\
+    That's all 
+\*------------------------------------------------------------------------*/
+  return plst;
+}
+
 
 /*=========================================================================*\
        Delete and free playlist 
@@ -205,8 +177,13 @@ void playlistDelete( Playlist *plst )
 {
   PlaylistItem *item, *next;
 
-  srvmsg( LOG_DEBUG, "playlistDelete: %p", plst );
+  DBGMSG( "playlistDelete: %p", plst );
   
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+   pthread_mutex_lock( &plst->mutex );
+
 /*------------------------------------------------------------------------*\
     Free all items (unlinking not necessary)
 \*------------------------------------------------------------------------*/
@@ -222,8 +199,9 @@ void playlistDelete( Playlist *plst )
   Sfree( plst->name );
 
 /*------------------------------------------------------------------------*\
-    Free header
+    Unlock and free header
 \*------------------------------------------------------------------------*/
+  pthread_mutex_unlock( &plst->mutex );
   Sfree( plst );
 }
 
@@ -235,7 +213,7 @@ void playlistSetId( Playlist *plst, const char *id )
 {
   Sfree( plst->id );
   plst->id = strdup( id );    
-  srvmsg( LOG_DEBUG, "playlistSetID: %s", id ); 
+  DBGMSG( "playlistSetID %p: %s", plst, id?id:"NULL" ); 
 }
 
 
@@ -246,7 +224,7 @@ void playlistSetName( Playlist *plst, const char *name )
 {
   Sfree( plst->name );
   plst->name = strdup( name );    
-  srvmsg( LOG_DEBUG, "playlistSetName: %s", name ); 
+  DBGMSG( "playlistSetName %p: %s", plst, name?name:"NULL" ); 
 }
 
 
@@ -255,7 +233,7 @@ void playlistSetName( Playlist *plst, const char *name )
 \*=========================================================================*/
 const char *playlistGetId( Playlist *plst )
 {
-  srvmsg( LOG_DEBUG, "playlistGetID: %s", plst->id ); 
+  DBGMSG( "playlistGetID %p: %s", plst, plst->id?plst->id:"NULL" ); 
   return plst->id;
 }
 
@@ -265,7 +243,7 @@ const char *playlistGetId( Playlist *plst )
 \*=========================================================================*/
 const char *playlistGetName( Playlist *plst )
 {
-  srvmsg( LOG_DEBUG, "playlistGetName: %s", plst->name ); 
+  DBGMSG( "playlistGetName %p: %s", plst, plst->name?plst->name:"NULL" ); 
   return plst->name;
 }
 
@@ -275,18 +253,20 @@ const char *playlistGetName( Playlist *plst )
 \*=========================================================================*/
 int playlistGetLength( Playlist *plst )
 {
-  srvmsg( LOG_DEBUG, "playlistGetLength: %d", plst->_numberOfItems ); 
+  DBGMSG( "playlistGetLength %p: %d", plst, plst->_numberOfItems ); 
   return plst->_numberOfItems;    
 }
+
 
 /*=========================================================================*\
        Get timestamp of last change 
 \*=========================================================================*/
 double playlistGetLastChange( Playlist *plst )
 {
-  srvmsg( LOG_DEBUG, "playlistGetLastChange: %g", plst->lastChange ); 
+  DBGMSG( "playlistGetLastChange %p: %lf", plst, plst->lastChange ); 
   return plst->lastChange;        
 }
+
 
 /*=========================================================================*\
        Get cursor position (aka current track) 
@@ -295,7 +275,33 @@ double playlistGetLastChange( Playlist *plst )
 \*=========================================================================*/
 int playlistGetCursorPos( Playlist *plst )
 {
+
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &plst->mutex );
     
+/*------------------------------------------------------------------------*\
+    Find position of current item if index is invalid
+\*------------------------------------------------------------------------*/
+  _playlistGetCursorPos( plst );
+
+/*------------------------------------------------------------------------*\
+    Unlock mutex and return result
+\*------------------------------------------------------------------------*/
+  pthread_mutex_unlock( &plst->mutex );
+  return plst->_cursorPos;    
+}
+
+
+/*=========================================================================*\
+       Get cursor position (aka current track), internal version without locking 
+         counting starts with 0 (which is also the default)
+         return 0 on empty list
+\*=========================================================================*/
+static int _playlistGetCursorPos( Playlist *plst )
+{
+
 /*------------------------------------------------------------------------*\
     Find position of current item if index is invalid
 \*------------------------------------------------------------------------*/
@@ -312,9 +318,10 @@ int playlistGetCursorPos( Playlist *plst )
 /*------------------------------------------------------------------------*\
     Return position
 \*------------------------------------------------------------------------*/
-  srvmsg( LOG_DEBUG, "playlistGetCursorPos: %d", plst->_cursorPos );              
-  return plst->_cursorPos;    
+  DBGMSG( "_playlistGetCursorPos %p: %d", plst, plst->_cursorPos );
+  return plst->_cursorPos;
 }
+
 
 /*=========================================================================*\
        Get cursor item (aka current track) 
@@ -325,7 +332,7 @@ PlaylistItem *playlistGetCursorItem( Playlist *plst )
 {
     
 /*------------------------------------------------------------------------*\
-    Get first item as default
+    Set first item as default
 \*------------------------------------------------------------------------*/
   if( !plst->_cursorItem )
     plst->_cursorItem = plst->firstItem;
@@ -333,9 +340,10 @@ PlaylistItem *playlistGetCursorItem( Playlist *plst )
 /*------------------------------------------------------------------------*\
     Return item at cursor
 \*------------------------------------------------------------------------*/
-  srvmsg( LOG_DEBUG, "playlistGetCursorItem: %p", plst->_cursorItem );       
+  DBGMSG( "playlistGetCursorItem %p: %p", plst, plst->_cursorItem );       
   return plst->_cursorItem;
 }
+
 
 /*=========================================================================*\
        Set cursor position (aka current track)
@@ -345,6 +353,12 @@ PlaylistItem *playlistGetCursorItem( Playlist *plst )
 int playlistSetCursorPos( Playlist *plst, int pos )
 {
   PlaylistItem *item;
+  int i;
+
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &plst->mutex );
      
 /*------------------------------------------------------------------------*\
     Clipping
@@ -357,7 +371,10 @@ int playlistSetCursorPos( Playlist *plst, int pos )
 /*------------------------------------------------------------------------*\
     Get item
 \*------------------------------------------------------------------------*/
-  item = playlistGetItem( plst, pos );
+  item = plst->firstItem;
+  i    = pos;
+  while( i-- && item )
+     item = item->next;
   if( item ) {
     plst->_cursorPos  = pos;
     plst->_cursorItem = item;
@@ -366,12 +383,55 @@ int playlistSetCursorPos( Playlist *plst, int pos )
   // error handling
   else
     pos = -1;
-    
+
 /*------------------------------------------------------------------------*\
-    That's all
+   Unlock and return 
 \*------------------------------------------------------------------------*/
-  srvmsg( LOG_DEBUG, "playlistSetCursor: %d", pos );            
+  pthread_mutex_unlock( &plst->mutex );
+  DBGMSG( "playlistSetCursor %p: %d", plst, pos );            
   return pos;
+}
+
+
+/*=========================================================================*\
+       Set cursor position (aka current track) to next entry
+         return new item (clipped) or NULL (empty list or end of list)
+\*=========================================================================*/
+PlaylistItem *playlistIncrCursorItem( Playlist *plst )
+{
+  PlaylistItem *item =  playlistGetCursorItem( plst );
+
+  DBGMSG( "playlistIncrCursorPos %p: items %p->%p", plst, item, item?item->next:NULL );  
+
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &plst->mutex );
+
+/*------------------------------------------------------------------------*\
+    No successor?
+\*------------------------------------------------------------------------*/
+  if( !item || !item->next ) {
+    pthread_mutex_unlock( &plst->mutex );
+    return NULL;
+  } 
+
+/*------------------------------------------------------------------------*\
+    Set successor
+\*------------------------------------------------------------------------*/
+  plst->_cursorItem = item->next;
+
+/*------------------------------------------------------------------------*\
+    Return position in list (increment only if valid index is stored)
+\*------------------------------------------------------------------------*/
+  if( plst->_cursorPos>=0 )
+    plst->_cursorPos++;
+
+/*------------------------------------------------------------------------*\
+    Unlock mutex and return current item
+\*------------------------------------------------------------------------*/
+  pthread_mutex_unlock( &plst->mutex );
+  return plst->_cursorItem;
 }
 
 
@@ -385,7 +445,12 @@ json_t *playlistGetJSON( Playlist *plst, int offset, int count )
   json_t       *jResult = json_array();
   PlaylistItem *pItem   = playlistGetItem( plst, offset );
   
-  srvmsg( LOG_DEBUG, "playlistGetJSON: offset:%d count:%d", offset, count );  
+  DBGMSG( "playlistGetJSON %p: offset:%d count:%d", plst, offset, count );  
+
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &plst->mutex );
 
 /*------------------------------------------------------------------------*\
     A zero count argument means all
@@ -398,28 +463,31 @@ json_t *playlistGetJSON( Playlist *plst, int offset, int count )
 \*------------------------------------------------------------------------*/
   while( pItem && count-- ) {
     json_array_append(jResult, pItem->jItem);
-    // srvmsg( LOG_DEBUG, "playlistGetJSON: JSON refCnt=%d", pItem->jItem->refcount );
+    // DBGMSG( "playlistGetJSON: JSON refCnt=%d", pItem->jItem->refcount );
     pItem = pItem->next;
   }  
   
 /*------------------------------------------------------------------------*\
     Build header
 \*------------------------------------------------------------------------*/
-  jResult = json_pack( "{ss ss ss sf si si si so}",
+  jResult = json_pack( "{ss sf si si si so}",
                          "jsonrpc",      "2.0", 
-                         "playlistId",   plst->id,
-                         "playlistName", plst->name,
-                         /* "playlistPos",  plst->_cursorPos, */
                          "lastChanged",  plst->lastChange,
                          "count",        json_array_size(jResult),
                          "countAll",     playlistGetLength(plst),
                          "offset",       offset,
-                         "items",        jResult );   
+                         "items",        jResult );
+  // Name and ID are optional                       
+  if( plst->id )
+    json_object_set_new( jResult, "playlistId", json_string(plst->id) );
+  if( plst->name )
+    json_object_set_new( jResult, "playlistName", json_string(plst->name) );
                                                     
 /*------------------------------------------------------------------------*\
-    That's all
+    Unlock mutex and return
 \*------------------------------------------------------------------------*/
-  srvmsg( LOG_DEBUG, "playlistGetJSON: result %p", jResult ); 
+  pthread_mutex_unlock( &plst->mutex );
+  DBGMSG( "playlistGetJSON: result %p", jResult ); 
   return jResult;                       
 }
 
@@ -432,6 +500,11 @@ json_t *playlistGetJSON( Playlist *plst, int offset, int count )
 PlaylistItem *playlistGetItem( Playlist *plst, int pos )
 {
   PlaylistItem *item = plst->firstItem;
+
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &plst->mutex );
   
 /*------------------------------------------------------------------------*\
     Check for lower bound
@@ -446,11 +519,13 @@ PlaylistItem *playlistGetItem( Playlist *plst, int pos )
      item = item->next;
      
 /*------------------------------------------------------------------------*\
-    That's all
+    Unlock mutex and return
 \*------------------------------------------------------------------------*/
-  srvmsg( LOG_DEBUG, "playlistGetItem: %p", item );         
+  pthread_mutex_unlock( &plst->mutex );
+  DBGMSG( "playlistGetItem: %p", item );         
   return item;         
 }
+
 
 /*=========================================================================*\
        Get first item with a given ID
@@ -458,21 +533,25 @@ PlaylistItem *playlistGetItem( Playlist *plst, int pos )
 \*=========================================================================*/
 PlaylistItem *playlistGetItemById( Playlist *plst, const char *id )
 {
-  PlaylistItem *item = plst->firstItem;
-  
+  PlaylistItem *item;
+
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &plst->mutex );
+
 /*------------------------------------------------------------------------*\
     Loop over list and check Id
 \*------------------------------------------------------------------------*/
-  while( item ) {
+  for( item=plst->firstItem; item; item=item->next )
     if( !strcmp(item->id,id) )
       break;
-    item = item->next;
-  }
   
 /*------------------------------------------------------------------------*\
-    That's all
+    Unlock mutex and return
 \*------------------------------------------------------------------------*/
-  srvmsg( LOG_DEBUG, "playlistGetItemById(%s): %p", id, item );         
+  pthread_mutex_unlock( &plst->mutex );
+  DBGMSG( "playlistGetItemById(%s): %p", id, item );         
   return item;         
 }
 
@@ -499,24 +578,49 @@ PlaylistItem *playlistItemFromJSON( json_t *jItem )
     Keep instance of JSON object
 \*------------------------------------------------------------------------*/
   item->jItem = json_incref( jItem );
-  // srvmsg( LOG_DEBUG, "playlistItemFromJSON: JSON refCnt=%d", jItem->refcount );
+  // DBGMSG( "playlistItemFromJSON: JSON refCnt=%d", jItem->refcount );
 
 /*------------------------------------------------------------------------*\
     Extract id for quick access (weak ref.)
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( jItem, "id" );
-  if( !jObj ) {
+  if( !jObj || !json_is_string(jObj) ) {
     srvmsg( LOG_ERR, "playlistItemFromJSON: Missing field \"id\"!" );
     Sfree( item );
     json_decref( jItem );
     return NULL; 
   }
   item->id = json_string_value( jObj );   
+
+/*------------------------------------------------------------------------*\
+    Extract text for quick access (weak ref.)
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( jItem, "text" );
+  if( !jObj || !json_is_string(jObj) ) {
+    srvmsg( LOG_ERR, "playlistItemFromJSON: Missing field \"text\"!" );
+    Sfree( item );
+    json_decref( jItem );
+    return NULL; 
+  }
+  item->text = json_string_value( jObj );   
+
+/*------------------------------------------------------------------------*\
+    Extract streaming data list for quick access (weak ref.)
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( jItem, "streamingRefs" );
+  if( !jObj || !json_is_array(jObj) ) {
+    srvmsg( LOG_ERR, "playlistItemFromJSON: Missing field \"streamingRefs\"!" );
+    Sfree( item );
+    json_decref( jItem );
+    return NULL; 
+  }
+  item->jStreamingRefs = jObj;   
     
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/
-  srvmsg( LOG_DEBUG, "playlistItemFromJSON: %p id:%s", item, item->id ); 
+  DBGMSG( "playlistItemFromJSON: %p id:%s (%s)", 
+                     item, item->text, item->id ); 
   return item;     
 }
 
@@ -526,10 +630,10 @@ PlaylistItem *playlistItemFromJSON( json_t *jItem )
 \*=========================================================================*/
 void playlistItemDelete( PlaylistItem *pItem )
 {
-  srvmsg( LOG_DEBUG, "playlistItemDelete: %p refcnt=%d", pItem, pItem->jItem->refcount ); 
+  DBGMSG( "playlistItemDelete: %p refcnt=%d", pItem, pItem->jItem->refcount ); 
   /* {  
     char *out = json_dumps( pItem->jItem, JSON_PRESERVE_ORDER | JSON_COMPACT | JSON_ENSURE_ASCII );
-    srvmsg( LOG_DEBUG, "playlistItemDelete: %s", out );
+    DBGMSG( "playlistItemDelete: %s", out );
     free( out );
   } */
     
@@ -552,8 +656,13 @@ void playlistItemDelete( PlaylistItem *pItem )
 void playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem, 
                                             PlaylistItem *newItem )
 {
-  srvmsg( LOG_DEBUG, "playlistAddItemBefore: anchor:%p new:%p", anchorItem, newItem ); 
- 
+  DBGMSG( "playlistAddItemBefore: anchor:%p new:%p", anchorItem, newItem ); 
+
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &plst->mutex );
+
 /*------------------------------------------------------------------------*\
     Default
 \*------------------------------------------------------------------------*/
@@ -589,6 +698,11 @@ void playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem,
     Adjust timestamp
 \*------------------------------------------------------------------------*/
   plst->lastChange = srvtime();
+
+/*------------------------------------------------------------------------*\
+    Unlock mutex and return
+\*------------------------------------------------------------------------*/
+  pthread_mutex_unlock( &plst->mutex );
 }
 
 
@@ -599,7 +713,12 @@ void playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem,
 void playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem, 
                                            PlaylistItem *newItem )
 {
-   srvmsg( LOG_DEBUG, "playlistAddItemAfter: anchor:%p new:%p", anchorItem, newItem ); 
+   DBGMSG( "playlistAddItemAfter: anchor:%p new:%p", anchorItem, newItem ); 
+
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &plst->mutex );
 
 /*------------------------------------------------------------------------*\
     Default
@@ -636,6 +755,11 @@ void playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem,
     Adjust timestamp
 \*------------------------------------------------------------------------*/
   plst->lastChange = srvtime();    
+
+/*------------------------------------------------------------------------*\
+    Unlock mutex and return
+\*------------------------------------------------------------------------*/
+  pthread_mutex_unlock( &plst->mutex );
 }
 
 
@@ -648,7 +772,12 @@ void playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem,
 \*=========================================================================*/
 void playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem )
 {
-  srvmsg( LOG_DEBUG, "playlistUnlinkItem: %p", pItem ); 
+  DBGMSG( "playlistUnlinkItem: %p", pItem ); 
+
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &plst->mutex );
 
 /*------------------------------------------------------------------------*\
     Unlink item from list
@@ -674,6 +803,11 @@ void playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem )
     Adjust timestamp
 \*------------------------------------------------------------------------*/
   plst->lastChange = srvtime();    
+
+/*------------------------------------------------------------------------*\
+    Unlock mutex and return
+\*------------------------------------------------------------------------*/
+  pthread_mutex_unlock( &plst->mutex );
 }
 
 

@@ -50,16 +50,18 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef DEBUG
+// #undef DEBUG
 
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <jansson.h>
 #include <mpg123.h>
 
 #include "utils.h"
+#include "codec.h"
 #include "codecMpg123.h"
 
 
@@ -280,7 +282,8 @@ static int _codecAcceptInput( CodecInstance *instance, void *data, size_t length
       // Report real error 
       default:
         srvmsg( LOG_ERR, "mpg123: could not accept data (%ld bytes): %s", 
-                         (long)length, mpg123_plain_strerror(rc)  );
+                         (long)length, 
+                         rc==MPG123_ERR?mpg123_strerror(mh):mpg123_plain_strerror(rc) );
         return -1;
     }
   } while (rc!=MPG123_OK);
@@ -302,6 +305,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
 {
   mpg123_handle *mh = (mpg123_handle*)instance->instanceData;
   int            rc;
+  int            err = 0;
   
 /*------------------------------------------------------------------------*\
     Get data from decoder
@@ -311,7 +315,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
   rc = mpg123_read( mh, data, maxLength, realSize );  
   pthread_mutex_unlock( &instance->mutex );
   
-  DBGMSG( "mpg123: deleivered data (%ld/%ld bytes): %s", 
+  DBGMSG( "mpg123: delivered data (%ld/%ld bytes): %s", 
                      (long)*realSize, (long)maxLength, mpg123_plain_strerror(rc)  );
   
 /*------------------------------------------------------------------------*\
@@ -324,28 +328,44 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
       break;
       
     // Waiting for more data
-    case MPG123_NEED_MORE:   
-      break;	
+    // Ignore if not at end of input, else treat like MPG123_DONE
+    case MPG123_NEED_MORE:    
+     if( !instance->endOfInput )
+        break;
 
-    // Format detected or changed
+    // End of track: set status and call player callback
+    case MPG123_DONE:
+      instance->state = CodecEndOfTrack;
+      pthread_cond_signal( &instance->condEndOfTrack );		
+      break;
+              	
+    // Format detected or changed: inform player via call back
     case MPG123_NEW_FORMAT:
+      if( instance->metaCallback ) {
+      	AudioFormat format;
+      	json_t      *meta = NULL;
+      	// Collect data
+      	// Fixme...
+      	
+      	// and deliver...
+      	instance->metaCallback( (struct _codecinstance*)instance, &format, meta );
+      }	
       break;
 
-    // End of track: return positve result
-    case MPG123_DONE:
-      return 1;
-      
+
     // Report real error 
     default:
-      srvmsg( LOG_ERR, "mpg123: could not deliver data (max %ld bytes): %s", 
-                       (long)maxLength, mpg123_plain_strerror(rc)  );
-      return -1;	  	
+      srvmsg( LOG_ERR, "mpg123: could not deliver data (avail %ld bytes): %s", 
+                       (long)maxLength, 
+                       rc==MPG123_ERR?mpg123_strerror(mh):mpg123_plain_strerror(rc)  );
+      err = -1;	  	
+      break;
   }
 
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/  
-  return 0; 
+  return err; 
 }  
 
 

@@ -50,13 +50,16 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef DEBUG 
+// #undef DEBUG 
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <errno.h>
+#include <pthread.h>
+#include <sys/time.h>
+
 
 #include "utils.h"
 #include "audio.h"
@@ -195,10 +198,11 @@ CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format )
   }
 
 /*------------------------------------------------------------------------*\
-    Init mutex
+    Init mutex and conditions
 \*------------------------------------------------------------------------*/
   pthread_mutex_init( &instance->mutex, NULL );
-
+  pthread_cond_init( &instance->condEndOfTrack, NULL );
+  
 /*------------------------------------------------------------------------*\
     Create codec thread
 \*------------------------------------------------------------------------*/
@@ -235,6 +239,12 @@ int codecDeleteInstance(CodecInstance *instance, bool wait )
      pthread_join( instance->thread, NULL ); 
 
 /*------------------------------------------------------------------------*\
+    Delete mutex and conditions
+\*------------------------------------------------------------------------*/
+  pthread_mutex_destroy( &instance->mutex );
+  pthread_cond_destroy( &instance->condEndOfTrack );
+  
+/*------------------------------------------------------------------------*\
     Free header  
 \*------------------------------------------------------------------------*/
   Sfree( instance );
@@ -254,9 +264,89 @@ int codecFeedInput( CodecInstance *instance, void *data, size_t size, size_t *ac
   Codec *codec = instance->codec;
   
   DBGMSG( "codec %s input: %ld bytes", codec->name, (long)size );
+
+  // reset eoi flag
+  instance->endOfInput = 0;
   
   // Call codec function
   return codec->acceptInput( instance, data, size, accepted );
+}
+
+
+/*=========================================================================*\
+      Set end of input flag
+\*=========================================================================*/
+void codecSetEndOfInput( CodecInstance *instance )
+{
+#ifdef DEBUG	
+  Codec *codec = instance->codec;
+  DBGMSG( "codec %s: end of input", codec->name );
+#endif  
+  
+  // Set eoi flag
+  instance->endOfInput = 1;
+}
+
+
+/*=========================================================================*\
+      Wait for end of codec output
+        timeout is in ms, 0 or a negative values are treated as infinity
+        blocks and returns 0 if codec has ended
+               or std. errcode (ETIMEDOUT in case of timeout) otherwise
+\*=========================================================================*/
+int codecWaitForEnd( CodecInstance *instance, int timeout )
+{
+  struct timeval  now;
+  struct timespec abstime;
+  int             err = 0;
+
+  DBGMSG( "codec %p (%s): waiting for end: timeout %dms", 
+          instance, instance->codec->name, timeout ); 
+
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+   pthread_mutex_lock( &instance->mutex );
+  
+/*------------------------------------------------------------------------*\
+    Get absolut timestamp for timeout
+\*------------------------------------------------------------------------*/
+  if( timeout>0 ) {
+    gettimeofday( &now, NULL );
+    abstime.tv_sec  = now.tv_sec + timeout/1000;
+    abstime.tv_nsec = now.tv_usec*1000UL +(timeout%1000)*1000UL*1000UL;
+    if( abstime.tv_nsec>1000UL*1000UL*1000UL ) {
+      abstime.tv_nsec -= 1000UL*1000UL*1000UL;
+      abstime.tv_sec++;
+    }
+  }
+
+/*------------------------------------------------------------------------*\
+    Loop while condtion is not met (cope with "spurious  wakeups")
+\*------------------------------------------------------------------------*/
+  while( instance->state!=CodecTerminatedOk && instance->state!=CodecTerminatedError ) {
+
+    // wait for condition
+    err = timeout>0 ? pthread_cond_timedwait( &instance->condEndOfTrack, &instance->mutex, &abstime )
+                    : pthread_cond_wait( &instance->condEndOfTrack, &instance->mutex );
+    
+    // Break on errors
+    if( err )
+      break; 
+  }
+
+/*------------------------------------------------------------------------*\
+    Unlock mutex
+\*------------------------------------------------------------------------*/
+  pthread_mutex_unlock( &instance->mutex );
+
+  DBGMSG( "codec %p (%s): waiting for end: %s", 
+          instance, instance->codec->name, strerror(err) ); 
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  return err;
 }
 
 
@@ -314,7 +404,7 @@ static void *_codecThread( void *arg )
     Thread main loop  
 \*------------------------------------------------------------------------*/
   instance->state = CodecRunning;
-  while( instance->state==CodecRunning) {
+  while( instance->state==CodecRunning ) {
     int    rc;
     size_t size = 0;
     
@@ -347,13 +437,6 @@ static void *_codecThread( void *arg )
   	  break;
   	}
   	
-  	// Normal end of input?
-  	if( rc>0 ) {                  
-      DBGMSG( "Codec thread: end of track, terminating" );
-  	  instance->state = CodecTerminatedOk;
-  	  break;
-  	}
-  	
   }  // End of: Thread main loop
  
 /*------------------------------------------------------------------------*\
@@ -365,17 +448,14 @@ static void *_codecThread( void *arg )
   	instance->state = CodecTerminatedError;
   	return NULL;
   }
+
+  DBGMSG( "Codec thread: terminated due to state %d", instance->state );
   
 /*------------------------------------------------------------------------*\
     Fulfilled external termination request without error?  
 \*------------------------------------------------------------------------*/
-  if( instance->state==CodecTerminating )
+  if( instance->state==CodecTerminating || instance->state==CodecEndOfTrack  )
     instance->state = CodecTerminatedOk;   
-
-/*------------------------------------------------------------------------*\
-    Delete mutex
-\*------------------------------------------------------------------------*/
-  pthread_mutex_destroy( &instance->mutex );
 
 /*------------------------------------------------------------------------*\
     That's it ...  

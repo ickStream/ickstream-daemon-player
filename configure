@@ -33,7 +33,6 @@ debug=0
 while test $# -gt 0; do 
   if test "$1" = "debug"; then
     debug=1
-    echo debugging enabled.
   else 
     echo "unknown parameter $1"
     exit 1
@@ -52,18 +51,19 @@ mchname=`uname -n`
 
 # generic parameters 
 CC="cc"
-CFLAGS="-Wall -DALSA"
-LDFLAGS="-g -rdynamic"
+CFLAGS="-Wall"
+LDFLAGS="-rdynamic"
 RANLIB="ranlib"
 INCLUDES=""
-EXTRALIBS="-lasound"
+EXTRALIBS=""
+EXTRASRCS=""
 
 case $systype-$reltype-$mchname in
 
   Linux-*)
     echo "this seems to be a Linux machine, fine."
     if test $debug = 1; then
-      CFLAGS="-g -pipe -Wall"
+      CFLAGS="-g -pipe -Wall -DDEBUG"
       LDFLAGS="-g -rdynamic"
     else
       CFLAGS="-pipe -Wall"
@@ -76,7 +76,7 @@ case $systype-$reltype-$mchname in
 	echo "ickstream team. We'll proceed with generic settings."
 	echo "Feel free to add optimized settings for $systype-$reltype-$mchname"
     if test $debug = 1; then
-      CFLAGS="-g $CFLAGS"
+      CFLAGS="-g $CFLAGS -DDEBUG"
       LDFLAGS="-g $LDFLAGS"    
     fi
     ;;
@@ -97,9 +97,9 @@ for path in $PATH; do
 done
 IFS="${saveIFS}"
 if test $MAKEDEPEND = 'true'; then
-  echo not found.
+  echo not found
 else
-  echo found.
+  echo found
 fi
 
 
@@ -128,13 +128,37 @@ ICK_ROOT=$_ICK_ROOT
 
 
 # ----------------------------------------
-echo -n 'Check for alsa                  : '
-if ldconfig -p | grep libasound -q; then
-  CFLAGS="$CFLAGS -DALSA"
-  echo 'found.'
+echo -n 'Check for cURL                  : '
+if ldconfig -p | grep "libcurl\." -q; then
+  echo "found `curl-config --version`"
+  #broken in curl-config:  CFLAGS="$CFLAGS `curl-config --cflags`"
+  #don't need -L part:     EXTRALIBS="$EXTRALIBS `curl-config --libs`"
+  EXTRALIBS="$EXTRALIBS -lcurl"
 else
-  echo 'not found.'
+  echo 'please install libcurl and retry...'
+  exit 1
+fi
 
+# ----------------------------------------
+echo -n 'Check for alsa                  : '
+if ldconfig -p | grep "libasound\." -q; then
+  CFLAGS="$CFLAGS -DALSA"
+  EXTRASRCS="$EXTRASRCS alsa.c"
+  EXTRALIBS="$EXTRALIBS -lasound"
+  echo 'found'
+else
+  echo 'not found'
+fi
+
+# ----------------------------------------
+echo -n 'Check for mpg123                : '
+if ldconfig -p | grep "libmpg123\." -q; then
+  CFLAGS="$CFLAGS -DMPG123"
+  EXTRASRCS="$EXTRASRCS codecMpg123.c"
+  EXTRALIBS="$EXTRALIBS -lmpg123"
+  echo 'found'
+else
+  echo 'not found'
 fi
 
 
@@ -149,8 +173,16 @@ done
 CONFIG_INFO="# DO NOT EDIT (generated on `date` by $PWD/configure)"
 
 # ----------------------------------------
+echo -n 'Debugging                       : ' 
+if test $debug = 1; then
+  echo enabled
+else
+  echo disabled
+fi
 echo 'Used compiler flags             :' $CFLAGS
 echo 'Used linker flags               :' $LDFLAGS
+echo 'Used extra sources              :' $EXTRASRCS
+echo 'Used extra libs                 :' $EXTRALIBS
 
 
 echo '------------------- '
@@ -170,6 +202,7 @@ sed -e 's,@cinfo@,$CONFIG_INFO,g' \\
     -e 's,@ranlib@,$RANLIB,g' \\
     -e 's,@cc@,$CC,g' \\
     -e 's,@extralibs@,$EXTRALIBS,g' \\
+    -e 's,@extrasrcs@,$EXTRASRCS,g' \\
     -e 's,@cflags@,$CFLAGS,g' \\
     -e 's,@makedepend@,$MAKEDEPEND,g' \\
     -e 's,@ldflags@,$LDFLAGS,g' \\

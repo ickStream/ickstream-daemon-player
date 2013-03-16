@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef DEBUG
+// #undef DEBUG
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -245,6 +245,12 @@ static void *_feederThread( void *arg )
     Terminate curl  
 \*------------------------------------------------------------------------*/
   curl_easy_cleanup( feed->curlHandle );
+
+/*------------------------------------------------------------------------*\
+    Signal end of input to codec
+\*------------------------------------------------------------------------*/
+  if( feed->codecInstance )
+    codecSetEndOfInput( feed->codecInstance );
 
 /*------------------------------------------------------------------------*\
     That's it ...  

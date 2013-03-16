@@ -52,8 +52,9 @@ Remarks         : -
 /*=========================================================================*\
 	Includes needed by definitions from this file
 \*=========================================================================*/
-#include <stdbool.h>
+#include <pthread.h>
 #include <jansson.h>
+
 
 /*========================================================================n
    Some definitions
@@ -66,7 +67,9 @@ typedef struct _playlistItem {
   struct _playlistItem *next;
   struct _playlistItem *prev;
   json_t               *jItem;
-  const char           *id;             // weak
+  const char           *id;               // weak
+  const char           *text;             // weak
+  json_t               *jStreamingRefs;   // weak
 } PlaylistItem;
 
 /*------------------------------------------------------------------------*\
@@ -81,6 +84,7 @@ typedef struct {
   PlaylistItem     *_cursorItem;
   PlaylistItem     *firstItem;
   PlaylistItem     *lastItem;
+  pthread_mutex_t   mutex;
 } Playlist;
 
 
@@ -95,6 +99,7 @@ typedef struct {
 \*========================================================================*/
 
 Playlist     *playlistNew( void );
+Playlist     *playlistFromJSON( json_t *jObj );
 void          playlistDelete( Playlist *plst );
 void          playlistSetId( Playlist *plst, const char *id );
 void          playlistSetName( Playlist *plst, const char *name );
@@ -104,6 +109,7 @@ int           playlistGetLength( Playlist *plst );
 double        playlistGetLastChange( Playlist *plst );
 int           playlistGetCursorPos( Playlist *plst );
 int           playlistSetCursorPos( Playlist *plst, int pos );
+PlaylistItem *playlistIncrCursorItem( Playlist *plst );
 
 json_t       *playlistGetJSON( Playlist *plst, int offset, int count );
 
@@ -116,9 +122,6 @@ PlaylistItem *playlistGetCursorItem( Playlist *plst );
 void          playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem, PlaylistItem *newItem );
 void          playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem, PlaylistItem *newItem );
 void          playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem );
-
-Playlist     *playlistGetPlayerQueue( void );
-void          playlistFreePlayerQueue( bool usePersistence );
 
 #endif  /* __PLAYLIST_H */
 

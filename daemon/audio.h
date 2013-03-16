@@ -53,26 +53,96 @@ Remarks         : -
 	Includes needed by definitions from this file
 \*=========================================================================*/
 #include <stdbool.h>
+#include "fifo.h"
 
 /*=========================================================================*\
-       Global symbols 
+       Constants 
 \*=========================================================================*/
-int    audioInit( const char *deviceName );
-void   audioShutdown( void );
-
-int    audioGetDeviceList( char ***deviceListPtr, char ***descrListPtr );
-void   audioFreeStringList( char **stringList );
-int    audioUseDevice( const char *device );
+#define AudioFifoDefaultSize 8192
 
 
-double audioGetVolume( void ); 
-double audioSetVolume( double volume );
-bool   audioGetMuting( void );
-bool   audioSetMuting( bool mute );
-double audioGetLastChange( void );
+/*=========================================================================*\
+       Macro and type definitions 
+\*=========================================================================*/
+struct  _audioBackend;
 
-bool   audioGetPlayingState( void );
-double audioGetSeekPos( void );
+typedef struct _audioFormat {
+  int             sampleRate;
+  int             channels;
+} AudioFormat;
+
+typedef enum {
+  AudioDrain,
+  AudioDrop,
+  AudioForce
+} AudioTermMode;
+
+typedef enum {
+  AudioIfInitialized,
+  AudioIfRunning,
+  AudioIfTerminating,
+  AudioIfTerminatedOk,
+  AudioIfTerminatedError
+} AudioIfState;
+
+typedef struct _audioIf {
+  AudioIfState                  state;
+  const struct _audioBackend   *backend;          // weak
+  char                         *devName;          // strong
+  Fifo                         *fifoIn;           // strong
+  AudioFormat                   format;
+  bool                          canPause;
+  int                           framesize;
+  pthread_t                     thread;
+  void                         *ifData;           // handled by individual backend
+} AudioIf;
+
+typedef int    (*AudioBackendInit)( void );
+typedef int    (*AudioBackendShutdown)( AudioTermMode mode );
+typedef int    (*AudioBackendGetDevs)( char ***deviceListPtr, char ***descrListPtr );
+typedef int    (*AudioIfNew)( AudioIf *aif, const char *device );
+typedef int    (*AudioIfDelete)( AudioIf *aif, AudioTermMode mode );
+typedef int    (*AudioIfPlay)( AudioIf *aif, AudioFormat *format );
+typedef int    (*AudioIfStop)( AudioIf *aif, AudioTermMode mode );
+typedef int    (*AudioIfPause)( AudioIf *aif, bool pause );
+
+
+typedef struct _audioBackend {
+  struct _audioBackend *next;
+  char                 *name;
+  AudioBackendInit      init;              // optional
+  AudioBackendShutdown  shutdown;          // optional
+  AudioBackendGetDevs   getDevices;
+  AudioIfNew            newIf;             
+  AudioIfDelete         deleteIf;
+  AudioIfPlay           play;
+  AudioIfStop           stop;
+  AudioIfPause          pause;             // optional
+} AudioBackend;
+
+
+
+/*=========================================================================*\
+       Prototypes 
+\*=========================================================================*/
+int                 audioInit( const char *deviceName );
+void                audioShutdown( AudioTermMode mode );
+int                 audioRegister( AudioBackend *audioBackend );
+const AudioBackend *audioBackendsRoot( void );
+const AudioBackend *audioBackendByDeviceString( const char *str, const char **device );
+int                 audioGetDeviceList( const AudioBackend *backend, char ***deviceListPtr, char ***descrListPtr );
+void                audioFreeStringList( char **stringList );
+int                 audioCheckDevice( const char *device );
+
+const char         *audioFormatStr( AudioFormat *format );
+int                 audioFormatCompare( AudioFormat *format1, AudioFormat *format2 );
+
+AudioIf            *audioIfNew( const AudioBackend *backend, const char *device );
+int                 audioIfDelete( AudioIf *aif, AudioTermMode mode );
+Fifo               *audioIfPlay( AudioIf *aif, AudioFormat *format );
+int                 audioIfStop( AudioIf *aif, AudioTermMode mode );
+int                 audioIfSetPause( AudioIf *aif, bool pause );
+
 
 #endif  /* __AUDIO_H */
 

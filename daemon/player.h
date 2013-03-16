@@ -52,17 +52,39 @@ Remarks         : -
 /*=========================================================================*\
 	Includes needed by definitions from this file
 \*=========================================================================*/
-// none
+#include <stdbool.h>
+#include "playlist.h"
+
+
+
+/*=========================================================================*\
+       Macro and type definitions 
+\*=========================================================================*/
+typedef enum {
+  PlayerStateStop,	
+  PlayerStatePlay,
+  PlayerStatePause
+} PlayerState;
 
 /*=========================================================================*\
        Global symbols 
 \*=========================================================================*/
 // none
 
+
 /*=========================================================================*\
        Prototypes 
 \*=========================================================================*/
+
+int         playerInit( void );
 void        playerShutdown( void );
+Playlist   *playerGetQueue( void );
+void        playerResetQueue( void );
+PlayerState playerGetState( void );
+int         playerSetState( PlayerState state );
+double      playerGetLastChange( void );
+
+
 void        playerSetUUID( const char *name );
 void        playerSetName( const char *name );
 void        playerSetInterface( const char *name );
@@ -76,6 +98,14 @@ const char *playerGetInterface( void );
 const char *playerGetAudioDevice( void );
 const char *playerGetModel( void );
 const char *playerGetToken( void );
+
+double      playerGetVolume( void ); 
+double      playerSetVolume( double volume );
+bool        playerGetMuting( void );
+bool        playerSetMuting( bool mute );
+
+double      playerGetSeekPos( void );
+
 
 #endif  /* __PLAYER_H */
 

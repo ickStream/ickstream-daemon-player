@@ -52,41 +52,19 @@ Remarks         : -
 /*=========================================================================*\
 	Includes needed by definitions from this file
 \*=========================================================================*/
-#include "stdio.h"
-#include "syslog.h"
+// none
+
 
 /*=========================================================================*\
         General constants
 \*=========================================================================*/
-#define ICKPD_VERSION      0.01
-#define ICKPD_PROTOVER     0.01
-#define SRV_DEFPORT        15244
+#define ICKPD_VERSION      0.02
 
-/*=========================================================================*\
-       Global symbols 
-\*=========================================================================*/
-extern int  srvloglevel;         /* log level */
-
-
-/*========================================================================n
-   Prototypes (utitlities)
-\*========================================================================*/
-double srvtime( void );
 
 /*========================================================================n
    Some definitions
 \*========================================================================*/
 
-#define srvmsg(prio, args...) { if( srvloglevel>=(prio) ) {\
-                                  syslog((prio), args); \
-                                  fprintf(((prio)<LOG_INFO)?stderr:stdout, args);\
-                                  fprintf(((prio)<LOG_INFO)?stderr:stdout, "\n");\
-                              }}
-
-#define Sfree(p) ((p)?free(p),(p)=NULL:NULL)
-
-#define MAX(a,b) ((a)>(b)?(a):(b))
-#define MIN(a,b) ((a)<(b)?(a):(b))
 
 #endif  /* __ICKPD_H */
 
