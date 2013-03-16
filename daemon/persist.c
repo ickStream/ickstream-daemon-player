@@ -102,7 +102,7 @@ int persistSetFilename( const char *name )
     return -1;
 
 /*------------------------------------------------------------------------*\
-    Create empty repository if nevessary
+    Create empty repository if necessary
 \*------------------------------------------------------------------------*/
   if( !jRepository )
     jRepository = json_object();
@@ -387,7 +387,7 @@ const char *persistGetString( const char *key )
     return string value as reference
 \*------------------------------------------------------------------------*/
   const char *value = json_string_value( jObj );
-  DBGMSG( "persistGetString: (%s)=\"%s\"", key, value?value:"" ); 
+  DBGMSG( "persistGetString: (%s)=\"%s\"", key, value?value:"(null)" );
   return value;
 }
 

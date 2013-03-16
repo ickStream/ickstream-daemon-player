@@ -509,7 +509,7 @@ static void *_ifThread( void *arg )
     snd_pcm_sframes_t frames = MIN( frames_writable, frames_readable );
 
     // Do transfer the data
-    DBGMSG( "Alsa thread: writing %d frames", frames );
+    DBGMSG( "Alsa thread: writing %ld frames", (long)frames );
     rc = snd_pcm_writei( pcm, aif->fifoIn->readp, frames );		
     if( rc==-EPIPE || rc==-ESTRPIPE ){
       rc = snd_pcm_recover( pcm, rc, 0 ); 

@@ -100,9 +100,10 @@ json_t *_jPlayerStatus( void );
 /*=========================================================================*\
        Handle messages for this device 
 \*=========================================================================*/
-void ickMessage( const char *szDeviceId, const void *message, 
+void ickMessage( const char *szDeviceId, const void *iMessage, 
                  size_t messageLength, enum ickMessage_communicationstate state )
 {
+  char         *message;
   json_t       *jRoot,
                *jObj,
                *jParams,
@@ -113,7 +114,19 @@ void ickMessage( const char *szDeviceId, const void *message,
   bool          playlistChanged = 0;
   double        playerStateTimestamp = playerGetLastChange();
 
-  DBGMSG( "ickMessage from %s: %s", szDeviceId, (const char *)message );
+  // DBGMSG( "ickMessage from %s: %ld bytes", szDeviceId, (long)messageLength );
+
+/*------------------------------------------------------------------------*\
+    Get a standard terminated string out of buffer
+\*------------------------------------------------------------------------*/
+  message = malloc( messageLength+1 );
+  if( !message ) {
+    srvmsg( LOG_ERR, "ickMessage: out of memory" );
+    return;
+  }
+  strncpy( message, iMessage, messageLength );
+  message[messageLength] = 0;
+  DBGMSG( "ickMessage from %s: %s", szDeviceId, message );
 
 /*------------------------------------------------------------------------*\
     Init JSON interpreter
@@ -122,15 +135,17 @@ void ickMessage( const char *szDeviceId, const void *message,
   if( !jRoot ) {
     srvmsg( LOG_ERR, "ickMessage from %s: currupt line %d: %s", 
                      szDeviceId, error.line, error.text );
+    Sfree( message );
     return;
   }
   if( !json_is_object(jRoot) ) {
   	srvmsg( LOG_ERR, "ickMessage from %s: could not parse to object: %s", 
-  	                 szDeviceId, (const char *)message );
+  	                 szDeviceId, message );
     json_decref( jRoot );
+    Sfree( message );
     return;
   } 
-  DBGMSG( "ickMessage from %s: parsed.", szDeviceId );
+  // DBGMSG( "ickMessage from %s: parsed.", szDeviceId );
   
 /*------------------------------------------------------------------------*\
     Get request ID
@@ -138,11 +153,12 @@ void ickMessage( const char *szDeviceId, const void *message,
   requestId = json_object_get( jRoot, "id" );
   if( !requestId ) {
     srvmsg( LOG_ERR, "ickMessage from %s contains no id: %s", 
-                     szDeviceId, (const char *)message );
+                     szDeviceId, message );
     json_decref( jRoot );
+    Sfree( message );
     return;
   }
-  DBGMSG( "ickMessage from %s: found id.", szDeviceId );
+  // DBGMSG( "ickMessage from %s: found id.", szDeviceId );
   
 /*------------------------------------------------------------------------*\
     Check for result field: this is an answer to a command we've issued
@@ -158,14 +174,15 @@ void ickMessage( const char *szDeviceId, const void *message,
     else if( json_is_string(requestId) ) {
 #ifdef DEBUG    	
       srvmsg( LOG_WARNING, "ickMessage from %s returned id as string: %s", 
-                            szDeviceId, (const char *)message );
+                            szDeviceId, message );
 #endif                            
       id = atoi( json_string_value(requestId) );                
     }
     else {
       srvmsg( LOG_WARNING, "ickMessage from %s returned id in unknown format: %s", 
-                            szDeviceId, (const char *)message );
+                            szDeviceId, message );
       json_decref( jRoot );
+      Sfree( message );
       return;
     }
       
@@ -186,13 +203,14 @@ void ickMessage( const char *szDeviceId, const void *message,
     // Orphaned result?
     else 
       srvmsg( LOG_WARNING, "Found no open request for ickMessage from %s : %s", 
-                           szDeviceId, (const char *)message );
+                           szDeviceId, message );
 
     // Clean up and take the chance to check for timedout requests
     json_decref( jRoot ); 
     _timeoutOpenRequest( 60 );
 
     // That's all for processing results
+    Sfree( message );
     return;
   }
   
@@ -202,8 +220,9 @@ void ickMessage( const char *szDeviceId, const void *message,
   jObj = json_object_get( jRoot, "method" );
   if( !jObj || !json_is_string(jObj) ) {
     srvmsg( LOG_ERR, "ickMessage from %s contains neither method or result: %s", 
-                     szDeviceId, (const char *)message );
+                     szDeviceId, message );
     json_decref( jRoot );
+    Sfree( message );
     return;
   }
   method = json_string_value( jObj );
@@ -212,8 +231,9 @@ void ickMessage( const char *szDeviceId, const void *message,
   jParams = json_object_get( jRoot, "params" );
   if( !jParams || !json_is_object(jParams) ) {
     srvmsg( LOG_ERR, "ickMessage from %s contains no parameters: %s", 
-                     szDeviceId, (const char *)message );
+                     szDeviceId, message );
     json_decref( jRoot );
+    Sfree( message );
     return;
   }
 
@@ -271,8 +291,9 @@ void ickMessage( const char *szDeviceId, const void *message,
     jObj = json_object_get( jParams, "playlistPos" );
     if( !jObj || !json_is_integer(jObj) )  {
       srvmsg( LOG_ERR, "ickMessage from %s: missing field \"playlistPos\": %s", 
-                       szDeviceId, (const char *)message );
+                       szDeviceId, message );
       json_decref( jRoot );
+      Sfree( message );
       return;
     }
     offset = json_integer_value( jObj );
@@ -298,8 +319,9 @@ void ickMessage( const char *szDeviceId, const void *message,
     jObj = json_object_get( jParams, "playing" );
     if( !jObj || !json_is_boolean(jObj) )  {
       srvmsg( LOG_ERR, "ickMessage from %s: missing field \"playing\": %s", 
-                       szDeviceId, (const char *)message );
+                       szDeviceId, message );
       json_decref( jRoot );
+      Sfree( message );
       return;
     }
     newState = json_is_true(jObj) ? PlayerStatePlay : PlayerStatePause;
@@ -388,8 +410,9 @@ void ickMessage( const char *szDeviceId, const void *message,
     jObj = json_object_get( jParams, "playlistId" );
     if( !jObj || !json_is_string(jObj) )  {
       srvmsg( LOG_ERR, "ickMessage from %s: missing field \"playlistId\": %s", 
-                       szDeviceId, (const char *)message );
+                       szDeviceId, message );
       json_decref( jRoot );
+      Sfree( message );
       return;
     }
     id = json_string_value( jObj );
@@ -398,8 +421,9 @@ void ickMessage( const char *szDeviceId, const void *message,
     jObj = json_object_get( jParams, "playlistName" );
     if( !jObj || !json_is_string(jObj) ) {
       srvmsg( LOG_ERR, "ickMessage from %s: missing field \"playlistName\": %s", 
-                       szDeviceId, (const char *)message );
+                       szDeviceId, message );
       json_decref( jRoot );
+      Sfree( message );
       return;
     }
     name = json_string_value( jObj );
@@ -446,8 +470,9 @@ void ickMessage( const char *szDeviceId, const void *message,
     jItems = json_object_get( jParams, "items" );
     if( !jItems || !json_is_array(jItems) ) {
       srvmsg( LOG_ERR, "ickMessage from %s: missing field \"items\": %s", 
-                       szDeviceId, (const char *)message );
+                       szDeviceId, message );
       json_decref( jRoot );
+      Sfree( message );
       return;
     }
     
@@ -459,7 +484,7 @@ void ickMessage( const char *szDeviceId, const void *message,
       PlaylistItem *pItem = playlistItemFromJSON( jItem );
       if( !pItem ) {
         srvmsg( LOG_ERR, "ickMessage from %s: could not parse item #%d: %s",
-                       szDeviceId, i+1, (const char *)message );
+                       szDeviceId, i+1, message );
       } 
 
       // Add new item to playlist before anchor 
@@ -492,8 +517,9 @@ void ickMessage( const char *szDeviceId, const void *message,
     jItems = json_object_get( jParams, "items" );
     if( !jItems || !json_is_array(jItems) ) {
       srvmsg( LOG_ERR, "ickMessage from %s: missing field \"items\": %s", 
-                       szDeviceId, (const char *)message );
+                       szDeviceId, message );
       json_decref( jRoot );
+      Sfree( message );
       return;
     }
     
@@ -507,7 +533,7 @@ void ickMessage( const char *szDeviceId, const void *message,
       jObj = json_object_get( jItem, "id" );
       if( !jObj || !json_is_string(jObj) ) {
         srvmsg( LOG_ERR, "ickMessage from %s: item missing field \"id\": %s", 
-                       szDeviceId, (const char *)message );
+                       szDeviceId, message );
         continue;
       }              
       id = json_string_value( jObj );
@@ -519,7 +545,7 @@ void ickMessage( const char *szDeviceId, const void *message,
         pItem      = playlistGetItem( plst, pos );
         if( pItem && strcmp(id,pItem->id) ) {
           srvmsg( LOG_WARNING, "ickMessage from %s: item id differs from id at explicite position: %s", 
-                       szDeviceId, (const char *)message );
+                       szDeviceId, message );
         }
         if( pItem ) { 
           playlistUnlinkItem( plst, pItem );
@@ -527,7 +553,7 @@ void ickMessage( const char *szDeviceId, const void *message,
         }
         else
           srvmsg( LOG_WARNING, "ickMessage from %s: cannot remove item @%d: %s", 
-                       szDeviceId, pos, (const char *)message );        
+                       szDeviceId, pos, message );        
       }
       
       // Remove all items with this ID
@@ -572,8 +598,9 @@ void ickMessage( const char *szDeviceId, const void *message,
     jItems = json_object_get( jParams, "items" );
     if( !jItems || !json_is_array(jItems) ) {
       srvmsg( LOG_ERR, "ickMessage from %s: missing field \"items\": %s", 
-                       szDeviceId, (const char *)message );
+                       szDeviceId, message );
       json_decref( jRoot );
+      Sfree( message );
       return;
     }
     
@@ -583,6 +610,7 @@ void ickMessage( const char *szDeviceId, const void *message,
     if( !pItems ) {
       srvmsg( LOG_ERR, "ickMessage: out of memory" );
       json_decref( jRoot );
+      Sfree( message );
       return;
     }
     
@@ -597,7 +625,7 @@ void ickMessage( const char *szDeviceId, const void *message,
       jObj = json_object_get( jItem, "playlistPos" );
       if( !jObj || !json_is_integer(jObj) ) {
         srvmsg( LOG_ERR, "ickMessage from %s: item missing field \"playlistPos\": %s", 
-                       szDeviceId, (const char *)message );
+                       szDeviceId, message );
         continue;
       } 
       pos   = json_integer_value( jObj );
@@ -606,7 +634,7 @@ void ickMessage( const char *szDeviceId, const void *message,
       pItem = playlistGetItem( plst, pos );
       if( !pItem ) {
         srvmsg( LOG_WARNING, "ickMessage from %s: cannot remove item @%d: %s", 
-                        szDeviceId, pos, (const char *)message );
+                        szDeviceId, pos, message );
         continue;
       }
 
@@ -614,7 +642,7 @@ void ickMessage( const char *szDeviceId, const void *message,
       jObj = json_object_get( jItem, "id" );
       if( !jObj || !json_is_string(jObj) ) {
         srvmsg( LOG_ERR, "ickMessage from %s: item missing field \"id\": %s", 
-                       szDeviceId, (const char *)message );
+                       szDeviceId, message );
         continue;
       }              
       id = json_string_value( jObj );
@@ -622,7 +650,7 @@ void ickMessage( const char *szDeviceId, const void *message,
       // Be defensive
       if( strcmp(id,pItem->id) ) {
         srvmsg( LOG_WARNING, "ickMessage from %s: item id differs from id at explicite position: %s", 
-                              szDeviceId, (const char *)message );
+                              szDeviceId, message );
       }
 
       // Be pranoid: check for doubles since unlinking is not stable against double calls
@@ -633,7 +661,7 @@ void ickMessage( const char *szDeviceId, const void *message,
       }
       if( found ) {
         srvmsg( LOG_WARNING, "ickMessage from %s: doubles in item list (playlist pos %d): %s", 
-                              szDeviceId, pos, (const char *)message );
+                              szDeviceId, pos, message );
         continue;                      
       }
       
@@ -676,8 +704,9 @@ void ickMessage( const char *szDeviceId, const void *message,
     jObj = json_object_get( jParams, "playerName" );
     if( !jObj || !json_is_string(jObj) ) {
       srvmsg( LOG_ERR, "ickMessage from %s: item missing field \"playerName\": %s", 
-                       szDeviceId, (const char *)message );
+                       szDeviceId, message );
       json_decref( jRoot );
+      Sfree( message );
       return;
     } 
     const char *name = json_string_value( jObj );
@@ -686,8 +715,9 @@ void ickMessage( const char *szDeviceId, const void *message,
     jObj = json_object_get( jParams, "accessToken" );
     if( !jObj || !json_is_string(jObj) ) {
       srvmsg( LOG_ERR, "ickMessage from %s: item missing field \"accessToken\": %s", 
-                       szDeviceId, (const char *)message );
+                       szDeviceId, message );
       json_decref( jRoot );
+      Sfree( message );
       return;
     } 
     const char *token = json_string_value( jObj );
@@ -706,13 +736,17 @@ void ickMessage( const char *szDeviceId, const void *message,
     Report player configuration
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"getPlayerConfiguration") ) {
+    const char *hwid;
   	
-  	// compile result 
-    jResult = json_pack( playerGetHWID()?"{ssssss}":"{ssss}",
+    // compile result 
+    jResult = json_pack( "{ssss}",
                          "playerName",  playerGetName(), 
-                         "playerModel", playerGetModel(),
-                         "hardwareId",  playerGetHWID() );
-
+                         "playerModel", playerGetModel() );
+    
+    // Append hardware id if available
+    hwid = playerGetHWID();
+    if( hwid ) 
+      json_object_set_new( jResult, "hardwareId", json_string(hwid) );
   }  
   
 /*------------------------------------------------------------------------*\
@@ -742,7 +776,6 @@ void ickMessage( const char *szDeviceId, const void *message,
   if( playlistChanged )
     ickMessageNotifyPlaylist();
 
-    
 /*------------------------------------------------------------------------*\
    Broadcast changes in player state
 \*------------------------------------------------------------------------*/
@@ -754,9 +787,10 @@ void ickMessage( const char *szDeviceId, const void *message,
 
   
 /*------------------------------------------------------------------------*\
-    Clean up: Free JSON message object and check for timedout requsts
+    Clean up: Free JSON message object and check for timedout requests
 \*------------------------------------------------------------------------*/
   json_decref( jRoot );  
+  Sfree( message );
   _timeoutOpenRequest( 60 );
 }
 

@@ -63,7 +63,8 @@ Remarks         : -
 /*=========================================================================*\
 	Global symbols
 \*=========================================================================*/
-int    srvloglevel = LOG_NOTICE;
+int    streamloglevel = LOG_NOTICE;
+int    sysloglevel = LOG_ALERT;
 
 /*=========================================================================*\
 	Private symbols
@@ -78,12 +79,6 @@ void _srvlog( const char *file, int line,  int prio, const char *fmt, ... )
 {
 	
 /*------------------------------------------------------------------------*\
-    Do nothing if prio is too low
-\*------------------------------------------------------------------------*/
-  if( srvloglevel<prio )
-    return;
-    
-/*------------------------------------------------------------------------*\
     Init arguments, lock mutex
 \*------------------------------------------------------------------------*/
   pthread_mutex_lock( &loggerMutex );
@@ -91,24 +86,30 @@ void _srvlog( const char *file, int line,  int prio, const char *fmt, ... )
   va_start( a_list, fmt );
   
 /*------------------------------------------------------------------------*\
-    select stream due to priority
+   Log to stream 
 \*------------------------------------------------------------------------*/
-  // FILE *f = (prio<LOG_INFO) ? stderr : stdout;
-  FILE *f = stderr;
+  if( prio<=streamloglevel) {
+
+    // select stream due to priority
+    FILE *f = (prio<LOG_INFO) ? stderr : stdout;
   
-/*------------------------------------------------------------------------*\
-    prepend location to message (if available)
-\*------------------------------------------------------------------------*/
-  if( file )
-    fprintf( f, "%.4f [%p] %s,%d: ", srvtime(), (void*)pthread_self(), file, line );
-  vfprintf( f, fmt, a_list);
-  fprintf( f, "\n");
-  fflush( f );
+    // prepend location to message (if available)
+    if( file )
+      fprintf( f, "%.4f [%p] %s,%d: ", srvtime(), (void*)pthread_self(), file, line );
+
+    // the message itself
+    vfprintf( f, fmt, a_list );
+  
+    // New line and flush stream buffer
+    fprintf( f, "\n" );
+    fflush( f );
+  }
 
 /*------------------------------------------------------------------------*\
-    use syslog facility
+    use syslog facility, hide debugging messages from syslog
 \*------------------------------------------------------------------------*/
-  vsyslog( prio, fmt, a_list );
+  if( prio<=sysloglevel &&  prio<DEBUG)
+    vsyslog( prio, fmt, a_list );
   
 /*------------------------------------------------------------------------*\
     Clean variable argument list, unlock mutex

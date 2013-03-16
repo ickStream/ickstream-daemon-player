@@ -67,6 +67,7 @@ Remarks         : -
 
 #ifdef DEBUG
 #define DBGMSG( args... ) _srvlog( __FILE__, __LINE__, LOG_DEBUG, args )
+//#define DBGMSG( args... ) printf( args );
 #else
 #define DBGMSG( args... ) { ;}
 #endif
@@ -84,7 +85,8 @@ Remarks         : -
 /*=========================================================================*\
        Global symbols 
 \*=========================================================================*/
-extern int  srvloglevel;
+extern int  streamloglevel;
+extern int  sysloglevel;
 
 
 /*========================================================================*\

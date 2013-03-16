@@ -199,20 +199,20 @@ int main( int argc, char *argv[] )
     Set verbosity level 
 \*------------------------------------------------------------------------*/  
   if( verb_arg ) {
-    srvloglevel = (int) strtol( verb_arg, &eptr, 10 );
+    streamloglevel = (int) strtol( verb_arg, &eptr, 10 );
     while( isspace(*eptr) )
       eptr++;
-    if( *eptr || srvloglevel<0 || srvloglevel>7 ) {
+    if( *eptr || streamloglevel<0 || streamloglevel>7 ) {
       fprintf( stderr, "Bad verbosity level: '%s'\n", verb_arg );
       return 1;
     }
   }
 #ifndef DEBUG
-  if( srvloglevel>=LOG_DEBUG ) {
+  if( streamloglevel>=LOG_DEBUG ) {
      fprintf( stderr, "%s: binary not compiled for debugging, loglevel %d might be too high!\n", 
                       argv[0], srvloglevel );
   } 
-#endif  
+#endif 
 
 /*------------------------------------------------------------------------*\
     Set persistence filename 
@@ -295,6 +295,11 @@ int main( int argc, char *argv[] )
     Goto background
 \*------------------------------------------------------------------------*/
   if( daemon_flag ) {
+    if( streamloglevel>=LOG_DEBUG ) 
+      fprintf( stderr, "%s: loglevel %d might be too high for syslog (daemon mode). Run in foreground to get all messages!\n",
+                       argv[0], streamloglevel );
+    sysloglevel = streamloglevel;
+    streamloglevel = 0;
     cpid = fork();
     if( cpid==-1 ) {
       perror( "Could not fork" );
