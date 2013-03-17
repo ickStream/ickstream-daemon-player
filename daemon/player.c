@@ -588,7 +588,12 @@ int playerSetState( PlayerState state, bool broadcast )
     Lock player, we don't want concurrent modifications going on...
 \*------------------------------------------------------------------------*/
   pthread_mutex_lock( &playerMutex );
-    
+
+/*------------------------------------------------------------------------*\
+    Get current playback item to detect changes in the queue 
+\*------------------------------------------------------------------------*/
+  newTrack = playlistGetCursorItem( playerQueue );
+   
 /*------------------------------------------------------------------------*\
     Switch on target state 
 \*------------------------------------------------------------------------*/
@@ -613,7 +618,6 @@ int playerSetState( PlayerState state, bool broadcast )
       }
   	  
       // Is there a track to play ?
-      newTrack = playlistGetCursorItem( playerQueue );
       if( !newTrack ) {
   	    lognotice( "_playbackStart: Empty queue or no cursor" );
   	    rc = -1;
@@ -669,8 +673,7 @@ int playerSetState( PlayerState state, bool broadcast )
       	break;
       } 
 
-      // Is there a track to play ?
-      newTrack = playlistGetCursorItem( playerQueue );
+      // Is there a new track to play ?
       if( !newTrack ) {
   	    lognotice( "_playbackPause: Empty queue or no cursor" );
   	    rc = -1;
@@ -697,7 +700,6 @@ int playerSetState( PlayerState state, bool broadcast )
       
       // no break here, as we'll change the status to PlayerStateStop in case 
       // we were changing the track in paused state...
-      hmiNewItem( playerQueue, newTrack );
   	  lognotice( "_playbackPause: current track changed, stopping..." );
 
 /*------------------------------------------------------------------------*\
@@ -707,7 +709,7 @@ int playerSetState( PlayerState state, bool broadcast )
 
       // not yet initialized?
       if( !audioIf ) {
-        logerr( "_playbackStop: audio device not yet initialized." );
+        loginfo( "_playbackStop: audio device not yet initialized." );
         rc = -1;
         break;
       }
@@ -715,7 +717,11 @@ int playerSetState( PlayerState state, bool broadcast )
       // request thread to stop playback and set new player state
       playbackThreadState = PlayerThreadTerminating;
       playerState = PlayerStateStop;
+      // Inform HMI
       hmiNewPosition( 0.0 );
+      if( newTrack && (!currentTrackId || strcmp(newTrack->id,currentTrackId)) )
+        hmiNewItem( playerQueue, newTrack );
+
       break; 
   	
 /*------------------------------------------------------------------------*\

@@ -111,7 +111,8 @@ void hmiNewItem( Playlist *plst, PlaylistItem *item )
   DBGMSG( "new track: %p", item );
   currentItem = item;
 
-  printf( "new track: %s\n", item?item->text:"<None>" );
+  printf( "Playback track   : (%d/%d) \"%s\"\n", playlistGetCursorPos(plst), 
+           playlistGetLength(plst), item?item->text:"<None>" );
 }
 
 
@@ -129,7 +130,7 @@ void hmiNewState( PlayerState state )
     case PlayerStatePause: stateStr = "Paused"; break;
   }
 
-  printf( "playback: %s\n", stateStr );
+  printf( "Playback state   : %s\n", stateStr );
 }
 
 
@@ -140,7 +141,7 @@ void hmiNewVolume( double volume, bool muted )
 {
   DBGMSG( "new volume: %.2lf (muted: %s)", volume, muted?"On":"Off" );
 
-  printf( "new volume: %.2lf (%s)\n", volume, muted?"muted":"not muted" );
+  printf( "Playback volume: %.2lf (%s)\n", volume, muted?"muted":"not muted" );
 }
 
 
@@ -149,9 +150,20 @@ void hmiNewVolume( double volume, bool muted )
 \*=========================================================================*/
 void hmiNewPosition( double seekPos )
 {
+  int h, m, s;
+
   DBGMSG( "new seek position: %.2lf", seekPos );
 
-  printf( "position: %.2lf\n", seekPos );
+  h = (int)seekPos/3600;
+  seekPos -= h*3600;
+  m = (int)seekPos/60;
+  seekPos -= m*60;
+  s = (int)seekPos;
+
+  if( h )
+    printf( "Playback position: %d:%02d:%02d\n", h, m, s );
+  else
+    printf( "Playback position: %d:%02d\n", m, s );
 }
 
 
