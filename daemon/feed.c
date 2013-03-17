@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-// #undef DEBUG
+#undef DEBUG
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -107,7 +107,7 @@ AudioFeed *audioFeedCreate( const char *uri, const char *type, AudioFormat *form
 \*------------------------------------------------------------------------*/
   feed = calloc( 1, sizeof(AudioFeed) );
   if( !feed ) {
-    srvmsg( LOG_ERR, "audioCreateFeed: out of memeory!" );
+    logerr( "audioCreateFeed: out of memeory!" );
     return NULL;
   }
   
@@ -124,7 +124,7 @@ AudioFeed *audioFeedCreate( const char *uri, const char *type, AudioFormat *form
 \*------------------------------------------------------------------------*/
   feed->curlHandle = curl_easy_init();
   if( !feed->curlHandle ) {
-  	srvmsg( LOG_ERR, "audioFeedCreate: unable to init cURL." );
+  	logerr( "audioFeedCreate: unable to init cURL." );
   	feed->state = FeedTerminatedError;
   	return NULL;
   }
@@ -132,7 +132,7 @@ AudioFeed *audioFeedCreate( const char *uri, const char *type, AudioFormat *form
   // Set URI
   int rc = curl_easy_setopt( feed->curlHandle, CURLOPT_URL, feed->uri );
   if( rc ) {
-  	srvmsg( LOG_ERR, "audioFeedCreate: unable to set URI: %s", feed->uri );
+  	logerr( "audioFeedCreate: unable to set URI: %s", feed->uri );
   	feed->state = FeedTerminatedError;
     curl_easy_cleanup( feed->curlHandle );
   } 
@@ -170,7 +170,7 @@ int audioFeedStart(  AudioFeed *feed, CodecInstance *instance )
 \*------------------------------------------------------------------------*/
   int rc = pthread_create( &feed->thread, NULL, _feederThread, feed );
   if( rc ) {
-    srvmsg( LOG_ERR, "Unable to start feeder thread: %s", strerror(rc) );
+    logerr( "Unable to start feeder thread: %s", strerror(rc) );
     audioFeedDelete( feed, false );
     return -1;
   }
@@ -237,7 +237,7 @@ static void *_feederThread( void *arg )
   feed->state = FeedRunning;
   rc = curl_easy_perform( feed->curlHandle );
   if( rc!=CURLE_OK) {
-  	srvmsg( LOG_ERR, "Feeder thread error (%s): %s", feed->uri, curl_easy_strerror(rc) );
+  	logerr( "Feeder thread error (%s): %s", feed->uri, curl_easy_strerror(rc) );
   	feed->state = FeedTerminatedError;
   }
   
@@ -291,7 +291,7 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
   
     // be defensive ...
     if( chunk>size ) {
-      srvmsg( LOG_ERR, "Feeder thread(%s): codec consumed more than offered (%ld>%ld)", 
+      logerr( "Feeder thread(%s): codec consumed more than offered (%ld>%ld)", 
                       feed->uri, (long)chunk, (long)size );	
       return errVal;                    
     }
@@ -306,7 +306,7 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
     
     // sleep
     if( size ) {
-      srvmsg( LOG_INFO, "Feeder thread(%s): could not process whole chunk (%ld of %ld), sleeping...", 
+      loginfo( "Feeder thread(%s): could not process whole chunk (%ld of %ld), sleeping...", 
                          feed->uri, (long)chunk, (long)(size+chunk) );	
       sleep( 1 );
     }
@@ -322,3 +322,5 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
+
+

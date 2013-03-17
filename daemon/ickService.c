@@ -104,7 +104,7 @@ int ickServiceAdd( json_t *jService )
 \*------------------------------------------------------------------------*/
   item = calloc( 1, sizeof(ServiceListItem) );
   if( !item ) {
-    srvmsg( LOG_ERR, "ickServiceAdd: out of memeory!" );
+    logerr( "ickServiceAdd: out of memeory!" );
     return -1;
   }
   item->jItem = json_incref( jService );
@@ -114,7 +114,7 @@ int ickServiceAdd( json_t *jService )
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( jService, "id" );
   if( !jObj || !json_is_string(jObj) ) {
-    srvmsg( LOG_ERR, "ickServiceAdd: Missing field \"id\"!" );
+    logerr( "ickServiceAdd: Missing field \"id\"!" );
     Sfree( item );
     json_decref( jService );
     return -1; 
@@ -126,7 +126,7 @@ int ickServiceAdd( json_t *jService )
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( jService, "name" );
   if( !jObj || !json_is_string(jObj) ) {
-    srvmsg( LOG_ERR, "ickServiceAdd: Missing field \"name\"!" );
+    logerr( "ickServiceAdd: Missing field \"name\"!" );
     Sfree( item );
     json_decref( jService );
     return -1; 
@@ -138,7 +138,7 @@ int ickServiceAdd( json_t *jService )
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( jService, "type" );
   if( !jObj || !json_is_string(jObj) ) {
-    srvmsg( LOG_ERR, "ickServiceAdd: Missing field \"type\"!" );
+    logerr( "ickServiceAdd: Missing field \"type\"!" );
     Sfree( item );
     json_decref( jService );
     return -1; 
@@ -167,7 +167,7 @@ int ickServiceAdd( json_t *jService )
   // Check for duplicates
   ServiceListItem *oldItem = _getService( item->id, item->type );
   if( oldItem ) {
-     srvmsg( LOG_WARNING, "ickServiceAdd: Replacing service (%s:%s).", 
+     logwarn( "ickServiceAdd: Replacing service (%s:%s).", 
                           item->type, item->id );
   	_removeService( oldItem );
   }
@@ -341,3 +341,5 @@ static void _removeService( ServiceListItem *item )
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
+
+

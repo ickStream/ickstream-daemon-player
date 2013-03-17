@@ -137,7 +137,7 @@ const AudioBackend *audioBackendsRoot( void )
 \*=========================================================================*/
 void audioShutdown( AudioTermMode mode )
 {
-  srvmsg( LOG_INFO, "Shutting down audio module...");
+  loginfo( "Shutting down audio module...");
   
 /*------------------------------------------------------------------------*\
     Shutdown all backends 
@@ -159,252 +159,6 @@ void audioShutdown( AudioTermMode mode )
 \*------------------------------------------------------------------------*/
 }
 
-/*=========================================================================*\
-      Get string description for audio format
-\*=========================================================================*/
-const char *audioFormatStr( AudioFormat *format )
-{
-  static char *buffer;
-  	
-  if( !buffer )
-    buffer = malloc( 1024 );
-    
-  sprintf( buffer, "%d Hz, %d Ch", format->sampleRate, format->channels);
-  
-  return buffer;  	
-}
-
-/*=========================================================================*\
-      Compare two audio formats
-        returns 0 for equal formats
-\*=========================================================================*/
-int audioFormatCompare( AudioFormat *format1, AudioFormat *format2 )
-{
-
-  // Compare number of channels	
-  if( format1->channels!=format2->channels )
-    return 1;
-
-  // Compare sample rate	
-  if( format1->sampleRate!=format2->sampleRate)
-    return 2;
-    
-  // Equal!	
-  return 0;
-}
-
-
-
-/*=========================================================================*\
-      Get List of available devices for an backend
-        returns length of device list or -1 on error
-        deviceListPtr is returned as NULL terminated array of device names
-\*=========================================================================*/
-int audioGetDeviceList( const AudioBackend *backend, char ***deviceListPtr, char ***descrListPtr )
-{
-  return backend->getDevices( deviceListPtr, descrListPtr );	
-}
-
-
-/*=========================================================================*\
-      Free list of strings as received from audioGetDeviceList
-\*=========================================================================*/
-void audioFreeStringList( char **stringList )
-{
-  char **ptr;
-
-/*------------------------------------------------------------------------*\
-    Loop over elements 
-\*------------------------------------------------------------------------*/
-  for( ptr=stringList; ptr && *ptr; ptr++ )
-    Sfree( *ptr );  		
-    
-/*------------------------------------------------------------------------*\
-    Free the list itself 
-\*------------------------------------------------------------------------*/
-  Sfree( stringList );  
-}
-
-
-/*=========================================================================*\
-      Use a device - A convenience wrapper for selecting backend and setting up an audio interface
-\*=========================================================================*/
-int audioCheckDevice( const char *deviceName )
-{
-  const AudioBackend  *backend;
-  const char          *dev = NULL;
-  char               **deviceList;
-  char               **ptr;
-  int                  retval;
-
-/*------------------------------------------------------------------------*\
-    Get backend name 
-\*------------------------------------------------------------------------*/
-  backend = audioBackendByDeviceString( deviceName, &dev );
-  if( !backend ) {
-  	srvmsg( LOG_INFO, "Device not available: \"%s\"", deviceName );
-  	return -1;
-  }
-  
-/*------------------------------------------------------------------------*\
-    Check if device is actually available 
-\*------------------------------------------------------------------------*/
-  retval = audioGetDeviceList( backend, &deviceList, NULL );
-  if( retval<0 )
-    return -1;
-  for( ptr=deviceList; ptr && *ptr; ptr++ )
-    if( !strcmp(*ptr,deviceName) )
-      break;
-  audioFreeStringList( deviceList );   
-  if( !ptr ) {   // dangling, but not dereferenced...
-    srvmsg( LOG_INFO, "Device not available: \"%s\"", deviceName );
-    return -1;
-  }    
-  
-/*------------------------------------------------------------------------*\
-    That's all: Device found 
-\*------------------------------------------------------------------------*/
-  return 0;
-}
-
-
-/*=========================================================================*\
-      Create a new output instance (called interface) for backend  
-\*=========================================================================*/
-AudioIf *audioIfNew( const AudioBackend *backend, const char *device )
-{
-  AudioIf *aif;  
-  DBGMSG( "Creating new instance of audio backend %s", backend->name );
-
-/*------------------------------------------------------------------------*\
-    Create header 
-\*------------------------------------------------------------------------*/
-  aif = calloc( 1, sizeof(AudioIf) );
-  if( !aif ) {
-    srvmsg( LOG_ERR, "audioIfNew: out of memeory!" );
-    return NULL;
-  }
-  aif->state   = AudioIfInitialized;
-  aif->backend = backend;
-  aif->devName = strdup( device );
-    
-/*------------------------------------------------------------------------*\
-    Initialize instance 
-\*------------------------------------------------------------------------*/
-  if( backend->newIf(aif,device) ) {	
-    srvmsg( LOG_ERR, "%s: Unable to init audio interface: %s", backend->name, device );
-    Sfree( aif->devName );
-    Sfree( aif );
-    return NULL;
-  }
-  
-/*------------------------------------------------------------------------*\
-    That's all 
-\*------------------------------------------------------------------------*/
-  return aif;
-}
-
-
-/*=========================================================================*\
-      Shut down an output instance (called interface) for backend
-\*=========================================================================*/
-int audioIfDelete( AudioIf *aif, AudioTermMode mode )
-{
-  int rc = aif->backend->deleteIf( aif, mode );
-
-  if( aif->fifoIn )
-    fifoDelete( aif->fifoIn );
-  Sfree( aif->devName );
-  Sfree( aif );
-  return rc;
-}
-
-
-/*=========================================================================*\
-      Play a fifo on an interface
-        the interface is (re)initialized, playing or paused data is dropped
-        returns the input fifo or NULL on error
-\*=========================================================================*/
-Fifo *audioIfPlay( AudioIf *aif, AudioFormat *format )
-{
-    
-  // Reset or create fifo
-  if( aif->fifoIn )
-    fifoReset( aif->fifoIn );
-  else
-    aif->fifoIn = fifoCreate( aif->devName, AudioFifoDefaultSize );
-  if( !aif->fifoIn ) {
-    srvmsg( LOG_ERR, "audioIfPlay: could not create fifo" );
-    return NULL;
-  }   
-  
-  // Already playing and no format change?
-  if( aif->state==AudioIfRunning && !audioFormatCompare(format,&aif->format) )
-    return aif->fifoIn;
-
-  // Call backend
-  if( aif->backend->play(aif,format) ) 
-    return NULL;
-    
-  // Store new format return pointer to fifo
-  memcpy( &aif->format, format, sizeof(AudioFormat) ); 
-  return aif->fifoIn;
-}
-
-
-/*=========================================================================*\
-      Stop playback on an interface, deteach queue 
-\*=========================================================================*/
-int audioIfStop( AudioIf *aif, AudioTermMode mode )
-{
-  return aif->backend->stop( aif, mode );	
-}
-
-
-/*=========================================================================*\
-      Set pause mode 
-\*=========================================================================*/
-int audioIfSetPause( AudioIf *aif, bool pause )
-{
-	
-  // Function not supported?
-  if( !aif->backend->pause ) {
-  	srvmsg( LOG_WARNING, "audioIfSetPause: Backend %s does not support pausing.",
-                         aif->backend->name );
-  	return -1;
-  } 	
-  if( !aif->canPause ) {
-  	srvmsg( LOG_WARNING, "audioIfSetPause: Device %s does not support pausing.",
-                         aif->devName );
-  	return -1;
-  } 	
-	
-  // dispatch to backend function
-  return aif->backend->pause( aif, pause );	
-}
-
-
-/*=========================================================================*\
-      Register an audio backend
-\*=========================================================================*/
-static int _audioRegister( AudioBackend *backend )
-{
-  srvmsg( LOG_INFO, "Registering audio backend %s", backend->name );
-  
-  // Call optional init method
-  if( backend->init && backend->init() ) {
-    srvmsg( LOG_ERR, "Could not init audio backend: %s", backend->name );
-    return -1;
-  }
-  
-  // Link to list
-  backend->next = backendList;
-  backendList   = backend;	
-  
-  // That's all
-  return 0;
-}
-
 
 /*=========================================================================*\
       Get backend and device name from combined string (<backendname>:<device>)
@@ -414,7 +168,8 @@ static int _audioRegister( AudioBackend *backend )
 const AudioBackend *audioBackendByDeviceString( const char *str, const char **device )
 {
   AudioBackend *backend;
-  
+  DBGMSG( "Get Backend for device string: %s", str );
+
 /*------------------------------------------------------------------------*\
     Loop over all backends
 \*------------------------------------------------------------------------*/
@@ -442,5 +197,273 @@ const AudioBackend *audioBackendByDeviceString( const char *str, const char **de
 
 
 /*=========================================================================*\
+      Get string description for audio format
+        NOT reentrant!
+\*=========================================================================*/
+const char *audioFormatStr( AudioFormat *format )
+{
+  static char *buffer;
+  	
+  if( !buffer )
+    buffer = malloc( 1024 );
+    
+  sprintf( buffer, "%d Hz, %d Ch", format->sampleRate, format->channels);
+  
+  return buffer;  	
+}
+
+
+/*=========================================================================*\
+      Compare two audio formats
+        returns 0 for equal formats
+\*=========================================================================*/
+int audioFormatCompare( AudioFormat *format1, AudioFormat *format2 )
+{
+  DBGMSG( "compare formats" );
+
+  // Compare number of channels	
+  if( format1->channels!=format2->channels )
+    return 1;
+
+  // Compare sample rate	
+  if( format1->sampleRate!=format2->sampleRate)
+    return 2;
+    
+  // Equal!	
+  return 0;
+}
+
+
+
+/*=========================================================================*\
+      Get List of available devices for an backend
+        returns length of device list or -1 on error
+        deviceListPtr is returned as NULL terminated array of device names
+\*=========================================================================*/
+int audioGetDeviceList( const AudioBackend *backend, char ***deviceListPtr, char ***descrListPtr )
+{
+  DBGMSG( "Get device list for audio backend %s", backend->name );
+  return backend->getDevices( deviceListPtr, descrListPtr );	
+}
+
+
+/*=========================================================================*\
+      Free list of strings as received from audioGetDeviceList
+\*=========================================================================*/
+void audioFreeStringList( char **stringList )
+{
+  char **ptr;
+  DBGMSG( "free list of strings (%p)", stringList );
+
+/*------------------------------------------------------------------------*\
+    Loop over elements 
+\*------------------------------------------------------------------------*/
+  for( ptr=stringList; ptr && *ptr; ptr++ )
+    Sfree( *ptr );  		
+    
+/*------------------------------------------------------------------------*\
+    Free the list itself 
+\*------------------------------------------------------------------------*/
+  Sfree( stringList );  
+}
+
+
+/*=========================================================================*\
+      Use a device - A convenience wrapper for selecting backend and setting up an audio interface
+\*=========================================================================*/
+int audioCheckDevice( const char *deviceName )
+{
+  const AudioBackend  *backend;
+  const char          *dev = NULL;
+  char               **deviceList;
+  char               **ptr;
+  int                  retval;
+  DBGMSG( "Check for audio device: %s", deviceName );
+
+/*------------------------------------------------------------------------*\
+    Get backend name 
+\*------------------------------------------------------------------------*/
+  backend = audioBackendByDeviceString( deviceName, &dev );
+  if( !backend ) {
+  	loginfo( "Device not available: \"%s\"", deviceName );
+  	return -1;
+  }
+  
+/*------------------------------------------------------------------------*\
+    Check if device is actually available 
+\*------------------------------------------------------------------------*/
+  retval = audioGetDeviceList( backend, &deviceList, NULL );
+  if( retval<0 )
+    return -1;
+  for( ptr=deviceList; ptr && *ptr; ptr++ )
+    if( !strcmp(*ptr,deviceName) )
+      break;
+  audioFreeStringList( deviceList );   
+  if( !ptr ) {   // dangling, but not dereferenced...
+    loginfo( "Device not available: \"%s\"", deviceName );
+    return -1;
+  }    
+  
+/*------------------------------------------------------------------------*\
+    That's all: Device found 
+\*------------------------------------------------------------------------*/
+  return 0;
+}
+
+
+/*=========================================================================*\
+      Create a new output instance (called interface) for backend  
+\*=========================================================================*/
+AudioIf *audioIfNew( const AudioBackend *backend, const char *device )
+{
+  AudioIf *aif;  
+  DBGMSG( "Creating new instance of audio backend %s", backend->name );
+
+/*------------------------------------------------------------------------*\
+    Create header 
+\*------------------------------------------------------------------------*/
+  aif = calloc( 1, sizeof(AudioIf) );
+  if( !aif ) {
+    logerr( "audioIfNew: out of memeory!" );
+    return NULL;
+  }
+  aif->state   = AudioIfInitialized;
+  aif->backend = backend;
+  aif->devName = strdup( device );
+    
+/*------------------------------------------------------------------------*\
+    Initialize instance 
+\*------------------------------------------------------------------------*/
+  if( backend->newIf(aif,device) ) {	
+    logerr( "%s: Unable to init audio interface: %s", backend->name, device );
+    Sfree( aif->devName );
+    Sfree( aif );
+    return NULL;
+  }
+  
+/*------------------------------------------------------------------------*\
+    That's all 
+\*------------------------------------------------------------------------*/
+  return aif;
+}
+
+
+/*=========================================================================*\
+      Shut down an output instance (called interface) for backend
+\*=========================================================================*/
+int audioIfDelete( AudioIf *aif, AudioTermMode mode )
+{
+  int rc;
+
+  DBGMSG( "Deleting instance of audio backend %s: %p (mode %d)", 
+           aif->backend->name, aif, mode );
+
+  rc = aif->backend->deleteIf( aif, mode );
+
+  if( aif->fifoIn )
+    fifoDelete( aif->fifoIn );
+  Sfree( aif->devName );
+  Sfree( aif );
+  return rc;
+}
+
+
+/*=========================================================================*\
+      Play a fifo on an interface
+        the interface is (re)initialized, playing or paused data is dropped
+        returns the input fifo or NULL on error
+\*=========================================================================*/
+Fifo *audioIfPlay( AudioIf *aif, AudioFormat *format )
+{
+  DBGMSG( "Start playback on audio instance %s (%p): %s", 
+           aif->backend->name, aif, audioFormatStr(format) );
+    
+  // Reset or create fifo
+  if( aif->fifoIn )
+    fifoReset( aif->fifoIn );
+  else
+    aif->fifoIn = fifoCreate( aif->devName, AudioFifoDefaultSize );
+  if( !aif->fifoIn ) {
+    logerr( "audioIfPlay: could not create fifo" );
+    return NULL;
+  }   
+  
+  // Already playing and no format change?
+  if( aif->state==AudioIfRunning && !audioFormatCompare(format,&aif->format) )
+    return aif->fifoIn;
+
+  // Call backend
+  if( aif->backend->play(aif,format) ) 
+    return NULL;
+    
+  // Store new format return pointer to fifo
+  memcpy( &aif->format, format, sizeof(AudioFormat) ); 
+  return aif->fifoIn;
+}
+
+
+/*=========================================================================*\
+      Stop playback on an interface, deteach queue 
+\*=========================================================================*/
+int audioIfStop( AudioIf *aif, AudioTermMode mode )
+{
+  DBGMSG( "Stop playback on audio instance %s (%p): mode %d", 
+           aif->backend->name, aif, mode );
+
+  return aif->backend->stop( aif, mode );	
+}
+
+
+/*=========================================================================*\
+      Set pause mode 
+\*=========================================================================*/
+int audioIfSetPause( AudioIf *aif, bool pause )
+{
+  DBGMSG( "Set pause state on audio instance %s (%p): %s", 
+           aif->backend->name, aif, pause?"On":"Off" );
+	
+  // Function not supported?
+  if( !aif->backend->pause ) {
+  	logwarn( "audioIfSetPause: Backend %s does not support pausing.",
+                         aif->backend->name );
+  	return -1;
+  } 	
+  if( !aif->canPause ) {
+  	logwarn( "audioIfSetPause: Device %s does not support pausing.",
+                         aif->devName );
+  	return -1;
+  } 	
+	
+  // dispatch to backend function
+  return aif->backend->pause( aif, pause );	
+}
+
+
+/*=========================================================================*\
+      Register an audio backend
+\*=========================================================================*/
+static int _audioRegister( AudioBackend *backend )
+{
+  loginfo( "Registering audio backend %s", backend->name );
+  
+  // Call optional init method
+  if( backend->init && backend->init() ) {
+    logerr( "Could not init audio backend: %s", backend->name );
+    return -1;
+  }
+  
+  // Link to list
+  backend->next = backendList;
+  backendList   = backend;	
+  
+  // That's all
+  return 0;
+}
+
+
+/*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
+
+
+

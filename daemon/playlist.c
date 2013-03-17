@@ -84,7 +84,7 @@ Playlist *playlistNew( void )
 {
   Playlist *plst = calloc( 1, sizeof(Playlist) );
   if( !plst )
-    srvmsg( LOG_ERR, "playlistNew: out of memeory!" );
+    logerr( "playlistNew: out of memeory!" );
     
 /*------------------------------------------------------------------------*\
     Init header fields
@@ -145,7 +145,7 @@ Playlist *playlistFromJSON( json_t *jQueue )
   if( jObj && json_is_real(jObj) )
     plst->lastChange = json_real_value( jObj );
   else
-  	srvmsg( LOG_ERR, "Playlist: missing field \"playlistName\"" );
+  	logerr( "Playlist: missing field \"playlistName\"" );
     
   // Get list of items
   jObj = json_object_get( jQueue, "items" );
@@ -158,11 +158,11 @@ Playlist *playlistFromJSON( json_t *jQueue )
       if( pItem )
         playlistAddItemAfter( plst, NULL, pItem );
       else
-        srvmsg( LOG_ERR, "Playlist: could not parse item #%d", i+1 );
+        logerr( "Playlist: could not parse item #%d", i+1 );
     } 
   }
   else
-    srvmsg( LOG_ERR, "Playlist: missing field \"items\"" );
+    logerr( "Playlist: missing field \"items\"" );
 
 /*------------------------------------------------------------------------*\
     That's all 
@@ -571,7 +571,7 @@ PlaylistItem *playlistItemFromJSON( json_t *jItem )
 \*------------------------------------------------------------------------*/
   item = calloc( 1, sizeof(PlaylistItem) );
   if( !item ) {
-    srvmsg( LOG_ERR, "playlistItemFromJSON: out of memeory!" );
+    logerr( "playlistItemFromJSON: out of memeory!" );
     return NULL;
   }
   
@@ -586,7 +586,7 @@ PlaylistItem *playlistItemFromJSON( json_t *jItem )
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( jItem, "id" );
   if( !jObj || !json_is_string(jObj) ) {
-    srvmsg( LOG_ERR, "playlistItemFromJSON: Missing field \"id\"!" );
+    logerr( "playlistItemFromJSON: Missing field \"id\"!" );
     Sfree( item );
     json_decref( jItem );
     return NULL; 
@@ -598,7 +598,7 @@ PlaylistItem *playlistItemFromJSON( json_t *jItem )
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( jItem, "text" );
   if( !jObj || !json_is_string(jObj) ) {
-    srvmsg( LOG_ERR, "playlistItemFromJSON: Missing field \"text\"!" );
+    logerr( "playlistItemFromJSON: Missing field \"text\"!" );
     Sfree( item );
     json_decref( jItem );
     return NULL; 
@@ -610,7 +610,7 @@ PlaylistItem *playlistItemFromJSON( json_t *jItem )
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( jItem, "streamingRefs" );
   if( !jObj || !json_is_array(jObj) ) {
-    srvmsg( LOG_ERR, "playlistItemFromJSON: Missing field \"streamingRefs\"!" );
+    logerr( "playlistItemFromJSON: Missing field \"streamingRefs\"!" );
     Sfree( item );
     json_decref( jItem );
     return NULL; 
@@ -815,3 +815,4 @@ void playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem )
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
+

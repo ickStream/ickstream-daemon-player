@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-// #undef DEBUG
+#undef DEBUG
 
 #include <stdio.h>
 #include <strings.h>
@@ -133,7 +133,7 @@ static int _backendGetDeviceList( char ***deviceListPtr, char ***descrListPtr )
     Try to get hints 
 \*------------------------------------------------------------------------*/
   if( snd_device_name_hint(-1,"pcm",&hints)<0 ) {
-    srvmsg( LOG_ERR, "ALSA: Error searching for pcm devices." ); 
+    logerr( "ALSA: Error searching for pcm devices." ); 
     return -1; 
   }	
 
@@ -155,7 +155,7 @@ static int _backendGetDeviceList( char ***deviceListPtr, char ***descrListPtr )
     // Get and check name
     str = snd_device_name_get_hint( *hintPtr, "NAME" );
     if( !str ) {
-       srvmsg( LOG_ERR, "ALSA: Found device without name." ); 
+       logerr( "ALSA: Found device without name." ); 
        continue;
     }
   	(*deviceListPtr)[retval] = str;
@@ -193,7 +193,7 @@ static int _ifNew( AudioIf *aif, const char *device )
 \*------------------------------------------------------------------------*/
   rc = snd_pcm_open( &pcm, device, SND_PCM_STREAM_PLAYBACK, 0 );
   if( rc<0 ) {
-    srvmsg( LOG_ERR, "Error opening alsa pcm device \"%s\": %s", 
+    logerr( "Error opening alsa pcm device \"%s\": %s", 
                      device, snd_strerror(rc) );
     return -1;
   }
@@ -225,7 +225,7 @@ static int _ifDelete( AudioIf *aif, AudioTermMode mode )
 \*------------------------------------------------------------------------*/
   if( aif->state==AudioIfRunning ) {
   	if( _ifStop(aif,mode) ) {
-      srvmsg( LOG_ERR, "_ifDelete: Could not stop running playback." );
+      logerr( "_ifDelete: Could not stop running playback." );
       rc = -1;
     }
   }
@@ -256,7 +256,7 @@ static int _ifPlay( AudioIf *aif, AudioFormat *format )
 \*------------------------------------------------------------------------*/
   if( aif->state==AudioIfRunning ) {
   	if( _ifStop(aif,AudioDrop) ) {
-      srvmsg( LOG_ERR, "_ifPlay: Could not stop running playback." );
+      logerr( "_ifPlay: Could not stop running playback." );
       return -1;
     }
   }	
@@ -265,7 +265,7 @@ static int _ifPlay( AudioIf *aif, AudioFormat *format )
     Check state
 \*------------------------------------------------------------------------*/
   if( aif->state!=AudioIfInitialized ) {
-    srvmsg( LOG_ERR, "_ifPlay: Cannot start playback, wrong state: %d", aif->state );
+    logerr( "_ifPlay: Cannot start playback, wrong state: %d", aif->state );
     return -1;
   }
 
@@ -280,7 +280,7 @@ static int _ifPlay( AudioIf *aif, AudioFormat *format )
 \*------------------------------------------------------------------------*/
   int rc = pthread_create( &aif->thread, NULL, _ifThread, aif );
   if( rc ) {
-    srvmsg( LOG_ERR, "Unable to start audio backend thread: %s", strerror(rc) );
+    logerr( "Unable to start audio backend thread: %s", strerror(rc) );
     return -1;
   }
   
@@ -343,7 +343,7 @@ static int _ifSetPause( AudioIf *aif, bool pause )
 \*------------------------------------------------------------------------*/
   int rc = snd_pcm_pause( pcm, pause?1:0 ); 
   if( rc<0 ) {
-  	srvmsg( LOG_ERR, "Unable to pause alsa device: %s", aif->devName );
+  	logerr( "Unable to pause alsa device: %s", aif->devName );
     return -1;
   }
   
@@ -378,21 +378,21 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
   // Multi channel is interleaved
   rc = snd_pcm_hw_params_set_channels( pcm, hwParams, format->channels );
   if( rc<0 ) {
-  	srvmsg( LOG_ERR, "Unable to set alsa pcm hw parameter: channels (%d)",
+  	logerr( "Unable to set alsa pcm hw parameter: channels (%d)",
                      format->channels );
     return -1;
   }
   if( format->channels>1 )
     rc = snd_pcm_hw_params_set_access( pcm, hwParams, SND_PCM_ACCESS_RW_INTERLEAVED );
   if( rc<0 ) {
-  	srvmsg( LOG_ERR, "Unable to set alsa pcm hw parameter: SND_PCM_ACCESS_RW_INTERLEAVED" );
+  	logerr( "Unable to set alsa pcm hw parameter: SND_PCM_ACCESS_RW_INTERLEAVED" );
     return -1;
   }
 
   // Fixme: set data format
   rc = snd_pcm_hw_params_set_format( pcm, hwParams, SND_PCM_FORMAT_S16_LE );
   if( rc<0 ) {
-  	srvmsg( LOG_ERR, "Unable to set alsa pcm hw parameter: SND_PCM_FORMAT_S16_LE" );
+  	logerr( "Unable to set alsa pcm hw parameter: SND_PCM_FORMAT_S16_LE" );
     return -1;
   }
 
@@ -402,11 +402,11 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
   realRate = format->sampleRate;
   rc = snd_pcm_hw_params_set_rate_near( pcm, hwParams, &realRate, NULL);
   if( rc<0 ) {
-  	srvmsg( LOG_ERR, "Unable to set alsa pcm hw parameter: rate (%d)", format->sampleRate );
+  	logerr( "Unable to set alsa pcm hw parameter: rate (%d)", format->sampleRate );
     return -1;
   }
   if( realRate!=format->sampleRate ) {
-    srvmsg( LOG_ERR, "alsa: device \"%s\" does not support %dfps (would be %dfps)",
+    logerr( "alsa: device \"%s\" does not support %dfps (would be %dfps)",
                       aif->devName, format->sampleRate, realRate );
     return -1;
   }
@@ -414,7 +414,7 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
   // Set number of periods
   rc = snd_pcm_hw_params_set_periods( pcm, hwParams, 2, 0 );
   if( rc<0 ) {
-  	srvmsg( LOG_ERR, "Unable to set alsa pcm hw parameter: periods 2, 0" );
+  	logerr( "Unable to set alsa pcm hw parameter: periods 2, 0" );
     return -1;
   }
   
@@ -425,7 +425,7 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
 \*------------------------------------------------------------------------*/
   rc = snd_pcm_hw_params( pcm, hwParams );
   if( rc<0 ) {
-    srvmsg( LOG_ERR, "Unable to set alsa pcm hw parameters: %s",
+    logerr( "Unable to set alsa pcm hw parameters: %s",
                      snd_strerror(rc) );
     return -1;
   }
@@ -441,7 +441,7 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
 \*------------------------------------------------------------------------*/
   rc = snd_pcm_prepare( pcm );
   if( rc<0 ) {
-    srvmsg( LOG_ERR, "Unable to prepare alsa interface: %s",
+    logerr( "Unable to prepare alsa interface: %s",
                      snd_strerror(rc) );
     return -1;
   }
@@ -480,13 +480,13 @@ static void *_ifThread( void *arg )
     if( rc==-EPIPE || rc==-ESTRPIPE ) {
       rc = snd_pcm_recover( pcm, rc, 0 ); 
       if( rc ) {
-        srvmsg( LOG_ERR, "Alsa thread (after wait): Unable to recover alsa interface: %s", strerror(rc) );
+        logerr( "Alsa thread (after wait): Unable to recover alsa interface: %s", strerror(rc) );
         aif->state = AudioIfTerminatedError;
         break;
       } 
     }
     else if( rc<0 ) {
-      srvmsg( LOG_ERR, "Alsa thread: Error while waiting for alsa interface: %s", strerror(rc) );
+      logerr( "Alsa thread: Error while waiting for alsa interface: %s", strerror(rc) );
       aif->state = AudioIfTerminatedError;
       break;
     } 
@@ -514,13 +514,13 @@ static void *_ifThread( void *arg )
     if( rc==-EPIPE || rc==-ESTRPIPE ){
       rc = snd_pcm_recover( pcm, rc, 0 ); 
       if( rc ) {
-        srvmsg( LOG_ERR, "Alsa thread (after write): Unable to recover alsa interface: %s", strerror(rc) );
+        logerr( "Alsa thread (after write): Unable to recover alsa interface: %s", strerror(rc) );
         aif->state = AudioIfTerminatedError;
         break;
       } 
     }
     else if( rc<0 ) {
-      srvmsg( LOG_ERR, "Alsa thread: Error while writing data to alsa interface: %s", strerror(rc) );
+      logerr( "Alsa thread: Error while writing data to alsa interface: %s", strerror(rc) );
       aif->state = AudioIfTerminatedError;
       break;
     } 
@@ -547,3 +547,4 @@ static void *_ifThread( void *arg )
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
+

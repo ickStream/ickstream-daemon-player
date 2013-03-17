@@ -56,7 +56,6 @@ Remarks         : -
 #include "playlist.h"
 
 
-
 /*=========================================================================*\
        Macro and type definitions 
 \*=========================================================================*/
@@ -65,6 +64,7 @@ typedef enum {
   PlayerStatePlay,
   PlayerStatePause
 } PlayerState;
+
 
 /*=========================================================================*\
        Global symbols 
@@ -81,16 +81,7 @@ void        playerShutdown( void );
 Playlist   *playerGetQueue( void );
 void        playerResetQueue( void );
 PlayerState playerGetState( void );
-int         playerSetState( PlayerState state );
 double      playerGetLastChange( void );
-
-
-void        playerSetUUID( const char *name );
-void        playerSetName( const char *name );
-void        playerSetInterface( const char *name );
-void        playerSetAudioDevice( const char *name );
-void        playerSetModel( const char *name );
-void        playerSetToken( const char *token );
 const char *playerGetHWID( void );
 const char *playerGetUUID( void );
 const char *playerGetName( void );
@@ -98,13 +89,19 @@ const char *playerGetInterface( void );
 const char *playerGetAudioDevice( void );
 const char *playerGetModel( void );
 const char *playerGetToken( void );
-
 double      playerGetVolume( void ); 
-double      playerSetVolume( double volume );
 bool        playerGetMuting( void );
-bool        playerSetMuting( bool mute );
-
 double      playerGetSeekPos( void );
+
+void        playerSetUUID( const char *name );
+void        playerSetInterface( const char *name );
+void        playerSetAudioDevice( const char *name );
+void        playerSetModel( const char *name );
+void        playerSetToken( const char *token );
+void        playerSetName( const char *name, bool broadcast );
+double      playerSetVolume( double volume, bool broadcast );
+bool        playerSetMuting( bool mute, bool broadcast );
+int         playerSetState( PlayerState state, bool broadcast );
 
 
 #endif  /* __PLAYER_H */

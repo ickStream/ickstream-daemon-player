@@ -228,11 +228,11 @@ int main( int argc, char *argv[] )
   if_name = playerGetInterface();
   if( !if_name ) {
     if_name = "eth0";
-    srvmsg( LOG_WARNING, "Need interface name, using \"%s\" as default...",
+    logwarn( "Need interface name, using \"%s\" as default...",
                          if_name );
     playerSetInterface( if_name );
   }
-  srvmsg( LOG_INFO, "Using interface: \"%s\"", if_name );
+  loginfo( "Using interface: \"%s\"", if_name );
 
 /*------------------------------------------------------------------------*\
     Uuid changed or unavilabale ?
@@ -243,20 +243,20 @@ int main( int argc, char *argv[] )
   if( !player_uuid && playerGetHWID() ) {  // use hardware ID as fallback
   	playerSetUUID( playerGetHWID() );
   	player_uuid = playerGetUUID();
-        srvmsg( LOG_WARNING, "Need UUID, using MAC \"%s\" as default...",
+        logwarn( "Need UUID, using MAC \"%s\" as default...",
                              player_uuid );
   } 
   if( !player_uuid ) {
      fprintf( stderr, "Need player uuid!\n" );
      return 1;
   }
-  srvmsg( LOG_INFO, "Using uuid     : \"%s\"", player_uuid );
+  loginfo( "Using uuid     : \"%s\"", player_uuid );
   
 /*------------------------------------------------------------------------*\
     Player name changed or unavailabale ?
 \*------------------------------------------------------------------------*/  
   if( player_name )
-    playerSetName( player_name );
+    playerSetName( player_name, false );
   player_name = playerGetName();  
   if( !player_name ) {
     char buf[128], hname[100];
@@ -264,12 +264,12 @@ int main( int argc, char *argv[] )
       strcpy( buf, "ickpd" );
     else 
       sprintf( buf, "ickpd @ %s", hname );
-    srvmsg( LOG_WARNING, "Need player name, using \"%s\" as default...",
+    logwarn( "Need player name, using \"%s\" as default...",
                          buf );
-    playerSetName( buf );
+    playerSetName( buf, false );
     player_name = playerGetName();
   }
-  srvmsg( LOG_INFO, "Using name     : \"%s\"", player_name );  
+  loginfo( "Using name     : \"%s\"", player_name );  
 
 /*------------------------------------------------------------------------*\
     Player device changed or unavailabale ?
@@ -279,11 +279,11 @@ int main( int argc, char *argv[] )
   adev_name = playerGetAudioDevice();  
   if( !adev_name ) {
     adev_name = "null";
-    srvmsg( LOG_WARNING, "Need audio device name, using \"%s\" as default...",
+    logwarn( "Need audio device name, using \"%s\" as default...",
                          adev_name );
     playerSetAudioDevice( adev_name );
   }
-  srvmsg( LOG_INFO, "Using audio dev: \"%s\"", adev_name );
+  loginfo( "Using audio dev: \"%s\"", adev_name );
 
 /*------------------------------------------------------------------------*\
     Init audio module: check for interface
@@ -363,7 +363,7 @@ int main( int argc, char *argv[] )
 
  } /* end of: while( !stopflag ) */
  if( stop_signal )
-   srvmsg( LOG_INFO, "Exiting due to signal %d ...", stop_signal );
+   loginfo( "Exiting due to signal %d ...", stop_signal );
 
 /*------------------------------------------------------------------------*\
     Close ickstream environment... 
@@ -420,3 +420,5 @@ static void  sig_handler( int sig )
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
+
+

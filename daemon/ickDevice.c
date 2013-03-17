@@ -81,7 +81,7 @@ void ickDevice( const char *szDeviceId, enum ickDiscovery_command cmd,
   switch( cmd ) {
 
     case ICKDISCOVERY_ADD_DEVICE:
-      srvmsg( LOG_INFO, "ickDevice %s (type %d) added", szDeviceId, type );
+      loginfo( "ickDevice %s (type %d) added", szDeviceId, type );
 
       // New server found: request service descriptor
       if( type==ICKDEVICE_SERVER_GENERIC ) {
@@ -91,15 +91,15 @@ void ickDevice( const char *szDeviceId, enum ickDiscovery_command cmd,
       break;
 
     case ICKDISCOVERY_REMOVE_DEVICE:
-      srvmsg( LOG_INFO, "ickDevice %s (type %d) removed", szDeviceId, type );
+      loginfo( "ickDevice %s (type %d) removed", szDeviceId, type );
       break;
 
     case ICKDISCOVERY_UPDATE_DEVICE:
-      srvmsg( LOG_INFO, "ickDevice %s (type %d) updated", szDeviceId, type );
+      loginfo( "ickDevice %s (type %d) updated", szDeviceId, type );
       break;
 
     default:
-      srvmsg(LOG_WARNING, "ickDeviceCallback: Unknown message %d", cmd );
+      logwarn( "ickDeviceCallback: Unknown message %d", cmd );
       break;
   }
 
@@ -121,7 +121,7 @@ void _handleGetServiceInformation( const char *szDeviceId, json_t *jCmd, json_t 
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( jResult, "result" );
   if( !jObj || !json_is_object(jObj) ) {
-    srvmsg( LOG_ERR, "getServiceInformation from %s: no result field", 
+    logerr( "getServiceInformation from %s: no result field", 
                      szDeviceId );
     return;
   } 
@@ -137,3 +137,5 @@ void _handleGetServiceInformation( const char *szDeviceId, json_t *jCmd, json_t 
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
+
+

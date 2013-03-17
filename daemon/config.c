@@ -101,7 +101,7 @@ int readconfig( const char *fname )
     return 0;
   fp = fopen( fname,"r" );
   if( !fp ) {
-    srvmsg( LOG_ERR, "Could not open %s: %s", fname, strerror(errno) );
+    logerr( "Could not open %s: %s", fname, strerror(errno) );
     return 1;
   }
 
@@ -131,7 +131,7 @@ int readconfig( const char *fname )
 \*-------------------------------------------------------------------------*/
       if( !argptr->valname ) {
         if( value )
-          srvmsg( LOG_ERR, "%s line %d: value for parameter %s ignored!\n", 
+          logerr( "%s line %d: value for parameter %s ignored!\n", 
                   fname, line, keyword );
         (*(int*)argptr->buffer)++;
       }
@@ -142,7 +142,7 @@ int readconfig( const char *fname )
       else if( value )
         *(char **)argptr->buffer = strdup( value );
       else
-        srvmsg( LOG_ERR, "%s line %d: value for parameter %s expected (line ignored)!\n", 
+        logerr( "%s line %d: value for parameter %s expected (line ignored)!\n", 
                 fname, line, keyword );
       
 /*-------------------------------------------------------------------------*\
@@ -155,7 +155,7 @@ int readconfig( const char *fname )
     Unknown keyword
 \*------------------------------------------------------------------------*/
     if( !argptr ) {
-      srvmsg( LOG_ERR, "%s line %d: unknown parameter %s (line ignored)!\n", 
+      logerr( "%s line %d: unknown parameter %s (line ignored)!\n", 
               fname, line, keyword );
     }
   } /* endof:  while( fgets(buffer,sizeof(buffer)-1,fp) ) */
@@ -180,7 +180,7 @@ int addarg( const char *name, const char *sname, void *buffer, const char *valna
     Check for limit in arg name
 \*-------------------------------------------------------------------------*/
   if( strlen(name)>120 ) {
-    srvmsg( LOG_ERR, "addarg: argument name too long: %s!\n", name );
+    logerr( "addarg: argument name too long: %s!\n", name );
     return -1;
   }
 
@@ -321,3 +321,4 @@ int getargs( int argc, char *argv[] )
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
+

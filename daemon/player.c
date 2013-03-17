@@ -271,7 +271,7 @@ const char *playerGetHWID( void )
     Error?
 \*------------------------------------------------------------------------*/
   if( retcode ) {
-    srvmsg( LOG_ERR, "Error inquiring MAC from \"%s\": %s ", 
+    logerr( "Error inquiring MAC from \"%s\": %s ", 
                      playerInterface, strerror(errno) );
     return NULL;
   }
@@ -367,78 +367,6 @@ const char *playerGetToken( void )
 
 
 /*=========================================================================*\
-    Set player UUID
-\*=========================================================================*/
-void playerSetUUID( const char *uuid )
-{	
-  srvmsg( LOG_INFO, "Setting player UUID to \"%s\"", uuid );
-  playerUUID = uuid;  
-  persistSetString( "DeviceUUID", uuid );
-}
-
-/*=========================================================================*\
-    Set player Model
-\*=========================================================================*/
-void playerSetModel( const char *model )
-{	
-  srvmsg( LOG_INFO, "Setting player model to \"%s\"", model );
-  if( playerModel ) {
-    srvmsg( LOG_ERR, "Can set player model only once" );
-    return;
-  }
-  playerModel = model;  
-} 
-
-
-/*=========================================================================*\
-    Set player name
-\*=========================================================================*/
-void playerSetName( const char *name )
-{
-  srvmsg( LOG_INFO, "Setting player name to \"%s\"", name );
-  playerName = name;  
-  persistSetString( "PlayerName", name );
-}
-
-
-/*=========================================================================*\
-    Set network interface name
-\*=========================================================================*/
-void playerSetInterface( const char *name )
-{
-  srvmsg( LOG_INFO, "Setting interface name to \"%s\"", name );
-  if( playerInterface ) {
-    srvmsg( LOG_ERR, "Can set interface name only once" );
-    return;
-  }
-  playerInterface = name;  
-  persistSetString( "PlayerInterface", name );
-}
-
-
-/*=========================================================================*\
-    Set audio device name
-\*=========================================================================*/
-void playerSetAudioDevice( const char *name )
-{
-  srvmsg( LOG_INFO, "Setting audio device to \"%s\"", name );
-  playerAudioDevice = name;  
-  persistSetString( "PlayerAudioDevice", name );
-}
-
-
-/*=========================================================================*\
-    Set access Token
-\*=========================================================================*/
-void playerSetToken( const char *token )
-{
-  srvmsg( LOG_INFO, "Setting ickstream access token to \"%s\"", token );
-  accessToken = token;  
-  persistSetString( "IckAccessToken", token );
-}
-
-
-/*=========================================================================*\
       Get Volume 
 \*=========================================================================*/
 double playerGetVolume( void )
@@ -459,11 +387,116 @@ bool playerGetMuting( void )
 
 
 /*=========================================================================*\
+      Get playback position 
+\*=========================================================================*/
+double playerGetSeekPos( void )
+{
+  double pos = 0;
+    
+/*------------------------------------------------------------------------*\
+    Get Position from codec
+\*------------------------------------------------------------------------*/
+  if( codecInstance && codecGetSeekTime(codecInstance,&pos) )
+    logwarn( "playerGetSeekPos: could not get seek time" );   
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  DBGMSG( "playerGetSeekPos: %.2lfs", pos );
+  return pos;	
+}
+
+
+/*=========================================================================*\
+    Set player UUID
+\*=========================================================================*/
+void playerSetUUID( const char *uuid )
+{	
+  loginfo( "Setting player UUID to \"%s\"", uuid );
+  playerUUID = uuid;  
+  persistSetString( "DeviceUUID", uuid );
+}
+
+
+/*=========================================================================*\
+    Set player model
+\*=========================================================================*/
+void playerSetModel( const char *model )
+{	
+  loginfo( "Setting player model to \"%s\"", model );
+  if( playerModel ) {
+    logerr( "Can set player model only once" );
+    return;
+  }
+  playerModel = model;  
+} 
+
+
+/*=========================================================================*\
+    Set network interface name
+\*=========================================================================*/
+void playerSetInterface( const char *name )
+{
+  loginfo( "Setting interface name to \"%s\"", name );
+  if( playerInterface ) {
+    logerr( "Can set interface name only once" );
+    return;
+  }
+  playerInterface = name;  
+  persistSetString( "PlayerInterface", name );
+}
+
+
+/*=========================================================================*\
+    Set audio device name
+\*=========================================================================*/
+void playerSetAudioDevice( const char *name )
+{
+  loginfo( "Setting audio device to \"%s\"", name );
+  playerAudioDevice = name;  
+  persistSetString( "PlayerAudioDevice", name );
+}
+
+
+/*=========================================================================*\
+    Set access Token
+\*=========================================================================*/
+void playerSetToken( const char *token )
+{
+  loginfo( "Setting ickstream access token to \"%s\"", token );
+  accessToken = token;  
+  persistSetString( "IckAccessToken", token );
+}
+
+
+/*=========================================================================*\
+    Set player name
+\*=========================================================================*/
+void playerSetName( const char *name, bool broadcast )
+{
+  loginfo( "Setting player name to \"%s\"", name );
+
+/*------------------------------------------------------------------------*\
+    Store new name 
+\*------------------------------------------------------------------------*/
+  playerName = name;  
+  persistSetString( "PlayerName", name );
+
+/*------------------------------------------------------------------------*\
+    Update timestamp and broadcast new player state
+\*------------------------------------------------------------------------*/
+  lastChange = srvtime( );
+  if( broadcast )
+    ickMessageNotifyPlayerState();
+}
+
+
+/*=========================================================================*\
       Set Volume 
 \*=========================================================================*/
-double playerSetVolume( double volume )
+double playerSetVolume( double volume, bool broadcast )
 {
-  srvmsg( LOG_INFO, "Setting Volume to %lf", volume );
+  loginfo( "Setting Volume to %lf", volume );
 
 /*------------------------------------------------------------------------*\
     Clip value 
@@ -477,19 +510,25 @@ double playerSetVolume( double volume )
     Parametrize codec (if any )
 \*------------------------------------------------------------------------*/
   if( codecInstance && codecSetVolume(codecInstance,EffectiveVolume()) )
-    srvmsg( LOG_WARNING, "playerSetVolume: could not set volume to %.2lf%%", 
+    logwarn( "playerSetVolume: could not set volume to %.2lf%%", 
                          EffectiveVolume()*100 ); 
 
 /*------------------------------------------------------------------------*\
-    Update timestamp 
-\*------------------------------------------------------------------------*/
-  lastChange = srvtime( );
-
-/*------------------------------------------------------------------------*\
-    Store and return new volume 
+    Store new volume 
 \*------------------------------------------------------------------------*/
   playerVolume = volume;
   persistSetReal( "PlayerVolume", volume );
+
+/*------------------------------------------------------------------------*\
+    Update timestamp and broadcast new player state
+\*------------------------------------------------------------------------*/
+  lastChange = srvtime( );
+  if( broadcast )
+    ickMessageNotifyPlayerState();
+
+/*------------------------------------------------------------------------*\
+    Return new volume 
+\*------------------------------------------------------------------------*/
   return playerVolume;
 }
 
@@ -497,56 +536,41 @@ double playerSetVolume( double volume )
 /*=========================================================================*\
       Set Muting 
 \*=========================================================================*/
-bool playerSetMuting( bool muted )
+bool playerSetMuting( bool muted, bool broadcast )
 {
-  srvmsg( LOG_INFO, "Setting Muting to %s", muted?"On":"Off");
+  loginfo( "Setting Muting to %s", muted?"On":"Off");
 
 /*------------------------------------------------------------------------*\
     Parametrize codec (if any )
 \*------------------------------------------------------------------------*/
   if( codecInstance && codecSetVolume(codecInstance,EffectiveVolume()) )
-    srvmsg( LOG_WARNING, "playerSetMuting: could not set volume to %.2lf%%",
+    logwarn( "playerSetMuting: could not set volume to %.2lf%%",
                          EffectiveVolume()*100  ); 
 
 /*------------------------------------------------------------------------*\
-    Update timestamp 
-\*------------------------------------------------------------------------*/
-  lastChange = srvtime( );
-
-/*------------------------------------------------------------------------*\
-    Store and return new state 
+    Store new state 
 \*------------------------------------------------------------------------*/
   playerMuted = muted;
   persistSetBool( "playerMuted", muted );
+
+/*------------------------------------------------------------------------*\
+    Update timestamp and broadcast new player state
+\*------------------------------------------------------------------------*/
+  lastChange = srvtime( );
+  if( broadcast )
+    ickMessageNotifyPlayerState();
+
+/*------------------------------------------------------------------------*\
+    Return new state 
+\*------------------------------------------------------------------------*/
   return playerMuted;
-}
-
-
-/*=========================================================================*\
-      Get playback position 
-\*=========================================================================*/
-double playerGetSeekPos( void )
-{
-  double pos = 0;
-    
-/*------------------------------------------------------------------------*\
-    Get Position from codec
-\*------------------------------------------------------------------------*/
-  if( codecInstance && codecGetSeekTime(codecInstance,&pos) )
-    srvmsg( LOG_WARNING, "playerGetSeekPos: could not get seek time" );   
-
-/*------------------------------------------------------------------------*\
-    That's it
-\*------------------------------------------------------------------------*/
-  DBGMSG( "playerGetSeekPos: %.2lfs", pos );
-  return pos;	
 }
 
 
 /*=========================================================================*\
       Change playback state 
 \*=========================================================================*/
-int playerSetState( PlayerState state )
+int playerSetState( PlayerState state, bool broadcast )
 {
   int           rc = 0;
   PlaylistItem *newTrack;
@@ -575,7 +599,7 @@ int playerSetState( PlayerState state )
         if( backend )
           audioIf = audioIfNew( backend, device );	
         if( !audioIf ) {
-          srvmsg( LOG_ERR, "_playbackStart: Could not open audio device: %s", playerAudioDevice );
+          logerr( "_playbackStart: Could not open audio device: %s", playerAudioDevice );
           rc = -1;
           break;
         }
@@ -584,14 +608,14 @@ int playerSetState( PlayerState state )
       // Is there a track to play ?
       newTrack = playlistGetCursorItem( playerQueue );
       if( !newTrack ) {
-  	    srvmsg( LOG_NOTICE, "_playbackStart: Empty queue or no cursor" );
+  	    lognotice( "_playbackStart: Empty queue or no cursor" );
   	    rc = -1;
   	    break;
       }
       
       // Unpausing existing track ?
       if( playerState==PlayerStatePause && currentTrackId && !strcmp(newTrack->id,currentTrackId) ) {
-  	    srvmsg( LOG_NOTICE, "_playbackStart: Track \"%s\" (%s) unpaused", 
+  	    lognotice( "_playbackStart: Track \"%s\" (%s) unpaused", 
                              newTrack->text, newTrack->id );
         playerState = PlayerStatePlay;
   	    rc = audioIfSetPause( audioIf, false );
@@ -600,12 +624,13 @@ int playerSetState( PlayerState state )
   	  
   	  // Need to stop running track?
   	  if( playerState==PlayerStatePlay ) {
+        DBGMSG( "Stopping active player thread." );
   	  	if( !currentTrackId )
-  	  	  srvmsg( LOG_ERR, "_playbackStart: internal error: playing but no current track." );
+  	  	  logerr( "_playbackStart: internal error: playing but no current track." );
   	  	else 
-          srvmsg( LOG_NOTICE, "_playbackStart: stopping current track (%s)", currentTrackId );
+          lognotice( "_playbackStart: stopping current track (%s)", currentTrackId );
         if( playbackThreadState!=PlayerThreadRunning )
-          srvmsg( LOG_ERR, "_playbackStart: internal error: playing but no running playback thread." );
+          logerr( "_playbackStart: internal error: playing but no running playback thread." );
         else {
           playbackThreadState = PlayerThreadTerminating;
           pthread_join( playbackThread, NULL ); 
@@ -614,11 +639,58 @@ int playerSetState( PlayerState state )
   	  
       // Create new playback thread
       rc = pthread_create( &playbackThread, NULL, _playbackThread, NULL );
+      DBGMSG( "Starting new player thread." );
       if( rc ) {
-        srvmsg( LOG_ERR, "_playbackStart: Unable to start thread: %s", strerror(rc) );
+        logerr( "_playbackStart: Unable to start thread: %s", strerror(rc) );
         rc = -1;
+        break;
       }
+
+      // Set new state
+      playerState = PlayerStatePlay;
       break;
+
+/*------------------------------------------------------------------------*\
+    Pause playback
+\*------------------------------------------------------------------------*/
+    case PlayerStatePause:
+
+     // not yet initialized?
+      if( !audioIf ) {
+        logerr( "_playbackPause: audio device not yet initialized." );
+      	rc = -1;
+      	break;
+      } 
+
+      // Is there a track to play ?
+      newTrack = playlistGetCursorItem( playerQueue );
+      if( !newTrack ) {
+  	    lognotice( "_playbackPause: Empty queue or no cursor" );
+  	    rc = -1;
+  	    break;
+      }
+      
+      // if the track did not change: set pause flag
+      if( currentTrackId && !strcmp(newTrack->id,currentTrackId) ) {
+
+        // Check for right state
+        if( playerState==PlayerStateStop )
+          logwarn( "_playbackPause: cannot pause stopped playback" );
+        else if( playerState==PlayerStatePause )
+          logwarn( "_playbackPause: pause already paused layback" );
+        // Pause audio output and set state
+        else {
+          lognotice( "_playbackPause: playback paused" );
+          rc = audioIfSetPause( audioIf, true );
+          if( !rc )
+            playerState = PlayerStatePause;
+        }
+        break;
+      }
+      
+      // no break here, as we'll change the status to PlayerStateStop in case 
+      // we were changing the track in paused state...
+  	  lognotice( "_playbackPause: current track changed, stopping..." );
 
 /*------------------------------------------------------------------------*\
     Stop playback
@@ -627,62 +699,36 @@ int playerSetState( PlayerState state )
 
       // not yet initialized?
       if( !audioIf ) {
-        srvmsg( LOG_ERR, "_playbackStop: audio device not yet initialized." );
+        logerr( "_playbackStop: audio device not yet initialized." );
         rc = -1;
         break;
       }
 
-      // not playing
-      if( playerState!=PlayerStatePlay  && playerState!=PlayerStatePause ) {
-        srvmsg( LOG_WARNING, "_playbackStop: not playing or no thread before stop (state %d)", playerState );
-        playerState = PlayerStateStop;
-      }
+      // not playing?
+      if( playerState!=PlayerStatePlay  && playerState!=PlayerStatePause )
+        logwarn( "_playbackStop: not playing or no thread before stop (state %d)", playerState );
 
-      // request thread to stop playback.
+      // request thread to stop playback and set new player state
       playbackThreadState = PlayerThreadTerminating;
+      playerState = PlayerStateStop;
       break; 
   	
-/*------------------------------------------------------------------------*\
-    Pause playback
-\*------------------------------------------------------------------------*/
-    case PlayerStatePause:
-
-     // not yet initialized?
-      if( !audioIf ) {
-        srvmsg( LOG_ERR, "_playbackPause: audio device not yet initialized." );
-      	rc = -1;
-      	break;
-      } 
-
-      // Check for right state
-      if( playerState==PlayerStateStop )
-        srvmsg( LOG_WARNING, "_playbackPause: cannot pause stopped playback" );
-      else if( playerState==PlayerStatePause )
-        srvmsg( LOG_WARNING, "_playbackPause: pause already paused layback" );
-
-      // Pause audio output and set state
-      else {
-        srvmsg( LOG_NOTICE, "_playbackPause: playback paused" );
-        rc = audioIfSetPause( audioIf, true );
-        if( !rc )
-          playerState = PlayerStatePause;
-      }
-      break;
-      
 /*------------------------------------------------------------------------*\
     Unknown command
 \*------------------------------------------------------------------------*/
     default:
-      srvmsg( LOG_ERR, "playerSetState: Unknown tagret state %d", state );
+      logerr( "playerSetState: Unknown tagret state %d", state );
       rc = -1;
       break;
   }
 
 /*------------------------------------------------------------------------*\
-    Update timestamp and unlock player
+    Update timestamp, unlock player and broadcast new player state
 \*------------------------------------------------------------------------*/
   lastChange = srvtime( );
   pthread_mutex_unlock( &playerMutex );
+  if( broadcast )
+    ickMessageNotifyPlayerState();
 
 /*------------------------------------------------------------------------*\
     That's it 
@@ -714,7 +760,7 @@ static void *_playbackThread( void *arg )
     // Try to get feed and codec for new track, if negative skip queue item
     feed = _feedFromPlayListItem( item, &codec );
     if( !feed ) {
-      srvmsg( LOG_NOTICE, "_playerThread: Track \"%s\" (%s) unavailable or unsupported by audio module", 
+      lognotice( "_playerThread: Track \"%s\" (%s) unavailable or unsupported by audio module", 
                           item->text, item->id );
       item = playlistIncrCursorItem( playerQueue );
       continue;
@@ -724,7 +770,7 @@ static void *_playbackThread( void *arg )
     // Fixme: use fallback format if feed format is not supported...
     fifo = audioIfPlay( audioIf, &feed->format );
     if( !fifo  ) {
-      srvmsg( LOG_ERR, "_playerThread: Cannot setup audio device \"%s\" to format %s", 
+      logerr( "_playerThread: Cannot setup audio device \"%s\" to format %s", 
                         audioIf->devName, audioFormatStr(&feed->format) );
       audioFeedDelete( feed , true );
       playbackThreadState = PlayerThreadTerminatedError;
@@ -734,7 +780,7 @@ static void *_playbackThread( void *arg )
     // create codec instance
     codecInst = codecNewInstance( codec, fifo, &feed->format );
     if( !codecInst ) {
-      srvmsg( LOG_ERR, "_playerThread: could not get instance of codec %s for format %s", 
+      logerr( "_playerThread: could not get instance of codec %s for format %s", 
                        codec->name, audioFormatStr(&feed->format) );
       audioFeedDelete( feed, true );
       playbackThreadState = PlayerThreadTerminatedError;
@@ -743,12 +789,12 @@ static void *_playbackThread( void *arg )
     
     // initialize volume
     if( codecSetVolume(codecInst,EffectiveVolume()) )
-      srvmsg( LOG_WARNING, "_playerThread: could not set volume to %.2lf%%", 
+      logwarn( "_playerThread: could not set volume to %.2lf%%", 
                            EffectiveVolume()*100 ); 
  
     // Attach feed to codec and start...
     if( audioFeedStart(feed,codecInst) ) {
-      srvmsg( LOG_ERR, "_playerThread: Could not start feed \"%s\" on codec %s", 
+      logerr( "_playerThread: Could not start feed \"%s\" on codec %s", 
                          feed->uri, codecInst->codec->name );
       audioFeedDelete( feed, true );
       codecDeleteInstance( codecInst, true );
@@ -761,7 +807,7 @@ static void *_playbackThread( void *arg )
     currentTrackId = strdup( item->id );
     codecInstance = codecInst;
     ickMessageNotifyPlayerState();
-    srvmsg( LOG_NOTICE, "_playerThread: Playing track \"%s\" (%s)", 
+    lognotice( "_playerThread: Playing track \"%s\" (%s)", 
       	                item->text, item->id );
       	                
     // Wait for end of feed or stop condition ...
@@ -775,35 +821,37 @@ static void *_playbackThread( void *arg )
  
     // Get rid of feed
     if( feed && audioFeedDelete(feed,true) )
-      srvmsg( LOG_ERR, "_playerThread: Could not delete feeder instance" );
+      logerr( "_playerThread: Could not delete feeder instance" );
  
     // Get rid of codec
     codecInstance = NULL;
     if( codecDeleteInstance(codecInst,true) )
-      srvmsg( LOG_ERR, "_playerThread: Could not delete codec instance" );
+      logerr( "_playerThread: Could not delete codec instance" );
      	
-    // Goto next playlist entry 	
-    item = playlistIncrCursorItem( playerQueue );
+    // Goto next playlist entry only when not terminating
+    if( playbackThreadState==PlayerThreadRunning )
+      item = playlistIncrCursorItem( playerQueue );
   }  // End of: Thread main loop
  
 /*------------------------------------------------------------------------*\
     Stop audio interface
 \*------------------------------------------------------------------------*/
   if( audioIfStop(audioIf,playbackThreadState==PlayerThreadRunning?AudioDrain:AudioDrop) )
-    srvmsg( LOG_ERR, "_playerThread: Could not stop audio interface %s", audioIf->devName );
-  if( playbackThreadState==PlayerThreadRunning )  
-    srvmsg( LOG_NOTICE, "_playerThread: End of playlist." );
+    logerr( "_playerThread: Could not stop audio interface %s", audioIf->devName );
 
 /*------------------------------------------------------------------------*\
-    Set player state and broadcast change
+    Set and broadcast new player state
+\*------------------------------------------------------------------------*/
+  if( playbackThreadState==PlayerThreadRunning ) {
+    lognotice( "_playerThread: End of playlist." );
+    playerState = PlayerStateStop;
+    ickMessageNotifyPlayerState();
+  }
+
+/*------------------------------------------------------------------------*\
+    Clean up, that's it ...  
 \*------------------------------------------------------------------------*/
   Sfree( currentTrackId );
-  playerState = PlayerStateStop;
-  ickMessageNotifyPlayerState();
- 
-/*------------------------------------------------------------------------*\
-    That's it ...  
-\*------------------------------------------------------------------------*/
   DBGMSG( "Player thread: terminated due to state %d", playbackThreadState );
   return NULL;
 }
@@ -833,7 +881,7 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
     // Get type
     jObj = json_object_get( jStreamRef, "format" );
     if( !jObj || !json_is_string(jObj) ) {
-      srvmsg( LOG_ERR, "StreamRef #%d for track \"%s\" (%s): no format!", 
+      logerr( "StreamRef #%d for track \"%s\" (%s): no format!", 
                        i, item->text, item->id );
       continue;
     }
@@ -842,7 +890,7 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
     // Get URI
     jObj = json_object_get( jStreamRef, "url" );
     if( !jObj || !json_is_string(jObj) ) {
-      srvmsg( LOG_ERR, "StreamRef #%d for track \"%s\" (%s): no url!", 
+      logerr( "StreamRef #%d for track \"%s\" (%s): no url!", 
                            i, item->text, item->id );
       continue;
     }  
@@ -850,7 +898,7 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
     // Try to resolve the URI (will allocate the string)
     uri = ickServiceResolveURI( json_string_value(jObj), "content" );
     if( !uri ) {
-      srvmsg( LOG_NOTICE, "StreamRef #%d for track \"%s\" (%s): cannot resolve URL \"%s\"!", 
+      lognotice( "StreamRef #%d for track \"%s\" (%s): cannot resolve URL \"%s\"!", 
               i, item->text, item->id, json_string_value(jObj) );
       continue;  
     }
@@ -901,3 +949,7 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
+
+
+
+

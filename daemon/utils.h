@@ -6,7 +6,15 @@ Source File     : utils.h
 
 Description     : Main include file for fifo.c 
 
-Comments        : -
+Comments        : Posix log levels:
+                   LOG_EMERG    0   system is unusable
+                   LOG_ALERT    1   action must be taken immediately
+                   LOG_CRIT     2   critical conditions
+                   LOG_ERR      3   error conditions
+                   LOG_WARNING  4   warning conditions
+                   LOG_NOTICE   5   normal but significant condition
+                   LOG_INFO     6   informational    
+                   LOG_DEBUG    7   debug-level messages
 
 Date            : 08.03.2013 
 
@@ -71,6 +79,11 @@ Remarks         : -
 #else
 #define DBGMSG( args... ) { ;}
 #endif
+
+#define logerr( args... )     _srvlog( __FILE__, __LINE__, LOG_ERR, args )
+#define logwarn( args... )    _srvlog( __FILE__, __LINE__, LOG_WARNING, args )
+#define lognotice( args... )  _srvlog( __FILE__, __LINE__, LOG_NOTICE, args )
+#define loginfo( args... )    _srvlog( __FILE__, __LINE__, LOG_INFO, args )
 
 #if MEMDEBUG
 #define Sfree(p) {DBGMSG("free %p", (p)); if(p)free(p); (p)=NULL;}

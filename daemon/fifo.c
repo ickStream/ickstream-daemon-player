@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-// #undef DEBUG
+#undef DEBUG
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -88,14 +88,14 @@ Fifo *fifoCreate( const char *name, size_t size )
 \*------------------------------------------------------------------------*/
   fifo = calloc( 1, sizeof(Fifo) );
   if( !fifo ) {
-  	srvmsg( LOG_ERR, "fifoCreate: out of memory!" );
+  	logerr( "fifoCreate: out of memory!" );
     return NULL;
   }
   if( name ) {
     fifo->name = strdup( name );
     if( !fifo->name ) {
       Sfree( fifo );
-      srvmsg( LOG_ERR, "fifoCreate: out of memory!" );
+      logerr( "fifoCreate: out of memory!" );
       return NULL;
     }
   }
@@ -110,7 +110,7 @@ Fifo *fifoCreate( const char *name, size_t size )
   if( !fifo->buffer ) {
     Sfree( fifo->name );
     Sfree( fifo );
-    srvmsg( LOG_ERR, "fifoCreate: out of memory!" );
+    logerr( "fifoCreate: out of memory!" );
     return NULL;
   }
   fifo->readp  = fifo->buffer;
@@ -443,7 +443,7 @@ size_t fifoGetSize( Fifo *fifo, FifoSizeMode mode )
 /*------------------------------------------------------------------------*\
     Unknown mode 
 \*------------------------------------------------------------------------*/
-  srvmsg( LOG_ERR, "fifoGetSize(%p): unknown mode %d", fifo, mode );
+  logerr( "fifoGetSize(%p): unknown mode %d", fifo, mode );
   return -1;
 }
 
@@ -461,7 +461,7 @@ int fifoDataWritten( Fifo *fifo, size_t size )
 \*------------------------------------------------------------------------*/
   char *eptr = (fifo->writep>=fifo->readp) ? fifo->buffer+fifo->size : fifo->readp;
   if( fifo->writep+size>eptr ) {
-    srvmsg( LOG_ERR, "fifo %p (%s): data written beyond boundary (by %ld bytes)", 
+    logerr( "fifo %p (%s): data written beyond boundary (by %ld bytes)", 
                      fifo, fifo->name?fifo->name:"<unknown>",
                      (long) (fifo->writep-eptr+size) );
     return -1;
@@ -500,7 +500,7 @@ int fifoDataConsumed( Fifo *fifo, size_t size )
 \*------------------------------------------------------------------------*/
   char *eptr = (fifo->readp>=fifo->writep) ? fifo->buffer+fifo->size : fifo->writep;
   if( fifo->readp+size>eptr ) {
-    srvmsg( LOG_ERR, "fifo %p (%s): data consumed beyond boundary (%ld bytes)", 
+    logerr( "fifo %p (%s): data consumed beyond boundary (%ld bytes)", 
                      fifo, fifo->name?fifo->name:"<unknown>", 
                      (long) (fifo->readp+size-eptr) );
     return -1;
@@ -551,3 +551,4 @@ size_t fifoConsume( Fifo *fifo, char *target, size_t len )
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
+

@@ -107,7 +107,7 @@ int persistSetFilename( const char *name )
   if( !jRepository )
     jRepository = json_object();
   if( !jRepository ) {
-    srvmsg( LOG_ERR, "Could not create repository object." );
+    logerr( "Could not create repository object." );
     return -1;
   }
   
@@ -125,7 +125,7 @@ int persistSetFilename( const char *name )
 \*=========================================================================*/
 void persistShutdown( void )
 {
-  srvmsg( LOG_INFO, "Shutting down persistency module..." ); 
+  loginfo( "Shutting down persistency module..." ); 
 
 /*------------------------------------------------------------------------*\
     Dump to file a last time
@@ -179,12 +179,12 @@ int persistSetJSON_new( const char *key, json_t *value )
     Create repository if not available
 \*------------------------------------------------------------------------*/
   if( !jRepository ) {
-    srvmsg( LOG_WARNING, "Set value in uninitialized repository: \"%s\"", 
+    logwarn( "Set value in uninitialized repository: \"%s\"", 
                          key );
     jRepository = json_object();
   }
   if( !jRepository ) {
-    srvmsg( LOG_ERR, "Could not create repository object." );
+    logerr( "Could not create repository object." );
     return -1;
   }
 
@@ -192,7 +192,7 @@ int persistSetJSON_new( const char *key, json_t *value )
     Store or replace value in repository, steal reference
 \*------------------------------------------------------------------------*/
   if( json_object_set(jRepository,key,value) ) {
-    srvmsg( LOG_ERR, "Cannot add vlaue for key \"%s\" to repository.", key );
+    logerr( "Cannot add vlaue for key \"%s\" to repository.", key );
     return -1;  
   }
   
@@ -217,7 +217,7 @@ int persistSetString( const char *key, const char *value )
 \*------------------------------------------------------------------------*/
   jObj = json_string( value );
   if( !jObj ) {
-    srvmsg( LOG_ERR, "Cannot convert string to JSON: \"%s\"", value );
+    logerr( "Cannot convert string to JSON: \"%s\"", value );
     return -1;
   }
 
@@ -242,7 +242,7 @@ int persistSetInteger( const char *key, int value )
 \*------------------------------------------------------------------------*/
   jObj = json_integer( value );
   if( !jObj ) {
-    srvmsg( LOG_ERR, "Cannot convert integer to JSON: %d", value );
+    logerr( "Cannot convert integer to JSON: %d", value );
     return -1;
   }
   
@@ -267,7 +267,7 @@ int persistSetReal( const char *key, double value )
 \*------------------------------------------------------------------------*/
   jObj = json_real( value );
   if( !jObj ) {
-    srvmsg( LOG_ERR, "Cannot convert double to JSON: %lg", value );
+    logerr( "Cannot convert double to JSON: %lg", value );
     return -1;
   }
   
@@ -292,7 +292,7 @@ int persistSetBool( const char *key, bool value )
 \*------------------------------------------------------------------------*/
   jObj = value ? json_true() : json_false();
   if( !jObj ) {
-    srvmsg( LOG_ERR, "Cannot convert boolean to JSON: %d", value );
+    logerr( "Cannot convert boolean to JSON: %d", value );
     return -1;
   }
   
@@ -316,7 +316,7 @@ int persistRemove( const char *key )
     Repository needs to be available
 \*------------------------------------------------------------------------*/
   if( !jRepository ) {
-    srvmsg( LOG_WARNING, "Try to remove key \"%s\" from uninitialized repository.", 
+    logwarn( "Try to remove key \"%s\" from uninitialized repository.", 
                           key );
     return -1;
   }
@@ -340,7 +340,7 @@ json_t *persistGetJSON( const char *key )
     Repository needs to be available
 \*------------------------------------------------------------------------*/
   if( !jRepository ) {
-    srvmsg( LOG_WARNING, "Get value for key \"%s\" in uninitialized repository.", 
+    logwarn( "Get value for key \"%s\" in uninitialized repository.", 
                           key );
     return NULL;
   }
@@ -378,7 +378,7 @@ const char *persistGetString( const char *key )
     Check type
 \*------------------------------------------------------------------------*/
   if( !json_is_string(jObj) ) {
-     srvmsg( LOG_WARNING, "Value for key \"%s\" is not a string (%d): ", 
+     logwarn( "Value for key \"%s\" is not a string (%d): ", 
                           key, json_typeof(jObj) );
      return NULL;
   }  
@@ -413,7 +413,7 @@ int persistGetInteger( const char *key )
     Check type
 \*------------------------------------------------------------------------*/
   if( !json_is_integer(jObj) ) {
-     srvmsg( LOG_WARNING, "Value for key \"%s\" is not an integer (%d): ", 
+     logwarn( "Value for key \"%s\" is not an integer (%d): ", 
              key, json_typeof(jObj) );
      return 0;
   }  
@@ -448,7 +448,7 @@ double persistGetReal( const char *key )
     Check type
 \*------------------------------------------------------------------------*/
   if( !json_is_real(jObj) ) {
-     srvmsg( LOG_WARNING, "Value for key \"%s\" is not a real number (%d): ", 
+     logwarn( "Value for key \"%s\" is not a real number (%d): ", 
                           key, json_typeof(jObj) );
      return 0;
   }  
@@ -485,7 +485,7 @@ bool persistGetBool( const char *key )
     Check type
 \*------------------------------------------------------------------------*/
   if( !json_is_true(jObj) && !json_is_false(jObj) ) {
-     srvmsg( LOG_WARNING, "Value for key \"%s\" is not a boolean (%d): ", 
+     logwarn( "Value for key \"%s\" is not a boolean (%d): ", 
                           key, json_typeof(jObj) );
      return false;
   }  
@@ -512,7 +512,7 @@ static int _dumpRepository( const char *name )
     No name given? 
 \*------------------------------------------------------------------------*/
   if( !name ) {
-    srvmsg( LOG_ERR, "Cannot write persistent repository: no name set " );
+    logerr( "Cannot write persistent repository: no name set " );
     return -1;
   }
 
@@ -520,7 +520,7 @@ static int _dumpRepository( const char *name )
     No repository in mamory? 
 \*------------------------------------------------------------------------*/
   if( !jRepository ) {
-    srvmsg( LOG_ERR, "Try to dump empty repository object." );
+    logerr( "Try to dump empty repository object." );
     return -1;
   }
 
@@ -528,7 +528,7 @@ static int _dumpRepository( const char *name )
     Use toolbox function 
 \*------------------------------------------------------------------------*/
   if( json_dump_file(jRepository,name,JSON_COMPACT) ) {
-    srvmsg( LOG_ERR, "Error writing to persistent repository \"%s\": %s ", 
+    logerr( "Error writing to persistent repository \"%s\": %s ", 
                      name, strerror(errno) );
     retcode = -1;  
   }
@@ -537,7 +537,7 @@ static int _dumpRepository( const char *name )
     Try to change file mode in any case (might conatain secret info) 
 \*------------------------------------------------------------------------*/
   if( chmod(name,S_IRUSR|S_IWUSR) ) {
-    srvmsg( LOG_ERR, "Could not chmod persistent repository \"%s\": %s ", 
+    logerr( "Could not chmod persistent repository \"%s\": %s ", 
                      name, strerror(errno) );
     retcode = -1; 
   }
@@ -557,7 +557,7 @@ void _freeRepository( void )
 	
   if( jRepository ) {
     if( jRepository->refcount>1 )
-      srvmsg( LOG_WARNING, "Refcount for jRepository is %d before deletion.", 
+      logwarn( "Refcount for jRepository is %d before deletion.", 
                            jRepository->refcount );    
     json_decref( jRepository ); 
   }
@@ -580,7 +580,7 @@ static int _readRepository( const char *name )
     No name given? 
 \*------------------------------------------------------------------------*/
   if( !name ) {
-    srvmsg( LOG_ERR, "Cannot read persistent repository: no name set " );
+    logerr( "Cannot read persistent repository: no name set " );
     return -1;
   }
 
@@ -589,7 +589,7 @@ static int _readRepository( const char *name )
 \*------------------------------------------------------------------------*/
   jObj = json_load_file( name, JSON_REJECT_DUPLICATES, &error );
   if( !jObj ) {
-    srvmsg( LOG_ERR, "Cannot read persistent repository %s: currupt line %d: %s", 
+    logerr( "Cannot read persistent repository %s: currupt line %d: %s", 
                     name, error.line, error.text );
     return -1;                
   } 
@@ -613,3 +613,6 @@ static int _readRepository( const char *name )
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
+
+
+

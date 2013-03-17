@@ -92,10 +92,15 @@ void _srvlog( const char *file, int line,  int prio, const char *fmt, ... )
 
     // select stream due to priority
     FILE *f = (prio<LOG_INFO) ? stderr : stdout;
-  
+
+    // print timestamp and thread info
+    fprintf( f, "%.4f [%p]", srvtime(), (void*)pthread_self() );
+
     // prepend location to message (if available)
     if( file )
-      fprintf( f, "%.4f [%p] %s,%d: ", srvtime(), (void*)pthread_self(), file, line );
+      fprintf( f, " %s,%d: ", file, line );
+    else
+      fprintf( f, ": " );
 
     // the message itself
     vfprintf( f, fmt, a_list );
@@ -108,7 +113,7 @@ void _srvlog( const char *file, int line,  int prio, const char *fmt, ... )
 /*------------------------------------------------------------------------*\
     use syslog facility, hide debugging messages from syslog
 \*------------------------------------------------------------------------*/
-  if( prio<=sysloglevel &&  prio<DEBUG)
+  if( prio<=sysloglevel && prio<LOG_DEBUG)
     vsyslog( prio, fmt, a_list );
   
 /*------------------------------------------------------------------------*\

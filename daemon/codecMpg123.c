@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-// #undef DEBUG
+#undef DEBUG
 
 #include <stdio.h>
 #include <string.h>
@@ -127,7 +127,7 @@ static int _codecInit( void )
 \*------------------------------------------------------------------------*/
   rc = mpg123_init();
   if( rc!=MPG123_OK ) {
-    srvmsg( LOG_ERR, "mpg123: could not init lib: %s", 
+    logerr( "mpg123: could not init lib: %s", 
                       mpg123_plain_strerror(rc)  );
     return -1;	
   }
@@ -179,7 +179,7 @@ static int _codecNewInstance( CodecInstance *instance )
 \*------------------------------------------------------------------------*/
   mh = mpg123_new( NULL, &rc );   
   if( !mh ) {
-    srvmsg( LOG_ERR, "mpg123: could not init instance: %s", 
+    logerr( "mpg123: could not init instance: %s", 
                       mpg123_plain_strerror(rc)  );
     return -1;	
   }
@@ -189,7 +189,7 @@ static int _codecNewInstance( CodecInstance *instance )
 \*------------------------------------------------------------------------*/
   rc = mpg123_open_feed( mh );
   if( rc!=MPG123_OK ) {
-    srvmsg( LOG_ERR, "mpg123: could not open feed: %s", 
+    logerr( "mpg123: could not open feed: %s", 
                       mpg123_plain_strerror(rc)  );
     mpg123_delete( mh );                    
     return -1;	
@@ -223,7 +223,7 @@ static int _codecDeleteInstance( CodecInstance *instance )
 \*------------------------------------------------------------------------*/
   rc = mpg123_close( mh );
   if( rc!=MPG123_OK ) {
-    srvmsg( LOG_ERR, "mpg123: could not close handle: %s", 
+    logerr( "mpg123: could not close handle: %s", 
                       mpg123_plain_strerror(rc)  );
   }
 
@@ -281,7 +281,7 @@ static int _codecAcceptInput( CodecInstance *instance, void *data, size_t length
   
       // Report real error 
       default:
-        srvmsg( LOG_ERR, "mpg123: could not accept data (%ld bytes): %s", 
+        logerr( "mpg123: could not accept data (%ld bytes): %s", 
                          (long)length, 
                          rc==MPG123_ERR?mpg123_strerror(mh):mpg123_plain_strerror(rc) );
         return -1;
@@ -355,7 +355,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
 
     // Report real error 
     default:
-      srvmsg( LOG_ERR, "mpg123: could not deliver data (avail %ld bytes): %s", 
+      logerr( "mpg123: could not deliver data (avail %ld bytes): %s", 
                        (long)maxLength, 
                        rc==MPG123_ERR?mpg123_strerror(mh):mpg123_plain_strerror(rc)  );
       err = -1;	  	
@@ -384,7 +384,7 @@ static int _codecSetVolume( CodecInstance *instance, double volume )
   rc = mpg123_volume( mh, volume );
   pthread_mutex_unlock( &instance->mutex );
   if( rc )
-    srvmsg( LOG_ERR, "mpg123: could not set volume to %.2lf%%: %s", 
+    logerr( "mpg123: could not set volume to %.2lf%%: %s", 
                      volume*100, mpg123_plain_strerror(rc)  );
                        
 /*------------------------------------------------------------------------*\
@@ -418,3 +418,4 @@ static int _codecGetSeekTime( CodecInstance *instance, double *pos )
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
+

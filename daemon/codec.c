@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-// #undef DEBUG 
+#undef DEBUG 
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -88,11 +88,11 @@ static void *_codecThread( void *arg );
 \*=========================================================================*/
 int codecRegister( Codec *codec )
 {
-  srvmsg( LOG_INFO, "Registering codec %s", codec->name );
+  loginfo( "Registering codec %s", codec->name );
   
   // Call optional init method
   if( codec->init && codec->init() ) {
-    srvmsg( LOG_INFO, "Could not init codec %s", codec->name );
+    loginfo( "Could not init codec %s", codec->name );
     return -1;
   }
   
@@ -179,7 +179,7 @@ CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format )
 \*------------------------------------------------------------------------*/
   instance = calloc( 1, sizeof(CodecInstance) );
   if( !instance ) {
-    srvmsg( LOG_ERR, "codecNewInstance: out of memeory!" );
+    logerr( "codecNewInstance: out of memeory!" );
     return NULL;
   }
   instance->state   = CodecInitialized;
@@ -191,7 +191,7 @@ CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format )
     Call Codec instance initializer 
 \*------------------------------------------------------------------------*/
   if( codec->newInstance(instance) ) {
-  	srvmsg( LOG_ERR, "codecNewInstance: could not get instance of codec %s", 
+  	logerr( "codecNewInstance: could not get instance of codec %s", 
   	                 codec->name );
     Sfree( instance );
   	return NULL;
@@ -208,7 +208,7 @@ CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format )
 \*------------------------------------------------------------------------*/
   int rc = pthread_create( &instance->thread, NULL, _codecThread, instance );
   if( rc ) {
-    srvmsg( LOG_ERR, "codecNewInstance: Unable to start thread: %s", strerror(rc) );
+    logerr( "codecNewInstance: Unable to start thread: %s", strerror(rc) );
     codec->deleteInstance( instance );
     Sfree( instance );
     return NULL;
@@ -361,7 +361,7 @@ int codecSetVolume( CodecInstance *instance, double volume )
   
   // Not supported?
   if( !codec->setVolume ) {
-  	srvmsg( LOG_WARNING, "Codec %s: volume setting not supported.",
+  	logwarn( "Codec %s: volume setting not supported.",
                          codec->name );
   	return -1;
   } 	
@@ -380,7 +380,7 @@ int codecGetSeekTime( CodecInstance *instance, double *pos )
   
   // Not supported?
   if( !codec->getSeekTime ) {
-  	srvmsg( LOG_WARNING, "Codec %s: seek position not supported.",
+  	logwarn( "Codec %s: seek position not supported.",
                          codec->name );
   	return -1;
   } 	
@@ -414,7 +414,7 @@ static void *_codecThread( void *arg )
   	  continue;
     }   
     if( rc ) {
-      srvmsg( LOG_ERR, "Codec thread: wait error, terminating: %s", strerror(rc) );
+      logerr( "Codec thread: wait error, terminating: %s", strerror(rc) );
   	  instance->state = CodecTerminatedError;
   	  break; 	
     }
@@ -432,7 +432,7 @@ static void *_codecThread( void *arg )
     
     // Error while providing data?
   	if( rc<0 ) {                  
-      srvmsg( LOG_ERR, "Codec thread: output error, terminating" );
+      logerr( "Codec thread: output error, terminating" );
   	  instance->state = CodecTerminatedError;
   	  break;
   	}
@@ -443,7 +443,7 @@ static void *_codecThread( void *arg )
     Terminate decoder  
 \*------------------------------------------------------------------------*/
   if( codec->deleteInstance(instance) ) {
-  	srvmsg( LOG_ERR, "Codec thread: could not delete instance of codec %s", 
+  	logerr( "Codec thread: could not delete instance of codec %s", 
   	                 codec->name );
   	instance->state = CodecTerminatedError;
   	return NULL;
@@ -467,3 +467,6 @@ static void *_codecThread( void *arg )
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
+
+
+
