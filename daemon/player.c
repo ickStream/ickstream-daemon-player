@@ -74,6 +74,7 @@ Remarks         : -
 #include "feed.h"
 #include "audio.h"
 #include "player.h"
+#include "hmi.h"
 
 /*=========================================================================*\
 	Global symbols
@@ -122,13 +123,9 @@ static AudioIf       *audioIf;
 
 // Playback thread
 pthread_t             playbackThread;
-PlayerThreadState     playbackThreadState = PlayerThreadNonexistent;
+PlayerThreadState     playbackThreadState;
 static char          *currentTrackId;
 static CodecInstance *codecInstance;
-
-// playback chain
-//static AudioFeed     *currentFeed;
-
 
 
 /*=========================================================================*\
@@ -145,6 +142,11 @@ int playerInit( void )
 {
   DBGMSG( "Initializing player module..." );
   
+/*------------------------------------------------------------------------*\
+    Init state. 
+\*------------------------------------------------------------------------*/
+  playerState = PlayerStateStop;
+
 /*------------------------------------------------------------------------*\
     Get volume, safe default is volume 0 and unmuted 
 \*------------------------------------------------------------------------*/
@@ -164,8 +166,11 @@ int playerInit( void )
   pthread_mutex_init( &playerMutex, NULL );
 
 /*------------------------------------------------------------------------*\
-    Set timestamp 
+    Inform HMI and set timestamp 
 \*------------------------------------------------------------------------*/
+  hmiNewItem( playerQueue, playlistGetCursorItem(playerQueue) );
+  hmiNewState( playerState );
+  hmiNewVolume( playerVolume, playerMuted );
   lastChange = srvtime( );
 
 /*------------------------------------------------------------------------*\
@@ -523,6 +528,7 @@ double playerSetVolume( double volume, bool broadcast )
     Update timestamp and broadcast new player state
 \*------------------------------------------------------------------------*/
   lastChange = srvtime( );
+  hmiNewVolume( playerVolume, playerMuted );
   if( broadcast )
     ickMessageNotifyPlayerState();
 
@@ -557,6 +563,7 @@ bool playerSetMuting( bool muted, bool broadcast )
     Update timestamp and broadcast new player state
 \*------------------------------------------------------------------------*/
   lastChange = srvtime( );
+  hmiNewVolume( playerVolume, playerMuted );
   if( broadcast )
     ickMessageNotifyPlayerState();
 
@@ -690,6 +697,7 @@ int playerSetState( PlayerState state, bool broadcast )
       
       // no break here, as we'll change the status to PlayerStateStop in case 
       // we were changing the track in paused state...
+      hmiNewItem( playerQueue, newTrack );
   	  lognotice( "_playbackPause: current track changed, stopping..." );
 
 /*------------------------------------------------------------------------*\
@@ -704,13 +712,10 @@ int playerSetState( PlayerState state, bool broadcast )
         break;
       }
 
-      // not playing?
-      if( playerState!=PlayerStatePlay  && playerState!=PlayerStatePause )
-        logwarn( "_playbackStop: not playing or no thread before stop (state %d)", playerState );
-
       // request thread to stop playback and set new player state
       playbackThreadState = PlayerThreadTerminating;
       playerState = PlayerStateStop;
+      hmiNewPosition( 0.0 );
       break; 
   	
 /*------------------------------------------------------------------------*\
@@ -727,6 +732,7 @@ int playerSetState( PlayerState state, bool broadcast )
 \*------------------------------------------------------------------------*/
   lastChange = srvtime( );
   pthread_mutex_unlock( &playerMutex );
+  hmiNewState( playerState );
   if( broadcast )
     ickMessageNotifyPlayerState();
 
@@ -809,7 +815,13 @@ static void *_playbackThread( void *arg )
     ickMessageNotifyPlayerState();
     lognotice( "_playerThread: Playing track \"%s\" (%s)", 
       	                item->text, item->id );
-      	                
+    hmiNewItem( playerQueue, item );
+
+#ifndef NOHMI
+    double seekPos = 0;
+    hmiNewPosition( seekPos );
+#endif
+ 	                
     // Wait for end of feed or stop condition ...
     while( playbackThreadState==PlayerThreadRunning ) {
       int rc = codecWaitForEnd( codecInst, 250 );
@@ -817,6 +829,17 @@ static void *_playbackThread( void *arg )
         break;
       if( rc<0 )
         playbackThreadState = PlayerThreadTerminatedError;
+      
+      // Inform HMI about new player position but suppress updates in paused state
+#ifndef NOHMI
+      double pos;
+      if( rc>0 && !codecGetSeekTime(codecInst,&pos) ) {
+        if( pos!=seekPos && playerState==PlayerStatePlay ) {
+          seekPos = pos;
+          hmiNewPosition( seekPos );
+        }
+      }
+#endif
     }
  
     // Get rid of feed
@@ -846,6 +869,8 @@ static void *_playbackThread( void *arg )
     lognotice( "_playerThread: End of playlist." );
     playerState = PlayerStateStop;
     ickMessageNotifyPlayerState();
+    hmiNewState( playerState );
+    hmiNewPosition( 0.0 );
   }
 
 /*------------------------------------------------------------------------*\

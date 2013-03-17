@@ -74,6 +74,7 @@ Remarks         : -
 #include "utils.h"
 #include "config.h"
 #include "persist.h"
+#include "hmi.h"
 #include "ickDevice.h"
 #include "ickMessage.h"
 #include "audio.h"
@@ -292,6 +293,12 @@ int main( int argc, char *argv[] )
     return -1;
 
 /*------------------------------------------------------------------------*\
+    Init HMI
+\*------------------------------------------------------------------------*/
+  if( hmiInit() )
+    return -1;
+
+/*------------------------------------------------------------------------*\
     Goto background
 \*------------------------------------------------------------------------*/
   if( daemon_flag ) {
@@ -373,6 +380,7 @@ int main( int argc, char *argv[] )
 /*------------------------------------------------------------------------*\
     ... and other modules.
 \*------------------------------------------------------------------------*/
+  hmiShutdown();
   playerShutdown();
   audioShutdown( AudioDrain );
   persistShutdown();

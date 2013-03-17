@@ -29,11 +29,24 @@ echo '------------------- '
 echo 'Configuration tool for the ickstream player deamon started. '
 #echo Distribution: `git rev-list --all | head -1`
 
+# Interpret arguments
 debug=0
-while test $# -gt 0; do 
+while test $# -gt 0; do
+
+  # build for debugging
   if test "$1" = "debug"; then
     debug=1
-  else 
+
+  # select hmi source
+  elif echo "$1" | grep -q "^hmi="; then
+    HMISRC=`echo "$1" | sed 's/^hmi=\(.*\)$/hmi\1\.c/g'`
+    if [ ! -e "daemon/$HMISRC" ]; then
+      echo "Source file $HMISRC not found!"
+      exit 1;
+    fi 
+
+  # unknown option
+  else
     echo "unknown parameter $1"
     exit 1
   fi
@@ -159,6 +172,16 @@ if ldconfig -p | grep "libmpg123\." -q; then
   echo 'found'
 else
   echo 'not found'
+fi
+
+# ----------------------------------------
+echo -n 'using HMI module                : '
+if [ -z "$HMISRC" ]; then
+  echo "None"
+  CFLAGS="$CFLAGS -DNOHMI"
+else
+  echo $HMISRC
+  EXTRASRCS="$EXTRASRCS $HMISRC"
 fi
 
 
