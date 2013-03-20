@@ -53,6 +53,7 @@ Remarks         : -
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <strings.h>
 
 #include "utils.h"
@@ -198,18 +199,92 @@ const AudioBackend *audioBackendByDeviceString( const char *str, const char **de
 
 /*=========================================================================*\
       Get string description for audio format
-        NOT reentrant!
+        Format: "<chan>x<rate>x<bitwidth><S|U|F>
+        returns buffer or - if buffer is NULL - a pointer to a local buffer, 
+        this (buffer==NULL) is a NON reentrant usage!
 \*=========================================================================*/
-const char *audioFormatStr( AudioFormat *format )
+const char *audioFormatStr( char *buffer, const AudioFormat *format )
 {
-  static char *buffer;
-  	
+  static char *locBuffer;
+         char  enc=0;
+	
+/*------------------------------------------------------------------------*\
+    Need loacal buffer?
+\*------------------------------------------------------------------------*/
+  if( !buffer && !locBuffer)
+    locBuffer = malloc( 64 );
   if( !buffer )
-    buffer = malloc( 1024 );
-    
-  sprintf( buffer, "%d Hz, %d Ch", format->sampleRate, format->channels);
-  
+    buffer = locBuffer;
+
+/*------------------------------------------------------------------------*\
+    Get encoding style
+\*------------------------------------------------------------------------*/
+  if( format->bitWidth<=0 )
+    enc = 0;
+  else if( format->isSigned && !format->isFloat )
+    enc = 'S';
+  else if( !format->isSigned && !format->isFloat )
+    enc = 'U';
+  else if( format->isSigned && format->isFloat )
+    enc = 'F';
+  else if( !format->isSigned && format->isFloat ) {
+    logerr( "Corrupt audio format: unsigned float." );
+    enc = '?';
+  }
+
+/*------------------------------------------------------------------------*\
+    Construct and return result
+\*------------------------------------------------------------------------*/
+  sprintf( buffer, "%dx%dx%d%c", format->channels, format->sampleRate, 
+                                  format->bitWidth, enc );
   return buffer;  	
+}
+
+
+/*=========================================================================*\
+      Get format from string
+        returns -1 on syntax error
+\*=========================================================================*/
+int audioStrFormat( AudioFormat *format, const char *str )
+{
+  int  n, ch, sr, bw;
+  char enc = 0;
+
+/*------------------------------------------------------------------------*\
+    Parse string
+\*------------------------------------------------------------------------*/
+  n = sscanf( str, "%dx%dx%d%c", &ch, &sr, &bw, &enc ); 
+  if( n<3 ) {
+    logwarn( "syntax error in audio format: \"%s\" (to few fields)", str );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    Need encoding spec if bitwidth is defined
+\*------------------------------------------------------------------------*/
+  if( bw>0 ) {
+    if( !strchr("sSuUfF",enc) ) {
+      logwarn( "syntax error in audio format: \"%s\" (missing S|U|F)", str );
+      return -1;
+    }
+    switch( toupper(enc) ) {
+      case 'S': format->isSigned=true;  format->isFloat=false; break; 
+      case 'U': format->isSigned=false; format->isFloat=false; break; 
+      case 'F': format->isSigned=true;  format->isFloat=true;  break; 
+    }
+  }
+  
+/*------------------------------------------------------------------------*\
+    Get channels, samplerates and bitwidth
+\*------------------------------------------------------------------------*/
+  format->channels   = ch>0 ? ch : 0;
+  format->sampleRate = sr>0 ? sr : 0;
+  format->bitWidth   = bw>0 ? bw : 0;
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+  return 0;  	
 }
 
 
@@ -376,7 +451,7 @@ int audioIfDelete( AudioIf *aif, AudioTermMode mode )
 Fifo *audioIfPlay( AudioIf *aif, AudioFormat *format )
 {
   DBGMSG( "Start playback on audio instance %s (%p): %s", 
-           aif->backend->name, aif, audioFormatStr(format) );
+           aif->backend->name, aif, audioFormatStr(NULL,format) );
     
   // Reset or create fifo
   if( aif->fifoIn )

@@ -293,6 +293,13 @@ int main( int argc, char *argv[] )
     return -1;
 
 /*------------------------------------------------------------------------*\
+    Add default audio format (fixme: this should part of the player state)
+\*------------------------------------------------------------------------*/
+  AudioFormat format;
+  audioStrFormat( &format, "2x44100x16S" );
+  playerAddDefaultAudioFormat( &format );
+
+/*------------------------------------------------------------------------*\
     Init HMI
 \*------------------------------------------------------------------------*/
   if( hmiInit() )

@@ -54,6 +54,7 @@ Remarks         : -
 \*=========================================================================*/
 #include <stdbool.h>
 #include "playlist.h"
+#include "audio.h"
 
 
 /*=========================================================================*\
@@ -78,6 +79,7 @@ typedef enum {
 
 int         playerInit( void );
 void        playerShutdown( void );
+int         playerAddDefaultAudioFormat( const AudioFormat *format );
 Playlist   *playerGetQueue( void );
 void        playerResetQueue( void );
 PlayerState playerGetState( void );

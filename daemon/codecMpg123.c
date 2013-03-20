@@ -89,6 +89,8 @@ static int    _codecDeliverOutput( CodecInstance *instance, void *data, size_t m
 static int    _codecSetVolume( CodecInstance *instance, double volume );
 static int    _codecGetSeekTime( CodecInstance *instance, double *pos );  
 
+static enum mpg123_enc_enum _getMpg123Format( const AudioFormat *format );
+
 
 /*=========================================================================*\
       return descriptor for this codec 
@@ -154,15 +156,36 @@ static int _codecShutdown( bool force )
 \*=========================================================================*/
 static bool _codecCheckType(const char *type, const struct _audioFormat *format )
 {
+  enum mpg123_enc_enum  mpg123Format;
+  const long           *rateList;
+  const int            *encList;
+  size_t                listLen, i;
 
-  if( !strcmp(type,"mp3") )
-    return true;    
+  // type not supported?
+  if( strcmp(type,"mp3") && strcmp(type,"audio/mpeg") )
+    return false;    
 
-  if( !strcmp(type,"audio/mpeg") )
-    return true;    
+  // Check number of channels (only mono and stereo)
+  if( format->channels!=1 && format->channels!=2 )
+    return false; 
 
-  // type not supported
-  return false;    
+  // Check sample rate
+  mpg123_rates( &rateList, &listLen );
+  for( i=0; i<listLen && rateList[i]!=format->sampleRate; i++ )
+    ;
+  if( i==listLen )
+    return false;   
+
+  // Check encoding
+  mpg123Format = _getMpg123Format( format );
+  mpg123_encodings( &encList, &listLen );
+  for( i=0; i<listLen && encList[i]!=mpg123Format; i++ )
+    ;
+  if( i==listLen )
+    return false;
+
+  // type and format is supported
+  return true;    
 }
 
 
@@ -414,6 +437,59 @@ static int _codecGetSeekTime( CodecInstance *instance, double *pos )
   *pos = samples/(double)instance->format.sampleRate;
   return 0; 
 }
+
+
+/*=========================================================================*\
+       Translate audio format to mpg123 library standard 
+\*=========================================================================*/
+static enum mpg123_enc_enum _getMpg123Format( const AudioFormat *format )
+{
+  DBGMSG( "_getMpg123Format: %s", audioFormatStr(NULL,format) ); 
+
+/*------------------------------------------------------------------------*\
+    Relevant float formats  
+\*------------------------------------------------------------------------*/
+  if( format->isFloat ) {
+    if( format->bitWidth==32 )
+      return MPG123_ENC_FLOAT_32;
+    if( format->bitWidth==64 )
+      return MPG123_ENC_FLOAT_64;
+    return 0;
+  }
+
+/*------------------------------------------------------------------------*\
+    Relevant signed formats  
+\*------------------------------------------------------------------------*/
+  if( format->isSigned ) {
+    if( format->bitWidth==8 )
+      return MPG123_ENC_SIGNED_8;
+    if( format->bitWidth==16 )
+      return MPG123_ENC_SIGNED_16;
+    if( format->bitWidth==24 )
+      return MPG123_ENC_SIGNED_24;
+    if( format->bitWidth==32 )
+      return MPG123_ENC_SIGNED_32;
+    return 0;
+  }
+
+/*------------------------------------------------------------------------*\
+    Relevant unsigned formats  
+\*------------------------------------------------------------------------*/
+  if( format->bitWidth==8 )
+    return MPG123_ENC_UNSIGNED_8;
+  if( format->bitWidth==16 )
+    return MPG123_ENC_UNSIGNED_16;
+  if( format->bitWidth==24 )
+    return MPG123_ENC_UNSIGNED_24;
+  if( format->bitWidth==32 )
+    return MPG123_ENC_UNSIGNED_32;
+
+/*------------------------------------------------------------------------*\
+    Not known  
+\*------------------------------------------------------------------------*/
+  return 0;
+}
+
 
 /*=========================================================================*\
                                     END OF FILE

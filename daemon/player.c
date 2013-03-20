@@ -95,6 +95,11 @@ typedef enum {
   PlayerThreadTerminatedError
 } PlayerThreadState;
 
+typedef struct _defaultAudioFormat {
+  struct _defaultAudioFormat  *next;
+  AudioFormat                  format;
+} DefaultAudioFormat;
+
 // Utilities
 #define EffectiveVolume() (playerMuted?0.0:playerVolume)
 
@@ -104,28 +109,29 @@ typedef enum {
 \*=========================================================================*/
 
 // persistent
-static const char    *playerUUID;  
-static const char    *playerInterface;  
-static const char    *playerAudioDevice;  
-static const char    *playerHWID;  
-static const char    *playerModel;  
-static const char    *playerName;
-static const char    *accessToken;
-static double         playerVolume;
-static bool           playerMuted;
-static Playlist      *playerQueue;
+static const char         *playerUUID;  
+static const char         *playerInterface;  
+static const char         *playerAudioDevice;  
+static const char         *playerHWID;  
+static const char         *playerModel;  
+static const char         *playerName;
+static const char         *accessToken;
+static double              playerVolume;
+static bool                playerMuted;
+static Playlist           *playerQueue;
+static DefaultAudioFormat *defaultAudioFormats;
 
 // transient
-pthread_mutex_t       playerMutex;
-static PlayerState    playerState = PlayerStateStop;
-static double         lastChange;
-static AudioIf       *audioIf;
+pthread_mutex_t            playerMutex;
+static PlayerState         playerState = PlayerStateStop;
+static double              lastChange;
+static AudioIf            *audioIf;
 
 // Playback thread
-pthread_t             playbackThread;
-PlayerThreadState     playbackThreadState;
-static char          *currentTrackId;
-static CodecInstance *codecInstance;
+pthread_t                  playbackThread;
+PlayerThreadState          playbackThreadState;
+static char               *currentTrackId;
+static CodecInstance      *codecInstance;
 
 
 /*=========================================================================*\
@@ -199,6 +205,58 @@ void playerShutdown( void )
   pthread_mutex_destroy( &playerMutex );
 }
 
+
+/*=========================================================================*\
+    Add default audio format
+      if format is NULL the default list is deleted
+\*=========================================================================*/
+int playerAddDefaultAudioFormat( const AudioFormat *format )
+{
+  DBGMSG( "Adding default audio format: %s", 
+          format?audioFormatStr(NULL,format):"<none>" );
+
+/*------------------------------------------------------------------------*\
+    Delete list?
+\*------------------------------------------------------------------------*/
+  if( !format ) {
+    DBGMSG( "Deleting all default audio format list entries." ); 
+    DefaultAudioFormat *element = defaultAudioFormats;
+    while( element ) {
+      DefaultAudioFormat *next = element->next;
+      Sfree( element );
+      element = next;
+    }
+    return 0;
+  }
+
+/*------------------------------------------------------------------------*\
+    Create new list element
+\*------------------------------------------------------------------------*/
+  DefaultAudioFormat *newElement = calloc( 1, sizeof(DefaultAudioFormat) );
+  if( !newElement ) {
+     logerr( "playerAddDefaultAudioFormat: out of memory" );
+    return -1;
+  }
+  memcpy( &newElement->format, format, sizeof(AudioFormat) );
+
+/*------------------------------------------------------------------------*\
+    Append format to list
+\*------------------------------------------------------------------------*/
+  if( !defaultAudioFormats ) {
+    defaultAudioFormats = newElement;
+  }
+  else {
+    DefaultAudioFormat *element = defaultAudioFormats;
+    while( element->next )
+      element = element->next;
+    element->next = newElement;
+  }
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  return 0;
+}
 
 /*=========================================================================*\
       Get playback queue (playlist) 
@@ -766,10 +824,12 @@ static void *_playbackThread( void *arg )
     Codec         *codec;
     CodecInstance *codecInst;   // mirrored to global variable codecInstance
     Fifo          *fifo;
+    AudioFormat    backendFormat;
  
     DBGMSG( "_playerThread: Starting track \"%s\" (%s)", item->text, item->id );
  
     // Try to get feed and codec for new track, if negative skip queue item
+    // Fixme: include this in format search loop...
     feed = _feedFromPlayListItem( item, &codec );
     if( !feed ) {
       lognotice( "_playerThread: Track \"%s\" (%s) unavailable or unsupported by audio module", 
@@ -778,22 +838,62 @@ static void *_playbackThread( void *arg )
       continue;
     }
 
-    // Get fifo from audio interface
-    // Fixme: use fallback format if feed format is not supported...
-    fifo = audioIfPlay( audioIf, &feed->format );
+    // Get fifo from audio interface, try to use explicite format
+    memcpy( &backendFormat, &feed->format, sizeof(AudioFormat) );
+    fifo = audioIfPlay( audioIf, &backendFormat );
+
+    // Try to complete format from first default entry
+    if( !fifo && defaultAudioFormats ) {
+      AudioFormat *format = &defaultAudioFormats->format;
+      if( backendFormat.sampleRate<=0 ) {
+        loginfo( "_playerThread: Completing format with default sample rate: %d", 
+                  format->sampleRate );
+        backendFormat.sampleRate = format->sampleRate;
+      }
+      if( backendFormat.channels<=0 ) {
+        loginfo( "_playerThread: Completing format with default channel number: %d", 
+                  format->channels );
+        backendFormat.channels = format->channels;
+      }
+      if( backendFormat.bitWidth<=0 ) {
+        loginfo( "_playerThread: Completing format with default bit width: %d%s%s", 
+                  format->bitWidth, format->isSigned?"S":"U", format->isFloat?"F":"" );
+        backendFormat.bitWidth = format->bitWidth;
+        backendFormat.isSigned = format->isSigned;
+        backendFormat.isFloat  = format->isFloat;
+      }
+      fifo = audioIfPlay( audioIf, &backendFormat );
+    }
+
+    // If necessary try all default audio formats
+    if( !fifo ) {
+      loginfo( "_playerThread: Cannot setup audio device \"%s\" to format %s.", 
+                        audioIf->devName, audioFormatStr(NULL,&feed->format) );
+      DefaultAudioFormat *element = defaultAudioFormats;
+      while( !fifo && element ) {
+        memcpy( &backendFormat, &element->format, sizeof(AudioFormat) );
+        fifo = audioIfPlay( audioIf, &backendFormat );
+      }
+      if( fifo )
+        loginfo( "_playerThread: using default format %s for audio device %s.", 
+                       audioFormatStr(NULL,&backendFormat), audioIf->devName );
+    }
+
+    // still no fifo?
     if( !fifo  ) {
-      logerr( "_playerThread: Cannot setup audio device \"%s\" to format %s", 
-                        audioIf->devName, audioFormatStr(&feed->format) );
+      lognotice( "_playerThread: Cannot setup audio device \"%s\" to format %s or any default format.", 
+                        audioIf->devName, audioFormatStr(NULL,&feed->format) );
       audioFeedDelete( feed , true );
       playbackThreadState = PlayerThreadTerminatedError;
       break;
     }
 
     // create codec instance
-    codecInst = codecNewInstance( codec, fifo, &feed->format );
+    // Fixme: include this in format selection from defaults
+    codecInst = codecNewInstance( codec, fifo, &backendFormat );
     if( !codecInst ) {
       logerr( "_playerThread: could not get instance of codec %s for format %s", 
-                       codec->name, audioFormatStr(&feed->format) );
+                       codec->name, audioFormatStr(NULL,&backendFormat) );
       audioFeedDelete( feed, true );
       playbackThreadState = PlayerThreadTerminatedError;
       break;
@@ -908,7 +1008,13 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
     AudioFeed       *feed;
     const char      *type;
     char            *uri;
-        
+    
+    // Reset Format, use first default (if any)
+    if( !defaultAudioFormats )
+      memset( &format, 0,sizeof(AudioFormat) );
+    else
+      memcpy( &format, &defaultAudioFormats->format, sizeof(AudioFormat) );
+
     // Get type
     jObj = json_object_get( jStreamRef, "format" );
     if( !jObj || !json_is_string(jObj) ) {
@@ -956,7 +1062,7 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
     *codec = codecFind( type, &format, NULL );
     if( !*codec ) {
       DBGMSG( "No codec found for (%s) with %s", 
-              type, audioFormatStr(&format)  );	
+              type, audioFormatStr(NULL,&format)  );	
       Sfree( uri );
   	  continue;
     }

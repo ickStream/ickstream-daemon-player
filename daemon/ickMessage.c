@@ -254,7 +254,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
   }
 
 /*------------------------------------------------------------------------*\
-    Get index of track in playlist
+    Get track info
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"getTrack") ) {
   	Playlist     *plst = playerGetQueue();
@@ -602,7 +602,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
       return;
     }
     
-    // Allocate temporary arry of items to move
+    // Allocate temporary array of items to move
     pItemCnt = 0;
     pItems   = calloc( json_array_size(jItems), sizeof(PlaylistItem *) );
     if( !pItems ) {

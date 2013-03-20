@@ -85,8 +85,9 @@ static int    _ifPlay( AudioIf *aif, AudioFormat *format );
 static int    _ifStop( AudioIf *aif, AudioTermMode mode );
 static int    _ifSetPause( AudioIf *aif, bool pause );
 
-static int    _ifSetParameters( AudioIf *aif, AudioFormat *format );
-static void  *_ifThread( void *arg );
+static int               _ifSetParameters( AudioIf *aif, AudioFormat *format );
+static snd_pcm_format_t  _getAlsaFormat( const AudioFormat *format );
+static void             *_ifThread( void *arg );
 
 
 /*=========================================================================*\
@@ -360,11 +361,21 @@ static int _ifSetPause( AudioIf *aif, bool pause )
 static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
 {
   snd_pcm_t           *pcm = (snd_pcm_t*)aif->ifData;
+  snd_pcm_format_t     alsaFormat;
   snd_pcm_hw_params_t *hwParams;
   unsigned int         realRate;
   int                  rc;
   
   DBGMSG( "Alsa: setting format to %s", audioFormatStr(format) ); 
+
+/*------------------------------------------------------------------------*\
+    Do we know this format? 
+\*------------------------------------------------------------------------*/
+  alsaFormat = _getAlsaFormat( format );
+  if( alsaFormat==SND_PCM_FORMAT_UNKNOWN ) {
+  	logerr( "Unable get alsa format for: %s", audioFormatStr(NULL,format) );
+    return -1;
+  }
 
 /*------------------------------------------------------------------------*\
     Collect hardware parameters on stack 
@@ -389,14 +400,13 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
     return -1;
   }
 
-  // Fixme: set data format
-  rc = snd_pcm_hw_params_set_format( pcm, hwParams, SND_PCM_FORMAT_S16_LE );
+  // Set data format and calculate frame size (sample size*channels)
+  rc = snd_pcm_hw_params_set_format( pcm, hwParams, alsaFormat );
   if( rc<0 ) {
-  	logerr( "Unable to set alsa pcm hw parameter: SND_PCM_FORMAT_S16_LE" );
+  	logerr( "Unable to set alsa pcm hw format to: %s", audioFormatStr(NULL,format) );
     return -1;
   }
-
-  aif->framesize = 2*format->channels;
+  aif->framesize = format->bitWidth/8*format->channels;
 
   // Sample rate 
   realRate = format->sampleRate;
@@ -411,38 +421,34 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
     return -1;
   }
 
-  // Set number of periods
+  // Set number of periods to two
   rc = snd_pcm_hw_params_set_periods( pcm, hwParams, 2, 0 );
   if( rc<0 ) {
   	logerr( "Unable to set alsa pcm hw parameter: periods 2, 0" );
     return -1;
   }
   
-  
-  
 /*------------------------------------------------------------------------*\
     Apply the hardware parameters 
 \*------------------------------------------------------------------------*/
   rc = snd_pcm_hw_params( pcm, hwParams );
   if( rc<0 ) {
-    logerr( "Unable to set alsa pcm hw parameters: %s",
-                     snd_strerror(rc) );
+    logerr( "Unable to set alsa pcm hw parameters: %s", snd_strerror(rc) );
     return -1;
   }
 
 /*------------------------------------------------------------------------*\
     Set software parameters 
 \*------------------------------------------------------------------------*/  
-  // buffer size
-  // snd_pcm_sw_params_set_avail_min(pcm_handle, sw_params, period_size);
+  // buffer size 
+  // fixme: snd_pcm_sw_params_set_avail_min(pcm_handle, sw_params, period_size);
   
 /*------------------------------------------------------------------------*\
     Prepare interface 
 \*------------------------------------------------------------------------*/
   rc = snd_pcm_prepare( pcm );
   if( rc<0 ) {
-    logerr( "Unable to prepare alsa interface: %s",
-                     snd_strerror(rc) );
+    logerr( "Unable to prepare alsa interface: %s", snd_strerror(rc) );
     return -1;
   }
 
@@ -450,6 +456,59 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
     That's all
 \*------------------------------------------------------------------------*/
   return 0;
+}
+
+
+/*=========================================================================*\
+       Translate audio format to ALSA standard 
+\*=========================================================================*/
+static snd_pcm_format_t _getAlsaFormat( const AudioFormat *format )
+{
+  DBGMSG( "_getAlsaFormat: %s", audioFormatStr(NULL,format) ); 
+  bool le = true;
+
+/*------------------------------------------------------------------------*\
+    Relevant float formats  
+\*------------------------------------------------------------------------*/
+  if( format->isFloat ) {
+    if( format->bitWidth==32 )
+      return le ? SND_PCM_FORMAT_FLOAT_LE : SND_PCM_FORMAT_FLOAT_BE;
+    if( format->bitWidth==64 )
+      return le? SND_PCM_FORMAT_FLOAT64_LE : SND_PCM_FORMAT_FLOAT64_BE;
+    return SND_PCM_FORMAT_UNKNOWN;
+  }
+
+/*------------------------------------------------------------------------*\
+    Relevant signed formats  
+\*------------------------------------------------------------------------*/
+  if( format->isSigned ) {
+    if( format->bitWidth==8 )
+      return SND_PCM_FORMAT_S8;
+    if( format->bitWidth==16 )
+      return le ? SND_PCM_FORMAT_S16_LE : SND_PCM_FORMAT_S16_BE;
+    if( format->bitWidth==24 )
+      return le ? SND_PCM_FORMAT_S24_LE : SND_PCM_FORMAT_S24_BE;
+    if( format->bitWidth==32 )
+      return le ? SND_PCM_FORMAT_S32_LE : SND_PCM_FORMAT_S32_BE;
+    return SND_PCM_FORMAT_UNKNOWN;
+  }
+
+/*------------------------------------------------------------------------*\
+    Relevant unsigned formats  
+\*------------------------------------------------------------------------*/
+  if( format->bitWidth==8 )
+    return SND_PCM_FORMAT_U8;
+  if( format->bitWidth==16 )
+    return le ? SND_PCM_FORMAT_U16_LE : SND_PCM_FORMAT_U16_BE;
+  if( format->bitWidth==24 )
+    return le ? SND_PCM_FORMAT_U24_LE : SND_PCM_FORMAT_U24_BE;
+  if( format->bitWidth==32 )
+    return le ? SND_PCM_FORMAT_U32_LE : SND_PCM_FORMAT_U32_BE;
+
+/*------------------------------------------------------------------------*\
+    Not known  
+\*------------------------------------------------------------------------*/
+  return SND_PCM_FORMAT_UNKNOWN;
 }
 
 

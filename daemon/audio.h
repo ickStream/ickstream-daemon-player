@@ -66,9 +66,13 @@ Remarks         : -
 \*=========================================================================*/
 struct  _audioBackend;
 
+
 typedef struct _audioFormat {
-  int             sampleRate;
-  int             channels;
+  int  sampleRate;   // 1/s (<0: undefined)
+  int  channels;     // (<0: undefined)
+  int  bitWidth;     // per channel (<0: undefined)
+  bool isSigned;       // Valid only if bitWith>0
+  bool isFloat;        // valid only if bitWith>0
 } AudioFormat;
 
 typedef enum {
@@ -134,7 +138,8 @@ int                 audioGetDeviceList( const AudioBackend *backend, char ***dev
 void                audioFreeStringList( char **stringList );
 int                 audioCheckDevice( const char *device );
 
-const char         *audioFormatStr( AudioFormat *format );
+const char         *audioFormatStr( char *buffer, const AudioFormat *format );
+int                 audioStrFormat( AudioFormat *format, const char *str );
 int                 audioFormatCompare( AudioFormat *format1, AudioFormat *format2 );
 
 AudioIf            *audioIfNew( const AudioBackend *backend, const char *device );
