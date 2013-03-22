@@ -88,8 +88,8 @@ typedef struct _codecInstance {
   pthread_cond_t          condEndOfTrack;
 } CodecInstance;
  
-typedef int    (*CodecInit)( void );
-typedef int    (*CodecShutdown)( bool force );
+typedef int    (*CodecInit)( struct _codec *codec );
+typedef int    (*CodecShutdown)( struct _codec *codec, bool force );
 typedef bool   (*CodecCheckType)(const char *type, const AudioFormat *format );
 typedef int    (*CodecInstanceNew)( CodecInstance *instance ); 
 typedef int    (*CodecInstanceDelete)( CodecInstance *instance ); 
@@ -102,9 +102,10 @@ typedef int    (*CodecGetSeekTime)( CodecInstance *instance, double *pos );
 typedef struct _codec {
   struct _codec       *next;
   char                *name;
-  size_t               feedChunkSize;     // optional
-  CodecInit            init;              // optional
-  CodecShutdown        shutdown;          // optional
+  size_t               feedChunkSize;       // optional
+  AudioFormatList      defaultAudioFormats; // optional, strong
+  CodecInit            init;                // optional
+  CodecShutdown        shutdown;            // optional
   CodecCheckType       checkType;
   CodecInstanceNew     newInstance; 
   CodecInstanceDelete  deleteInstance;
@@ -120,7 +121,7 @@ typedef struct _codec {
 \*=========================================================================*/
 int    codecRegister( Codec *codec );
 void   codecShutdown( bool force );
-Codec *codecFind( const char *type, const AudioFormat *format, Codec *codec );
+Codec *codecFind( const char *type, AudioFormat *format, Codec *codec );
 
 CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format );
 int            codecDeleteInstance(CodecInstance *instance, bool wait );

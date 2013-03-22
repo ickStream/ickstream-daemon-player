@@ -85,7 +85,6 @@ Remarks         : -
 /*=========================================================================*\
        Macro and type definitions 
 \*=========================================================================*/
-
 typedef enum {
   PlayerThreadNonexistent,
   PlayerThreadInitialized,
@@ -94,11 +93,6 @@ typedef enum {
   PlayerThreadTerminatedOk,
   PlayerThreadTerminatedError
 } PlayerThreadState;
-
-typedef struct _defaultAudioFormat {
-  struct _defaultAudioFormat  *next;
-  AudioFormat                  format;
-} DefaultAudioFormat;
 
 // Utilities
 #define EffectiveVolume() (playerMuted?0.0:playerVolume)
@@ -119,7 +113,7 @@ static const char         *accessToken;
 static double              playerVolume;
 static bool                playerMuted;
 static Playlist           *playerQueue;
-static DefaultAudioFormat *defaultAudioFormats;
+static AudioFormatList     defaultAudioFormats;
 
 // transient
 pthread_mutex_t            playerMutex;
@@ -203,6 +197,11 @@ void playerShutdown( void )
     Delete mutex
 \*------------------------------------------------------------------------*/
   pthread_mutex_destroy( &playerMutex );
+
+/*------------------------------------------------------------------------*\
+    Delete list of default audio formats
+\*------------------------------------------------------------------------*/
+  audioFreeAudioFormatList( &defaultAudioFormats );
 }
 
 
@@ -219,44 +218,17 @@ int playerAddDefaultAudioFormat( const AudioFormat *format )
     Delete list?
 \*------------------------------------------------------------------------*/
   if( !format ) {
-    DBGMSG( "Deleting all default audio format list entries." ); 
-    DefaultAudioFormat *element = defaultAudioFormats;
-    while( element ) {
-      DefaultAudioFormat *next = element->next;
-      Sfree( element );
-      element = next;
-    }
+    DBGMSG( "Deleting all default audio format list entries." );
+    audioFreeAudioFormatList( &defaultAudioFormats );
     return 0;
   }
 
 /*------------------------------------------------------------------------*\
-    Create new list element
+    Add format to list, that's it
 \*------------------------------------------------------------------------*/
-  DefaultAudioFormat *newElement = calloc( 1, sizeof(DefaultAudioFormat) );
-  if( !newElement ) {
-     logerr( "playerAddDefaultAudioFormat: out of memory" );
-    return -1;
-  }
-  memcpy( &newElement->format, format, sizeof(AudioFormat) );
-
-/*------------------------------------------------------------------------*\
-    Append format to list
-\*------------------------------------------------------------------------*/
-  if( !defaultAudioFormats ) {
-    defaultAudioFormats = newElement;
-  }
-  else {
-    DefaultAudioFormat *element = defaultAudioFormats;
-    while( element->next )
-      element = element->next;
-    element->next = newElement;
-  }
-
-/*------------------------------------------------------------------------*\
-    That's it
-\*------------------------------------------------------------------------*/
-  return 0;
+  return audioAddAudioFormat( &defaultAudioFormats, format );
 }
+
 
 /*=========================================================================*\
       Get playback queue (playlist) 
@@ -843,33 +815,23 @@ static void *_playbackThread( void *arg )
     fifo = audioIfPlay( audioIf, &backendFormat );
 
     // Try to complete format from first default entry
-    if( !fifo && defaultAudioFormats ) {
-      AudioFormat *format = &defaultAudioFormats->format;
-      if( backendFormat.sampleRate<=0 ) {
-        loginfo( "_playerThread: Completing format with default sample rate: %d", 
-                  format->sampleRate );
-        backendFormat.sampleRate = format->sampleRate;
-      }
-      if( backendFormat.channels<=0 ) {
-        loginfo( "_playerThread: Completing format with default channel number: %d", 
-                  format->channels );
-        backendFormat.channels = format->channels;
-      }
-      if( backendFormat.bitWidth<=0 ) {
-        loginfo( "_playerThread: Completing format with default bit width: %d%s%s", 
-                  format->bitWidth, format->isSigned?"S":"U", format->isFloat?"F":"" );
-        backendFormat.bitWidth = format->bitWidth;
-        backendFormat.isSigned = format->isSigned;
-        backendFormat.isFloat  = format->isFloat;
-      }
-      fifo = audioIfPlay( audioIf, &backendFormat );
+    AudioFormatList formatList = codec->defaultAudioFormats;
+    if( !formatList )
+      formatList = defaultAudioFormats;
+    if( !fifo && formatList ) {
+      AudioFormat tryFormat;
+      memcpy( &tryFormat, &backendFormat, sizeof(AudioFormat) );
+      audioFormatComplete( &tryFormat, &formatList->format );
+      fifo = audioIfPlay( audioIf, &tryFormat );
+      if( fifo )
+        memcpy( &backendFormat, &tryFormat, sizeof(AudioFormat) );
     }
 
     // If necessary try all default audio formats
     if( !fifo ) {
       loginfo( "_playerThread: Cannot setup audio device \"%s\" to format %s.", 
                         audioIf->devName, audioFormatStr(NULL,&feed->format) );
-      DefaultAudioFormat *element = defaultAudioFormats;
+      AudioFormatElement *element = formatList;
       while( !fifo && element ) {
         memcpy( &backendFormat, &element->format, sizeof(AudioFormat) );
         fifo = audioIfPlay( audioIf, &backendFormat );
@@ -919,10 +881,12 @@ static void *_playbackThread( void *arg )
     currentTrackId = strdup( item->id );
     codecInstance = codecInst;
     ickMessageNotifyPlayerState();
-    lognotice( "_playerThread: Playing track \"%s\" (%s)", 
-      	                item->text, item->id );
-    hmiNewItem( playerQueue, item );
+    lognotice( "_playerThread: Playing track \"%s\" (%s) with %s", 
+      	                item->text, item->id, audioFormatStr(NULL,&backendFormat) );
 
+    // Inform HMI
+    hmiNewItem( playerQueue, item );
+    hmiNewFormat( &backendFormat );
 #ifndef NOHMI
     double seekPos = 0;
     hmiNewPosition( seekPos );
@@ -1009,11 +973,8 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
     const char      *type;
     char            *uri;
     
-    // Reset Format, use first default (if any)
-    if( !defaultAudioFormats )
-      memset( &format, 0,sizeof(AudioFormat) );
-    else
-      memcpy( &format, &defaultAudioFormats->format, sizeof(AudioFormat) );
+    // Reset Format
+    memset( &format, 0,sizeof(AudioFormat) );
 
     // Get type
     jObj = json_object_get( jStreamRef, "format" );
@@ -1067,11 +1028,36 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
   	  continue;
     }
 
-    // Try to open the feed 
-    feed = audioFeedCreate( uri, type, &format );
+    // Try to complete format from first default entry
+    AudioFormatList formatList = (*codec)->defaultAudioFormats;
+    if( !formatList )
+      formatList = defaultAudioFormats;
+    if( formatList ) {
+      AudioFormat tryFormat;
+      memcpy( &tryFormat, &format, sizeof(AudioFormat) );
+      audioFormatComplete( &tryFormat, &formatList->format );
+      feed = audioFeedCreate( uri, type, &tryFormat );
+    }
+
+    // If necessary try all default audio formats for codec
+    if( !feed ) {
+      loginfo( "_feedFromPlayListItem: Cannot setup audio feed \"%s\" to format %s.", 
+                        uri, audioFormatStr(NULL,&format) );
+      AudioFormatElement *element = formatList;
+      while( !feed && element ) {
+        AudioFormat tryFormat;
+        memcpy( &tryFormat, &element->format, sizeof(AudioFormat) );
+        feed = audioFeedCreate( uri, type, &tryFormat );
+      }
+      if( feed )
+        loginfo( "_feedFromPlayListItem: using default format %s for audio feed %s.", 
+                       audioFormatStr(NULL,&feed->format), uri );
+    }
+
+    // No feed found? 
     if( !feed )
-      DBGMSG( "StreamRef \"%s\" (%s) with (%d*%d): could not open.", 
-              uri, type, format.sampleRate, format.channels  );	
+      DBGMSG( "StreamRef \"%s\" (%s) with (%s): could not open.", 
+              uri, type, audioFormatStr(NULL,&format)  );	
     Sfree( uri );
     
     // We have found a feed...

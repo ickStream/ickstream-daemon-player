@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef DEBUG
+// #undef DEBUG
 
 #include <stdio.h>
 #include <string.h>
@@ -74,13 +74,16 @@ Remarks         : -
 /*=========================================================================*\
 	Private symbols
 \*=========================================================================*/
-// none
+const char *defaultFormatStr[] = {
+  "2x44100x16S",
+  NULL
+};
 
 /*=========================================================================*\
 	Private prototypes
 \*=========================================================================*/
-static int    _codecInit( void );
-static int    _codecShutdown( bool force );
+static int    _codecInit( struct _codec *codec );
+static int    _codecShutdown( struct _codec *codec, bool force );
 static bool   _codecCheckType(const char *type, const struct _audioFormat *format );
 static int    _codecNewInstance( CodecInstance *instance ); 
 static int    _codecDeleteInstance( CodecInstance *instance ); 
@@ -99,7 +102,9 @@ Codec *mpg123Descriptor( void )
 {
   static Codec codec;
   
-  // Set name	
+/*------------------------------------------------------------------------*\
+    Setup codec descriptor
+\*------------------------------------------------------------------------*/
   codec.next           = NULL;
   codec.name           = "mpg123";
   codec.feedChunkSize  = 0;
@@ -113,6 +118,9 @@ Codec *mpg123Descriptor( void )
   codec.setVolume      = &_codecSetVolume;
   codec.getSeekTime    = &_codecGetSeekTime;
   
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
   return &codec;	
 }
 
@@ -120,9 +128,9 @@ Codec *mpg123Descriptor( void )
       Global init for codec lib 
         return false on error
 \*=========================================================================*/
-static int _codecInit( void )
+static int _codecInit( struct _codec *codec )
 {
-  int rc;
+  int i, rc;
   
 /*------------------------------------------------------------------------*\
     Try to init lib 
@@ -132,6 +140,15 @@ static int _codecInit( void )
     logerr( "mpg123: could not init lib: %s", 
                       mpg123_plain_strerror(rc)  );
     return -1;	
+  }
+
+/*------------------------------------------------------------------------*\
+    Add default audio formats
+\*------------------------------------------------------------------------*/
+  for( i=0; defaultFormatStr[i]; i++ ) {
+    AudioFormat format;
+    audioStrFormat( &format ,defaultFormatStr[i] );
+    audioAddAudioFormat( &codec->defaultAudioFormats, &format );
   }
   
 /*------------------------------------------------------------------------*\
@@ -144,9 +161,22 @@ static int _codecInit( void )
 /*=========================================================================*\
       Global shutdown for codec lib 
 \*=========================================================================*/
-static int _codecShutdown( bool force )
+static int _codecShutdown( struct _codec *codec, bool force )
 {
+
+/*------------------------------------------------------------------------*\
+    Shut down library
+\*------------------------------------------------------------------------*/
   mpg123_exit();
+
+/*------------------------------------------------------------------------*\
+    Delete list of default audio formats
+\*------------------------------------------------------------------------*/
+  audioFreeAudioFormatList( &codec->defaultAudioFormats );
+
+/*------------------------------------------------------------------------*\
+    That#s all
+\*------------------------------------------------------------------------*/
   return 0;
 }
 

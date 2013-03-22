@@ -292,9 +292,13 @@ int audioStrFormat( AudioFormat *format, const char *str )
       Compare two audio formats
         returns 0 for equal formats
 \*=========================================================================*/
-int audioFormatCompare( AudioFormat *format1, AudioFormat *format2 )
+int audioFormatCompare( const AudioFormat *format1, const AudioFormat *format2 )
 {
-  DBGMSG( "compare formats" );
+#ifdef DEBUG
+  char buf1[64], buf2[64];
+  DBGMSG( "compare formats: %s ?= %s", 
+          audioFormatStr(buf1,format1), audioFormatStr(buf2,format2) );
+#endif
 
   // Compare number of channels	
   if( format1->channels!=format2->channels )
@@ -309,6 +313,136 @@ int audioFormatCompare( AudioFormat *format1, AudioFormat *format2 )
 }
 
 
+/*=========================================================================*\
+      Check if audio format is complete
+\*=========================================================================*/
+bool audioFormatIsComplete( const AudioFormat *format)
+{
+  DBGMSG( "Format complete?: %s", audioFormatStr(NULL,format) );
+
+  // Number of channels defined?
+  if( format->channels<=0 )
+    return false;
+
+  // Sample rate defined?
+  if( format->sampleRate<=0 )
+    return false;
+
+  // bit witdh defined?
+  if( format->bitWidth<=0 )
+    return false;
+
+  // Is complete	
+  return true;
+
+}
+
+
+/*=========================================================================*\
+      Complete an audio format destFormat with data from refFormat
+        returns -1 on error (destFormat still incomplete)
+                 1 if destFormat was already complete
+                 0 if destFormat was actually completed
+\*=========================================================================*/
+int audioFormatComplete( AudioFormat *destFormat, const AudioFormat *refFormat )
+{
+  int rc = 1;
+
+#ifdef DEBUG
+  char buf1[64], buf2[64];
+  DBGMSG( "complete format %s with %s", 
+          audioFormatStr(buf1,destFormat), audioFormatStr(buf2,refFormat) );
+#endif
+
+  // Number of channels defined?
+  if( destFormat->channels<=0 ) {
+    destFormat->channels = refFormat->channels;
+    rc = 0;
+  }
+
+  // Sample rate defined?
+  if( destFormat->sampleRate<=0 ){
+    destFormat->sampleRate = refFormat->sampleRate;
+    rc = 0;
+  }
+
+  // Bit witdh defined?
+  if( destFormat->bitWidth<=0 ){
+    destFormat->bitWidth = refFormat->bitWidth;
+    destFormat->isSigned = refFormat->isSigned;
+    destFormat->isFloat  = refFormat->isFloat;
+    rc = 0;
+  }
+
+  // Resulting format still incomplete?
+  if( !audioFormatIsComplete(destFormat) )
+    rc = -1;
+
+  // return result code
+  return rc;
+}
+
+
+/*=========================================================================*\
+      Append a format to format list.
+        format is copied.
+\*=========================================================================*/
+int audioAddAudioFormat( AudioFormatList *list, const AudioFormat *format )
+{
+  DBGMSG( "Adding audio format to list %p: %s", list,
+          format?audioFormatStr(NULL,format):"<none>" );
+
+/*------------------------------------------------------------------------*\
+    Create new list element
+\*------------------------------------------------------------------------*/
+  AudioFormatElement *newElement = calloc( 1, sizeof(AudioFormatElement) );
+  if( !newElement ) {
+     logerr( "playerAddDefaultAudioFormat: out of memory" );
+    return -1;
+  }
+  memcpy( &newElement->format, format, sizeof(AudioFormat) );
+
+/*------------------------------------------------------------------------*\
+    Append format to list
+\*------------------------------------------------------------------------*/
+  if( !*list ) {
+    *list = newElement;
+  }
+  else {
+    AudioFormatElement *element = *list;
+    while( element->next )
+      element = element->next;
+    element->next = newElement;
+  }
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  return 0;
+}
+
+/*=========================================================================*\
+     Free a list of audio formats.
+\*=========================================================================*/
+void audioFreeAudioFormatList( AudioFormatList *list )
+{
+  DBGMSG( "Deleting audio format list %p.", list ); 
+
+/*------------------------------------------------------------------------*\
+    Delete list elements
+\*------------------------------------------------------------------------*/
+  AudioFormatElement *element = *list;
+  while( element ) {
+    AudioFormatElement *next = element->next;
+    Sfree( element );
+    element = next;
+  }
+
+/*------------------------------------------------------------------------*\
+    Reset root
+\*------------------------------------------------------------------------*/
+  *list = NULL;
+}
 
 /*=========================================================================*\
       Get List of available devices for an backend

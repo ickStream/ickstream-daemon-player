@@ -75,6 +75,12 @@ typedef struct _audioFormat {
   bool isFloat;        // valid only if bitWith>0
 } AudioFormat;
 
+typedef struct _audioFormatElement {
+  struct _audioFormatElement  *next;
+  AudioFormat                  format;
+} AudioFormatElement;
+typedef AudioFormatElement *AudioFormatList;
+
 typedef enum {
   AudioDrain,
   AudioDrop,
@@ -140,7 +146,12 @@ int                 audioCheckDevice( const char *device );
 
 const char         *audioFormatStr( char *buffer, const AudioFormat *format );
 int                 audioStrFormat( AudioFormat *format, const char *str );
-int                 audioFormatCompare( AudioFormat *format1, AudioFormat *format2 );
+int                 audioFormatCompare( const AudioFormat *format1, const AudioFormat *format2 );
+bool                audioFormatIsComplete( const AudioFormat *format);
+int                 audioFormatComplete( AudioFormat *destFormat, const AudioFormat *refFormat );
+
+int                 audioAddAudioFormat( AudioFormatList *list, const AudioFormat *format );
+void                audioFreeAudioFormatList( AudioFormatList *list );
 
 AudioIf            *audioIfNew( const AudioBackend *backend, const char *device );
 int                 audioIfDelete( AudioIf *aif, AudioTermMode mode );

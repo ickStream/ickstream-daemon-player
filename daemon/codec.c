@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef DEBUG 
+// #undef DEBUG 
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -91,7 +91,7 @@ int codecRegister( Codec *codec )
   loginfo( "Registering codec %s", codec->name );
   
   // Call optional init method
-  if( codec->init && codec->init() ) {
+  if( codec->init && codec->init(codec) ) {
     loginfo( "Could not init codec %s", codec->name );
     return -1;
   }
@@ -124,7 +124,7 @@ void codecShutdown( bool force )
 
     // call optional shutdown method
     if( codec->shutdown )
-      codec->shutdown( force );
+      codec->shutdown( codec, force );
   }
   
 /*------------------------------------------------------------------------*\
@@ -138,9 +138,11 @@ void codecShutdown( bool force )
         for initial call codec shall be NULL
         supply codec with previous result to get next match
         Returns a matching codec or NULL if none
+        An incomplete format will be completed by using the default audio format list
 \*=========================================================================*/
-Codec *codecFind( const char *type, const AudioFormat *format, Codec *codec )
+Codec *codecFind( const char *type, AudioFormat *format, Codec *codec )
 {
+  DBGMSG( "Search codec for type %s, %s.", type, audioFormatStr(NULL,format) );
 
 /*------------------------------------------------------------------------*\
     First call? 
@@ -151,17 +153,42 @@ Codec *codecFind( const char *type, const AudioFormat *format, Codec *codec )
 /*------------------------------------------------------------------------*\
     Loop over all remaining list elements 
 \*------------------------------------------------------------------------*/
-  while( codec ) {
+  for( ; codec; codec = codec->next ) {
+
+/*------------------------------------------------------------------------*\
+    Direct check (format might be incomplete here!)
+\*------------------------------------------------------------------------*/
     if( codec->checkType(type,format) )
-      break;	
-    codec = codec->next;  
-  }	
-  
+      break;
+
+/*------------------------------------------------------------------------*\
+    If format is incomplete, loop over all defaults 
+\*------------------------------------------------------------------------*/
+    if( !audioFormatIsComplete(format) ) {
+      AudioFormat         tryFormat;
+      AudioFormatElement *element = codec->defaultAudioFormats;
+      while( element ) {
+        memcpy( &tryFormat, format, sizeof(AudioFormat) );
+        audioFormatComplete( &tryFormat, &element->format );
+        DBGMSG( "Checking codec %s for type %s, format %s: ", 
+                     codec->name, type, audioFormatStr(NULL,&tryFormat) );
+        if( codec->checkType(type,&tryFormat) )
+          break;
+      }
+      // found a matching format: copy to argument
+      if( element ) {
+        memcpy( format, &tryFormat, sizeof(AudioFormat) );
+        break;
+      }
+    }
+
+  } // for( ; codec; codec = codec->next )
+
 /*------------------------------------------------------------------------*\
     Return result 
 \*------------------------------------------------------------------------*/
-  DBGMSG( "Using codec for type %s: %s", type, 
-                     codec?codec->name:"<none found>" );
+  DBGMSG( "Using codec for type %s: %s (%s)", type, 
+                     codec?codec->name:"<none found>", audioFormatStr(NULL,format) );
   return codec;
 }
 
