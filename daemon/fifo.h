@@ -55,6 +55,7 @@ Remarks         : -
 #include <stddef.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include <errno.h>
 
 
 /*=========================================================================*\

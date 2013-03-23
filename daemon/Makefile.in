@@ -36,7 +36,7 @@ EXECUTABLE      = ickpd
 
 # Source files to process
 SRC             = utils.c config.c persist.c playlist.c player.c ickpd.c \
-                  audio.c fifo.c feed.c \
+                  audio.c audioNull.c fifo.c feed.c \
                   codec.c @extrasrcs@\
                   ickDevice.c ickMessage.c ickService.c
 OBJECTS         = $(SRC:.c=.o)

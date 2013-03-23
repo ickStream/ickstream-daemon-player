@@ -240,14 +240,14 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     Get player status 
 \*------------------------------------------------------------------------*/
   if( !strcasecmp(method,"getPlayerStatus") ) {
-  	jResult   = _jPlayerStatus();
+  	jResult = _jPlayerStatus();
   }
 
 /*------------------------------------------------------------------------*\
     Get position in track
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"getSeekPosition") ) {
-  	Playlist *plst    = playerGetQueue();
+  	Playlist *plst = playerGetQueue();
   	jResult = json_pack( "{sisf}",
                          "playlistPos", playlistGetCursorPos(plst),
                          "seekPos",     playerGetSeekPos() );
@@ -276,15 +276,15 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     // Add info about current track (if any)
     pItem = playlistGetItem( plst, pos );
     if( pItem )
-      json_object_set( jResult, "track", pItem->jItem );
+      json_object_set( jResult, "track", playlistItemGetJSON(pItem) );
   }  
 
 /*------------------------------------------------------------------------*\
     Set track index to play 
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"setTrack") ) {
-    Playlist *plst    = playerGetQueue();
-    int       offset  = 0;
+    Playlist *plst   = playerGetQueue();
+    int       offset = 0;
     
     // Get position
     jObj = json_object_get( jParams, "playlistPos" );
@@ -377,9 +377,9 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     Get playlist
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"getPlaylist") ) {
-    Playlist     *plst    = playerGetQueue();
-    int           offset  = 0;
-    int           count   = 0;
+    Playlist *plst   = playerGetQueue();
+    int       offset = 0;
+    int       count  = 0;
       
     // Get explicit offset
     jObj = json_object_get( jParams, "offset" );
@@ -401,9 +401,9 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     Set playlist id and name
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"setPlaylistName") ) {
-    Playlist     *plst = playerGetQueue();
-    const char   *id   = NULL;
-    const char   *name = NULL;
+    Playlist   *plst = playerGetQueue();
+    const char *id   = NULL;
+    const char *name = NULL;
       
     // Get ID
     jObj = json_object_get( jParams, "playlistId" );
@@ -442,58 +442,40 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
   }
            
 /*------------------------------------------------------------------------*\
-    Add track to playlist or replace playlist
+    Add tracks to playlist or replace playlist
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"addTracks") || 
            !strcasecmp(method,"setTracks") ) {
-    int           i;
-    json_t       *jItems;
-    Playlist     *plst;
-    PlaylistItem *anchorItem = NULL;          // Item to add list before
-
-    // Replace the current list, don't store current content
-    if( !strcasecmp(method,"setTracks") )
-      playerResetQueue( );
-    
-    // Get existing or new playlist   
-    plst = playerGetQueue( );
-      
+    Playlist     *plst       = playerGetQueue();
+    bool          resetFlag  = strcasecmp(method,"setTracks") ? true : false;
+    PlaylistItem *anchorItem = NULL;  // Item to add list before
+    json_t       *jItems;                 // List of new items
+ 
     // Get explicite position 
     jObj = json_object_get( jParams, "playlistPos" );
     if( jObj && json_is_integer(jObj) ) {
-       int pos    = json_integer_value( jObj );
-       anchorItem = playlistGetItem( plst, pos );
+      int pos    = json_integer_value( jObj );
+      anchorItem = playlistGetItem( plst, pos );
     }
     
     // Get list of new items
     jItems = json_object_get( jParams, "items" );
     if( !jItems || !json_is_array(jItems) ) {
       logerr( "ickMessage from %s: missing field \"items\": %s", 
-                       szDeviceId, message );
+               szDeviceId, message );
       json_decref( jRoot );
       Sfree( message );
       return;
     }
     
-    // Loop over all items to add
-    for( i=0; i<json_array_size(jItems); i++ ) {
-      json_t  *jItem = json_array_get( jItems, i );
-
-      // Create playlist entry from json payload
-      PlaylistItem *pItem = playlistItemFromJSON( jItem );
-      if( !pItem ) {
-        logerr( "ickMessage from %s: could not parse item #%d: %s",
-                       szDeviceId, i+1, message );
-      } 
-
-      // Add new item to playlist before anchor 
-      else if( anchorItem )
-        playlistAddItemBefore( plst, anchorItem, pItem );
-      
-      // Add new item to end of list
-      else
-        playlistAddItemAfter( plst, NULL, pItem );
-    } 
+    // Add tracks to playlist
+    if( playlistAddItems(plst,anchorItem,jItems,resetFlag) ) {
+      logerr( "ickMessage from %s: could not add items to playlist: %s", 
+               szDeviceId, message );
+      json_decref( jRoot );
+      Sfree( message );
+      return;
+    }
 
     // Playlist has changed
     playlistChanged = true;
@@ -508,11 +490,10 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     Remove tracks from playlist
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"removeTracks") ) {
-    int           i;
-    json_t       *jItems;
-    Playlist     *plst = playerGetQueue();
+    Playlist *plst = playerGetQueue();
+    json_t   *jItems;
    
-    // Get list of new items
+    // Get list of items to be removed
     jItems = json_object_get( jParams, "items" );
     if( !jItems || !json_is_array(jItems) ) {
       logerr( "ickMessage from %s: missing field \"items\": %s", 
@@ -522,49 +503,15 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
       return;
     }
     
-    // Loop over all items to remove
-    for( i=0; i<json_array_size(jItems); i++ ) {
-      json_t       *jItem = json_array_get( jItems, i );
-      const char   *id    = NULL;
-      PlaylistItem *pItem;
-      
-      // Get item ID
-      jObj = json_object_get( jItem, "id" );
-      if( !jObj || !json_is_string(jObj) ) {
-        logerr( "ickMessage from %s: item missing field \"id\": %s", 
-                       szDeviceId, message );
-        continue;
-      }              
-      id = json_string_value( jObj );
-        
-      // Get item by explicit position 
-      jObj = json_object_get( jItem, "playlistPos" );
-      if( jObj && json_is_integer(jObj) ) {
-        int pos    = json_integer_value( jObj );
-        pItem      = playlistGetItem( plst, pos );
-        if( pItem && strcmp(id,pItem->id) ) {
-          logwarn( "ickMessage from %s: item id differs from id at explicite position: %s", 
-                       szDeviceId, message );
-        }
-        if( pItem ) { 
-          playlistUnlinkItem( plst, pItem );
-          playlistItemDelete( pItem );
-        }
-        else
-          logwarn( "ickMessage from %s: cannot remove item @%d: %s", 
-                       szDeviceId, pos, message );        
-      }
-      
-      // Remove all items with this ID
-      else for(;;) {
-        pItem = playlistGetItemById( plst, id );
-        if( !pItem )
-          break;
-        playlistUnlinkItem( plst, pItem );
-        playlistItemDelete( pItem );
-      }
+    // Remove items from playlist
+    if( playlistDeleteItems(plst,jItems) ) {
+      logerr( "ickMessage from %s: could not remove items from playlist: %s", 
+               szDeviceId, message );
+      json_decref( jRoot );
+      Sfree( message );
+      return;
     }
-    
+
     // Playlist has changed
     playlistChanged = true;
 
@@ -578,12 +525,9 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     Move tracks within playlist
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"moveTracks") ) {
-    int            i;
-    json_t        *jItems;
     Playlist      *plst = playerGetQueue();
+    json_t        *jItems;
     PlaylistItem  *anchorItem = NULL;          // Item to move others before
-    PlaylistItem **pItems;                     // Array of items to move
-    int            pItemCnt;                   // Elements in pItems 
     
     // Get explicite position 
     jObj = json_object_get( jParams, "playlistPos" );
@@ -601,88 +545,15 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
       Sfree( message );
       return;
     }
-    
-    // Allocate temporary array of items to move
-    pItemCnt = 0;
-    pItems   = calloc( json_array_size(jItems), sizeof(PlaylistItem *) );
-    if( !pItems ) {
-      logerr( "ickMessage: out of memory" );
+
+    // Move tracks within playlist
+    if( playlistMoveItems(plst,anchorItem,jItems) ) {
+      logerr( "ickMessage from %s: could not move items in playlist: %s", 
+               szDeviceId, message );
       json_decref( jRoot );
       Sfree( message );
       return;
     }
-    
-    // Loop over all items to move
-    for( i=0; i<json_array_size(jItems); i++ ) {
-      json_t       *jItem = json_array_get( jItems, i );
-      const char   *id;
-      int           pos;
-      PlaylistItem *pItem;
-              
-      // Get explicit position 
-      jObj = json_object_get( jItem, "playlistPos" );
-      if( !jObj || !json_is_integer(jObj) ) {
-        logerr( "ickMessage from %s: item missing field \"playlistPos\": %s", 
-                       szDeviceId, message );
-        continue;
-      } 
-      pos   = json_integer_value( jObj );
-      
-      // Get item 
-      pItem = playlistGetItem( plst, pos );
-      if( !pItem ) {
-        logwarn( "ickMessage from %s: cannot remove item @%d: %s", 
-                        szDeviceId, pos, message );
-        continue;
-      }
-
-      // Get item ID
-      jObj = json_object_get( jItem, "id" );
-      if( !jObj || !json_is_string(jObj) ) {
-        logerr( "ickMessage from %s: item missing field \"id\": %s", 
-                       szDeviceId, message );
-        continue;
-      }              
-      id = json_string_value( jObj );
-      
-      // Be defensive
-      if( strcmp(id,pItem->id) ) {
-        logwarn( "ickMessage from %s: item id differs from id at explicite position: %s", 
-                              szDeviceId, message );
-      }
-
-      // Be pranoid: check for doubles since unlinking is not stable against double calls
-      bool found = 0;
-      int j;
-      for( j=0; j<pItemCnt && !found; j++ ) {
-        found = ( pItems[j]==pItem );
-      }
-      if( found ) {
-        logwarn( "ickMessage from %s: doubles in item list (playlist pos %d): %s", 
-                              szDeviceId, pos, message );
-        continue;                      
-      }
-      
-      // add Item to temporary list 
-      pItems[pItemCnt++] = pItem;
-      
-    } /* for( i=0; i<json_array_size(jItems); i++ ) */
-    
-    // Unlink all identified items, but do not delete them
-    for( i=0; i<pItemCnt; i++ ) {
-       playlistUnlinkItem( plst, pItems[i] ); 
-    }
-    
-    // Reinsert the items 
-    for( i=0; i<pItemCnt; i++ ) {
-       if( anchorItem )
-         playlistAddItemBefore( plst, anchorItem, pItems[i] );
-       else 
-         playlistAddItemAfter( plst, NULL, pItems[i] );
-    }
-    
-    // Free temporary list of items to move
-    Sfree( pItems );
     
     // Playlist has changed
     playlistChanged = true;
@@ -788,8 +659,9 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 \*=========================================================================*/
 void ickMessageNotifyPlaylist( void )
 {
-  Playlist *plst;;
-  json_t   *jMsg;
+  Playlist   *plst;
+  json_t     *jMsg;
+  const char *str;
 
   DBGMSG( "ickMessageNotifyPlaylist" );    
 
@@ -801,10 +673,12 @@ void ickMessageNotifyPlaylist( void )
                       "lastChanged", (double) playlistGetLastChange(plst), 
                       "countAll", playlistGetLength(plst) );
   // Name and ID are optional                       
-  if( plst->id )
-    json_object_set_new( jMsg, "playlistId", json_string(plst->id) );
-  if( plst->name )
-    json_object_set_new( jMsg, "playlistName", json_string(plst->name) );
+  str = playlistGetId( plst );
+  if( str )
+    json_object_set_new( jMsg, "playlistId", json_string(str) );
+  str = playlistGetName( plst );
+  if( str )
+    json_object_set_new( jMsg, "playlistName", json_string(str) );
 
 /*------------------------------------------------------------------------*\
     Set up message
@@ -867,7 +741,7 @@ json_t *_jPlayerStatus( void )
 \*------------------------------------------------------------------------*/
   pItem = playlistGetItem( plst, cursorPos );
   if( pItem )
-    json_object_set( jResult, "track", pItem->jItem );
+    json_object_set( jResult, "track", playlistItemGetJSON(pItem) );
     
 /*------------------------------------------------------------------------*\
     That's all

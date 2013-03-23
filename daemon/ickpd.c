@@ -153,49 +153,7 @@ int main( int argc, char *argv[] )
     usage( argv[0], 0 );
     return 0;
   }
-
-/*-------------------------------------------------------------------------*\
-    List available audio devices and exit
-\*-------------------------------------------------------------------------*/
-  if( adev_flag ) {
-    const AudioBackend *backend;
-    int                 tot = 0;
-    if( audioInit(NULL) ) {
-      printf( "Could not init audio moule for testing devices.\n" );
-      return -1;
-    }
-    backend = audioBackendsRoot( );
-    while( backend ) {
-      char **devList, **dscrList;
-      int    i, n; 
-      n = audioGetDeviceList( backend, &devList, &dscrList );       
-      if( n<0 )
-        return -1;
-      for( i=0; i<n; i++ ) {
-        char *descrLine = strtok( dscrList[i], "\n" );
-        char *res = malloc( strlen(backend->name)+2+strlen(devList[i]) );
-        sprintf( res, "%s:%s", backend->name, devList[i] );    
-        printf( "%-30s - %s\n", res, descrLine );
-        Sfree( res );
-        while( (descrLine=strtok(NULL,"\n")) )
-          printf( "%33s%s\n", "", descrLine );
-      }
-      audioFreeStringList( devList );
-      audioFreeStringList( dscrList );
-      tot += n;
-      backend = backend->next;
-    }
-    if( !tot )
-      printf( "No audio devices found.\n" );
-    return 0;
-  }
   
-/*------------------------------------------------------------------------*\
-    Read configuration 
-\*------------------------------------------------------------------------*/  
-  if( cfg_fname && readconfig(cfg_fname) )
-    return -1;
-
 /*------------------------------------------------------------------------*\
     Set verbosity level 
 \*------------------------------------------------------------------------*/  
@@ -214,6 +172,52 @@ int main( int argc, char *argv[] )
                       argv[0], srvloglevel );
   } 
 #endif 
+
+/*-------------------------------------------------------------------------*\
+    List available audio devices and exit
+\*-------------------------------------------------------------------------*/
+  if( adev_flag ) {
+    const AudioBackend *backend;
+    int                 tot = 0;
+    if( audioInit(NULL) ) {
+      printf( "Could not init audio moule for testing devices.\n" );
+      return -1;
+    }
+    backend = audioBackendsRoot( );
+    while( backend ) {
+      char **devList, **dscrList, *res;
+      int    i, n; 
+      n = audioGetDeviceList( backend, &devList, &dscrList );       
+      if( n<0 )
+        return -1;
+      for( i=0; i<n; i++ ) {
+        char *descrLine = strtok( dscrList[i], "\n" );
+        if( !devList[i] ) 
+          res = strdup( backend->name );
+        else {
+          res = malloc( strlen(backend->name)+2+strlen(devList[i]) );
+          sprintf( res, "%s:%s", backend->name, devList[i] );
+        }
+        printf( "%-35s - %s\n", res, descrLine );
+        Sfree( res );
+        while( (descrLine=strtok(NULL,"\n")) )
+          printf( "%38s%s\n", "", descrLine );
+      }
+      audioFreeStringList( devList );
+      audioFreeStringList( dscrList );
+      tot += n;
+      backend = backend->next;
+    }
+    if( !tot )
+      printf( "No audio devices found.\n" );
+    return 0;
+  }
+
+/*------------------------------------------------------------------------*\
+    Read configuration 
+\*------------------------------------------------------------------------*/  
+  if( cfg_fname && readconfig(cfg_fname) )
+    return -1;
 
 /*------------------------------------------------------------------------*\
     Set persistence filename 

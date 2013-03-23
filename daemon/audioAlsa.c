@@ -2,7 +2,7 @@
 
 Name            : -
 
-Source File     : alsa.c
+Source File     : audioAlsa.c
 
 Description     : interface to alsa API 
 
@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef DEBUG
+// #undef DEBUG
 
 #include <stdio.h>
 #include <strings.h>
@@ -93,7 +93,7 @@ static void             *_ifThread( void *arg );
 /*=========================================================================*\
       Return descriptor for this backend 
 \*=========================================================================*/
-AudioBackend *alsaDescriptor( void )
+AudioBackend *audioAlsaDescriptor( void )
 {
   static AudioBackend backend;
   
@@ -366,7 +366,7 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
   unsigned int         realRate;
   int                  rc;
   
-  DBGMSG( "Alsa: setting format to %s", audioFormatStr(format) ); 
+  DBGMSG( "Alsa: setting format to %s", audioFormatStr(NULL,format) ); 
 
 /*------------------------------------------------------------------------*\
     Do we know this format? 
@@ -385,6 +385,7 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
 
   // Get pause support
   aif->canPause = snd_pcm_hw_params_can_pause( hwParams );
+  DBGMSG( "Alsa: pausing %ssupported", aif->canPause?"":"not " );
 
   // Multi channel is interleaved
   rc = snd_pcm_hw_params_set_channels( pcm, hwParams, format->channels );

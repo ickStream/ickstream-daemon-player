@@ -62,8 +62,9 @@ Remarks         : -
 #include "audio.h"
 
 // Audio Backends
+#include "audioNull.h"
 #ifdef ALSA
-#include "alsa.h"
+#include "audioAlsa.h"
 #endif
 
 // Codecs
@@ -100,8 +101,9 @@ int audioInit( const char *deviceName )
     Register available audio backends
 \*------------------------------------------------------------------------*/
 #ifdef ALSA
-  _audioRegister( alsaDescriptor() );
+  _audioRegister( audioAlsaDescriptor() );
 #endif
+_audioRegister( audioNullDescriptor() );
 
 /*------------------------------------------------------------------------*\
     Register available codecs
@@ -181,7 +183,7 @@ const AudioBackend *audioBackendByDeviceString( const char *str, const char **de
 /*------------------------------------------------------------------------*\
     Check for terminating ':'
 \*------------------------------------------------------------------------*/
-  if( !backend || str[strlen(backend->name)]!=':' )
+  if( !backend || (str[strlen(backend->name)]!=':' && str[strlen(backend->name)]!=0) )
     backend = NULL;
 
 /*------------------------------------------------------------------------*\

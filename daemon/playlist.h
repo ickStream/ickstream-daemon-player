@@ -52,6 +52,7 @@ Remarks         : -
 /*=========================================================================*\
 	Includes needed by definitions from this file
 \*=========================================================================*/
+#include <stdbool.h>
 #include <pthread.h>
 #include <jansson.h>
 
@@ -60,32 +61,13 @@ Remarks         : -
    Some definitions
 \*========================================================================*/
 
-/*------------------------------------------------------------------------*\
-   A playlist item (aka track) 
-\*------------------------------------------------------------------------*/
-typedef struct _playlistItem {
-  struct _playlistItem *next;
-  struct _playlistItem *prev;
-  json_t               *jItem;
-  const char           *id;               // weak
-  const char           *text;             // weak
-  json_t               *jStreamingRefs;   // weak
-} PlaylistItem;
+// A playlist
+struct _playlist;
+typedef struct _playlist Playlist;
 
-/*------------------------------------------------------------------------*\
-   A playlist
-\*------------------------------------------------------------------------*/
-typedef struct {
-  char             *id;
-  char             *name;
-  double            lastChange;
-  int               _numberOfItems;
-  int               _cursorPos;
-  PlaylistItem     *_cursorItem;
-  PlaylistItem     *firstItem;
-  PlaylistItem     *lastItem;
-  pthread_mutex_t   mutex;
-} Playlist;
+// A playlist item (aka track) 
+struct _playlistItem;
+typedef struct _playlistItem  PlaylistItem;
 
 
 /*=========================================================================*\
@@ -108,17 +90,28 @@ const char   *playlistGetName( Playlist *plst );
 int           playlistGetLength( Playlist *plst );
 double        playlistGetLastChange( Playlist *plst );
 int           playlistGetCursorPos( Playlist *plst );
-int           playlistSetCursorPos( Playlist *plst, int pos );
+PlaylistItem *playlistSetCursorPos( Playlist *plst, int pos );
 PlaylistItem *playlistIncrCursorItem( Playlist *plst );
+int           playlistTranspose( Playlist *plst, int pos1, int pos2, bool moveCursor );
+PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool moveCursorToStart );
 
 json_t       *playlistGetJSON( Playlist *plst, int offset, int count );
 
 PlaylistItem *playlistItemFromJSON( json_t *jItem );
 void          playlistItemDelete( PlaylistItem *pItem );
+const char   *playlistItemGetText( PlaylistItem *pItem );
+const char   *playlistItemGetId( PlaylistItem *pItem );
+json_t       *playlistItemGetJSON( PlaylistItem *pItem );
+json_t       *playlistItemGetStreamingRefs( PlaylistItem *pItem );
 
 PlaylistItem *playlistGetItem( Playlist *plst, int pos );
 PlaylistItem *playlistGetItemById( Playlist *plst, const char *id );
 PlaylistItem *playlistGetCursorItem( Playlist *plst );
+int           playlistAddItems( Playlist *plst, PlaylistItem *anchorItem, json_t *jItems, bool resetFlag );
+int           playlistDeleteItems( Playlist *plst, json_t *jItems );
+int           playlistMoveItems( Playlist *plst, PlaylistItem *anchorItem, json_t *jItems );
+
+
 void          playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem, PlaylistItem *newItem );
 void          playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem, PlaylistItem *newItem );
 void          playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem );

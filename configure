@@ -156,7 +156,7 @@ fi
 echo -n 'Check for alsa                  : '
 if ldconfig -p | grep "libasound\." -q; then
   CFLAGS="$CFLAGS -DALSA"
-  EXTRASRCS="$EXTRASRCS alsa.c"
+  EXTRASRCS="$EXTRASRCS audioAlsa.c"
   EXTRALIBS="$EXTRALIBS -lasound"
   echo 'found'
 else

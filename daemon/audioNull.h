@@ -2,13 +2,13 @@
 
 Name            : -
 
-Source File     : alsa.h
+Source File     : audioNull.h
 
-Description     : Main include file for alsa.c 
+Description     : Main include file for audioNull.c 
 
 Comments        : -
 
-Date            : 26.02.2013 
+Date            : 22.03.2013 
 
 Updates         : -
 
@@ -46,8 +46,8 @@ Remarks         : -
 \************************************************************************/
 
 
-#ifndef __ALSA_H
-#define __ALSA_H
+#ifndef __AUDIONULL_H
+#define __AUDIONULL_H
 
 /*=========================================================================*\
 	Includes needed by definitions from this file
@@ -58,11 +58,11 @@ Remarks         : -
 /*=========================================================================*\
        Global symbols 
 \*=========================================================================*/
-AudioBackend *alsaDescriptor( void );
+AudioBackend *audioNullDescriptor( void );
 
 
 
-#endif  /* __ALSA_H */
+#endif  /* __AUDIONULL_H */
 
 
 /*========================================================================*\

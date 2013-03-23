@@ -2,13 +2,13 @@
 
 Name            : -
 
-Source File     : player.h
+Source File     : audioAlsa.h
 
-Description     : Main include file for player.c 
+Description     : Main include file for audioAlsa.c 
 
 Comments        : -
 
-Date            : 24.02.2013 
+Date            : 26.02.2013 
 
 Updates         : -
 
@@ -46,76 +46,23 @@ Remarks         : -
 \************************************************************************/
 
 
-#ifndef __PLAYER_H
-#define __PLAYER_H
+#ifndef __AUDIOALSA_H
+#define __AUDIOALSA_H
 
 /*=========================================================================*\
 	Includes needed by definitions from this file
-\*=========================================================================*/
-#include <stdbool.h>
-#include "playlist.h"
-#include "audio.h"
-
-
-/*=========================================================================*\
-       Macro and type definitions 
-\*=========================================================================*/
-typedef enum {
-  PlayerStateStop,	
-  PlayerStatePlay,
-  PlayerStatePause
-} PlayerState;
-
-typedef enum {
-  PlayerRepeatOff,	
-  PlayerRepeatItem,
-  PlayerRepeatQueue,
-  PlayerRepeatShuffle
-} PlayerRepeatMode;
-
-/*=========================================================================*\
-       Global symbols 
 \*=========================================================================*/
 // none
 
 
 /*=========================================================================*\
-       Prototypes 
+       Global symbols 
 \*=========================================================================*/
-
-int                playerInit( void );
-void               playerShutdown( void );
-int                playerAddDefaultAudioFormat( const AudioFormat *format );
-Playlist          *playerGetQueue( void );
-void               playerResetQueue( void );
-PlayerState        playerGetState( void );
-PlayerRepeatMode   playerGetRepeatMode( void );
-double             playerGetLastChange( void );
-const char        *playerGetHWID( void );
-const char        *playerGetUUID( void );
-const char        *playerGetName( void );
-const char        *playerGetInterface( void );
-const char        *playerGetAudioDevice( void );
-const char        *playerGetModel( void );
-const char        *playerGetToken( void );
-double             playerGetVolume( void ); 
-bool               playerGetMuting( void );
-double             playerGetSeekPos( void );
-
-void               playerSetUUID( const char *name );
-void               playerSetInterface( const char *name );
-void               playerSetAudioDevice( const char *name );
-void               playerSetModel( const char *name );
-void               playerSetToken( const char *token );
-void               playerSetName( const char *name, bool broadcast );
-double             playerSetVolume( double volume, bool broadcast );
-bool               playerSetMuting( bool mute, bool broadcast );
-int                playerSetRepeatMode( PlayerRepeatMode state, bool broadcast );
-int                playerSetState( PlayerState state, bool broadcast );
+AudioBackend *audioAlsaDescriptor( void );
 
 
 
-#endif  /* __PLAYER_H */
+#endif  /* __AUDIOALSA_H */
 
 
 /*========================================================================*\

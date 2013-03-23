@@ -78,6 +78,7 @@ int  hmiInit( void );
 void hmiShutdown( void );
 void hmiNewItem( Playlist *plst, PlaylistItem *item );
 void hmiNewState( PlayerState state );
+void hmiNewRepeatMode( PlayerRepeatMode mode );
 void hmiNewVolume( double volume, bool muted );
 void hmiNewFormat( AudioFormat *format );
 void hmiNewPosition( double seekPos );
@@ -86,12 +87,14 @@ void hmiNewPosition( double seekPos );
        Dummies if no HMI is used
 \*=========================================================================*/
 #ifdef NOHMI
-#define hmiInit()         0
-#define hmiShutdown()     {}
-#define hmiNewItem(a,b)   {}
-#define hmiNewState(a)    {}
-#define hmiNewVolume(a,b) {}
-#define hmiNewPosition(a) {}
+#define hmiInit()           0
+#define hmiShutdown()       {}
+#define hmiNewItem(a,b)     {}
+#define hmiNewState(a)      {}
+#define hmiNewRepeatMode(a) {}
+#define hmiNewVolume(a,b)   {}
+#define hmiNewFormat(a)     {}
+#define hmiNewPosition(a)   {}
 #endif
 
 #endif  /* __HMI_H */

@@ -111,8 +111,8 @@ void hmiNewItem( Playlist *plst, PlaylistItem *item )
   DBGMSG( "new track: %p", item );
   currentItem = item;
 
-  printf( "HMI Playback track   : (%d/%d) \"%s\"\n", playlistGetCursorPos(plst), 
-           playlistGetLength(plst), item?item->text:"<None>" );
+  printf( "HMI Playback track   : (%d/%d) \"%s\"\n", playlistGetCursorPos(plst)+1, 
+           playlistGetLength(plst), item?playlistItemGetText(item):"<None>" );
 }
 
 
@@ -131,6 +131,25 @@ void hmiNewState( PlayerState state )
   }
 
   printf( "HMI Playback state   : %s\n", stateStr );
+}
+
+
+/*=========================================================================*\
+      Player repeat mode has changed
+\*=========================================================================*/
+void hmiNewRepeatMode( PlayerRepeatMode mode )
+{
+  DBGMSG( "new repat mode: %d", mode );
+
+  char *modeStr = "Unknown";
+  switch( mode ) {
+    case PlayerRepeatOff:     modeStr = "Off"; break;	
+    case PlayerRepeatItem:    modeStr = "Track"; break;
+    case PlayerRepeatQueue:     modeStr = "Queue"; break;
+    case PlayerRepeatShuffle: modeStr = "Shuffle"; break;
+  }
+
+  printf( "HMI Repeat mode      : %s\n", modeStr );
 }
 
 

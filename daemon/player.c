@@ -113,6 +113,7 @@ static const char         *accessToken;
 static double              playerVolume;
 static bool                playerMuted;
 static Playlist           *playerQueue;
+static PlayerRepeatMode    playerRepeatMode = PlayerRepeatOff;
 static AudioFormatList     defaultAudioFormats;
 
 // transient
@@ -161,6 +162,11 @@ int playerInit( void )
   playlistSetCursorPos( playerQueue, persistGetInteger("PlayerQueuePosition") );
 
 /*------------------------------------------------------------------------*\
+    Get repeat mode
+\*------------------------------------------------------------------------*/
+  playerRepeatMode = persistGetInteger( "PlayerRepeatMode" );
+
+/*------------------------------------------------------------------------*\
     Init mutex
 \*------------------------------------------------------------------------*/
   pthread_mutex_init( &playerMutex, NULL );
@@ -171,6 +177,7 @@ int playerInit( void )
   hmiNewItem( playerQueue, playlistGetCursorItem(playerQueue) );
   hmiNewState( playerState );
   hmiNewVolume( playerVolume, playerMuted );
+  hmiNewRepeatMode( playerRepeatMode );
   lastChange = srvtime( );
 
 /*------------------------------------------------------------------------*\
@@ -267,6 +274,16 @@ PlayerState playerGetState( void )
 {
   DBGMSG( "playerGetState: %d", playerState );
   return playerState;
+}
+
+
+/*=========================================================================*\
+      Get repeat mode 
+\*=========================================================================*/
+PlayerRepeatMode playerGetRepeatMode( void )
+{
+  DBGMSG( "playerGetRepeatMode: %d", playerRepeatMode );
+  return playerRepeatMode;
 }
 
 
@@ -605,6 +622,34 @@ bool playerSetMuting( bool muted, bool broadcast )
 
 
 /*=========================================================================*\
+      Set repeat mode 
+\*=========================================================================*/
+int playerSetRepeatMode( PlayerRepeatMode mode, bool broadcast )
+{
+  loginfo( "Setting repeat mode to %d", mode );
+
+/*------------------------------------------------------------------------*\
+    Store new state 
+\*------------------------------------------------------------------------*/
+  playerRepeatMode = mode;  
+  persistSetInteger( "PlayerRepeatMode", mode );
+
+/*------------------------------------------------------------------------*\
+    Update timestamp and broadcast new player state
+\*------------------------------------------------------------------------*/
+  lastChange = srvtime( );
+  hmiNewRepeatMode( mode );
+  if( broadcast )
+    ickMessageNotifyPlayerState();
+
+/*=========================================================================*\
+      return new mode 
+\*=========================================================================*/
+  return 0;
+}
+
+
+/*=========================================================================*\
       Change playback state 
 \*=========================================================================*/
 int playerSetState( PlayerState state, bool broadcast )
@@ -655,9 +700,10 @@ int playerSetState( PlayerState state, bool broadcast )
       }
       
       // Unpausing existing track ?
-      if( playerState==PlayerStatePause && currentTrackId && !strcmp(newTrack->id,currentTrackId) ) {
+      if( playerState==PlayerStatePause && currentTrackId && 
+           !strcmp(playlistItemGetId(newTrack),currentTrackId) ) {
   	    lognotice( "_playbackStart: Track \"%s\" (%s) unpaused", 
-                             newTrack->text, newTrack->id );
+                   playlistItemGetText(newTrack), playlistItemGetId(newTrack) );
         playerState = PlayerStatePlay;
   	    rc = audioIfSetPause( audioIf, false );
   	    break;
@@ -711,7 +757,7 @@ int playerSetState( PlayerState state, bool broadcast )
       }
       
       // if the track did not change: set pause flag
-      if( currentTrackId && !strcmp(newTrack->id,currentTrackId) ) {
+      if( currentTrackId && !strcmp(playlistItemGetId(newTrack),currentTrackId) ) {
 
         // Check for right state
         if( playerState==PlayerStateStop )
@@ -749,7 +795,7 @@ int playerSetState( PlayerState state, bool broadcast )
       playerState = PlayerStateStop;
       // Inform HMI
       hmiNewPosition( 0.0 );
-      if( newTrack && (!currentTrackId || strcmp(newTrack->id,currentTrackId)) )
+      if( newTrack && (!currentTrackId || strcmp(playlistItemGetId(newTrack),currentTrackId)) )
         hmiNewItem( playerQueue, newTrack );
 
       break; 
@@ -798,14 +844,15 @@ static void *_playbackThread( void *arg )
     Fifo          *fifo;
     AudioFormat    backendFormat;
  
-    DBGMSG( "_playerThread: Starting track \"%s\" (%s)", item->text, item->id );
+    DBGMSG( "_playerThread: Starting track \"%s\" (%s)", 
+              playlistItemGetText(item), playlistItemGetId(item) );
  
     // Try to get feed and codec for new track, if negative skip queue item
     // Fixme: include this in format search loop...
     feed = _feedFromPlayListItem( item, &codec );
     if( !feed ) {
       lognotice( "_playerThread: Track \"%s\" (%s) unavailable or unsupported by audio module", 
-                          item->text, item->id );
+                          playlistItemGetText(item), playlistItemGetId(item) );
       item = playlistIncrCursorItem( playerQueue );
       continue;
     }
@@ -878,11 +925,12 @@ static void *_playbackThread( void *arg )
     
     // Save new track id and brodcast new player status
     Sfree( currentTrackId );
-    currentTrackId = strdup( item->id );
+    currentTrackId = strdup( playlistItemGetId(item) );
     codecInstance = codecInst;
     ickMessageNotifyPlayerState();
     lognotice( "_playerThread: Playing track \"%s\" (%s) with %s", 
-      	                item->text, item->id, audioFormatStr(NULL,&backendFormat) );
+      	                playlistItemGetText(item), playlistItemGetId(item), 
+                        audioFormatStr(NULL,&backendFormat) );
 
     // Inform HMI
     hmiNewItem( playerQueue, item );
@@ -921,9 +969,27 @@ static void *_playbackThread( void *arg )
     if( codecDeleteInstance(codecInst,true) )
       logerr( "_playerThread: Could not delete codec instance" );
      	
-    // Goto next playlist entry only when not terminating
-    if( playbackThreadState==PlayerThreadRunning )
-      item = playlistIncrCursorItem( playerQueue );
+    // Terminating ?
+    if( playbackThreadState!=PlayerThreadRunning )
+      break;
+
+    // Repeat track?
+    if( playerRepeatMode==PlayerRepeatItem )
+      continue;
+
+    // Get next item
+    item = playlistIncrCursorItem( playerQueue );
+    if( item )
+      continue;
+
+    // repeat at end of list
+    if( playerRepeatMode==PlayerRepeatQueue )
+      item = playlistSetCursorPos( playerQueue, 0 );
+
+    // repeat at end of list with shuffling
+    else if( playerRepeatMode==PlayerRepeatShuffle )
+      item = playlistShuffle( playerQueue, 0, playlistGetLength(playerQueue)-1, false );
+
   }  // End of: Thread main loop
  
 /*------------------------------------------------------------------------*\
@@ -961,12 +1027,23 @@ static void *_playbackThread( void *arg )
 static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec ) 
 {
   int i;
+  json_t *jStreamingRefs;
+ 
+/*------------------------------------------------------------------------*\
+    Get stream hints 
+\*------------------------------------------------------------------------*/
+  jStreamingRefs = playlistItemGetStreamingRefs( item );
+  if( !jStreamingRefs ) {
+    logerr( "No streaming references found for track \"%s\" (%s).", 
+              playlistItemGetText(item), playlistItemGetId(item) );
+    return NULL;
+  }
 
 /*------------------------------------------------------------------------*\
-    Loop over all stream hints 
+    Loop over all hints 
 \*------------------------------------------------------------------------*/
-  for( i=0; i<json_array_size(item->jStreamingRefs); i++ ) {
-    json_t          *jStreamRef = json_array_get( item->jStreamingRefs, i );
+  for( i=0; i<json_array_size(jStreamingRefs); i++ ) {
+    json_t          *jStreamRef = json_array_get( jStreamingRefs, i );
     json_t          *jObj;
     AudioFormat      format;
     AudioFeed       *feed;
@@ -980,7 +1057,7 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
     jObj = json_object_get( jStreamRef, "format" );
     if( !jObj || !json_is_string(jObj) ) {
       logerr( "StreamRef #%d for track \"%s\" (%s): no format!", 
-                       i, item->text, item->id );
+               i, playlistItemGetText(item), playlistItemGetId(item) );
       continue;
     }
     type = json_string_value( jObj );
@@ -989,7 +1066,7 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
     jObj = json_object_get( jStreamRef, "url" );
     if( !jObj || !json_is_string(jObj) ) {
       logerr( "StreamRef #%d for track \"%s\" (%s): no url!", 
-                           i, item->text, item->id );
+               i, playlistItemGetText(item), playlistItemGetId(item) );
       continue;
     }  
       
@@ -997,7 +1074,8 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
     uri = ickServiceResolveURI( json_string_value(jObj), "content" );
     if( !uri ) {
       lognotice( "StreamRef #%d for track \"%s\" (%s): cannot resolve URL \"%s\"!", 
-              i, item->text, item->id, json_string_value(jObj) );
+                  i, playlistItemGetText(item), playlistItemGetId(item), 
+                  json_string_value(jObj) );
       continue;  
     }
           

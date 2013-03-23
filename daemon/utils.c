@@ -91,7 +91,8 @@ void _srvlog( const char *file, int line,  int prio, const char *fmt, ... )
   if( prio<=streamloglevel) {
 
     // select stream due to priority
-    FILE *f = (prio<LOG_INFO) ? stderr : stdout;
+    //FILE *f = (prio<LOG_INFO) ? stderr : stdout;
+    FILE *f = stdout;
 
     // print timestamp and thread info
     fprintf( f, "%.4f [%p]", srvtime(), (void*)pthread_self() );
