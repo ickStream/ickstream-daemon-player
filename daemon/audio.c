@@ -464,7 +464,7 @@ int audioGetDeviceList( const AudioBackend *backend, char ***deviceListPtr, char
 void audioFreeStringList( char **stringList )
 {
   char **ptr;
-  DBGMSG( "free list of strings (%p)", stringList );
+  DBGMSG( "Free list of strings (%p)", stringList );
 
 /*------------------------------------------------------------------------*\
     Loop over elements 
@@ -528,7 +528,6 @@ int audioCheckDevice( const char *deviceName )
 AudioIf *audioIfNew( const AudioBackend *backend, const char *device )
 {
   AudioIf *aif;  
-  DBGMSG( "Creating new instance of audio backend %s", backend->name );
 
 /*------------------------------------------------------------------------*\
     Create header 
@@ -541,11 +540,12 @@ AudioIf *audioIfNew( const AudioBackend *backend, const char *device )
   aif->state   = AudioIfInitialized;
   aif->backend = backend;
   aif->devName = strdup( device );
+  DBGMSG( "Audio instance %s (%p): created", aif->backend->name, aif );
     
 /*------------------------------------------------------------------------*\
     Initialize instance 
 \*------------------------------------------------------------------------*/
-  if( backend->newIf(aif,device) ) {	
+  if( backend->newIf(aif) ) {	
     logerr( "%s: Unable to init audio interface: %s", backend->name, device );
     Sfree( aif->devName );
     Sfree( aif );
@@ -566,7 +566,7 @@ int audioIfDelete( AudioIf *aif, AudioTermMode mode )
 {
   int rc;
 
-  DBGMSG( "Deleting instance of audio backend %s: %p (mode %d)", 
+  DBGMSG( "Audio instance %s (%p): deleting (mode %d)", 
            aif->backend->name, aif, mode );
 
   rc = aif->backend->deleteIf( aif, mode );
@@ -586,7 +586,7 @@ int audioIfDelete( AudioIf *aif, AudioTermMode mode )
 \*=========================================================================*/
 Fifo *audioIfPlay( AudioIf *aif, AudioFormat *format )
 {
-  DBGMSG( "Start playback on audio instance %s (%p): %s", 
+  DBGMSG( "Audio instance %s (%p): start playback (format %s)", 
            aif->backend->name, aif, audioFormatStr(NULL,format) );
     
   // Reset or create fifo
@@ -618,7 +618,7 @@ Fifo *audioIfPlay( AudioIf *aif, AudioFormat *format )
 \*=========================================================================*/
 int audioIfStop( AudioIf *aif, AudioTermMode mode )
 {
-  DBGMSG( "Stop playback on audio instance %s (%p): mode %d", 
+  DBGMSG( "audio instance %s (%p): stop playback (mode %d)", 
            aif->backend->name, aif, mode );
 
   return aif->backend->stop( aif, mode );	
@@ -630,7 +630,7 @@ int audioIfStop( AudioIf *aif, AudioTermMode mode )
 \*=========================================================================*/
 int audioIfSetPause( AudioIf *aif, bool pause )
 {
-  DBGMSG( "Set pause state on audio instance %s (%p): %s", 
+  DBGMSG( "Audio instance %s (%p): set pause %s", 
            aif->backend->name, aif, pause?"On":"Off" );
 	
   // Function not supported?
@@ -639,7 +639,7 @@ int audioIfSetPause( AudioIf *aif, bool pause )
                          aif->backend->name );
   	return -1;
   } 	
-  if( !aif->canPause ) {
+  if( !audioIfSupportsPause(aif) ) {
   	logwarn( "audioIfSetPause: Device %s does not support pausing.",
                          aif->devName );
   	return -1;
@@ -647,6 +647,31 @@ int audioIfSetPause( AudioIf *aif, bool pause )
 	
   // dispatch to backend function
   return aif->backend->pause( aif, pause );	
+}
+
+
+/*=========================================================================*\
+      Set volume
+\*=========================================================================*/
+int audioIfSetVolume( AudioIf *aif, double volume, bool muted )
+{
+  DBGMSG( "Audio instance %s (%p): set volume %f %s", 
+           aif->backend->name, aif, volume, muted?"(muted)":"(unmuted)" );
+	
+  // Function not supported?
+  if( !aif->backend->setVolume ) {
+  	logwarn( "audioIfSetVolume: Backend %s does not support volume control.",
+                         aif->backend->name );
+  	return -1;
+  } 	
+  if( !audioIfSupportsVolume(aif) ) {
+  	logwarn( "audioIfSetPause: Device %s does not support volume control.",
+                         aif->devName );
+  	return -1;
+  } 	
+	
+  // dispatch to backend function
+  return aif->backend->setVolume( aif, volume, muted );	
 }
 
 

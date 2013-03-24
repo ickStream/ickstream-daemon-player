@@ -79,7 +79,7 @@ Remarks         : -
 	Private prototypes
 \*=========================================================================*/
 static int    _backendGetDeviceList( char ***deviceListPtr, char ***descrListPtr );
-static int    _ifNew( AudioIf *aif, const char *device ); 
+static int    _ifNew( AudioIf *aif ); 
 static int    _ifDelete( AudioIf *aif, AudioTermMode mode ); 
 static int    _ifPlay( AudioIf *aif, AudioFormat *format );
 static int    _ifStop( AudioIf *aif, AudioTermMode mode );
@@ -137,9 +137,9 @@ static int _backendGetDeviceList( char ***deviceListPtr, char ***descrListPtr )
 /*=========================================================================*\
     Open device and start thread
 \*=========================================================================*/
-static int _ifNew( AudioIf *aif, const char *device )
+static int _ifNew( AudioIf *aif )
 {
-  DBGMSG( "Audio Null: new interface" ); 
+  DBGMSG( "Audio Null (%s): new interface", aif->devName ); 
 
 /*------------------------------------------------------------------------*\
     That's it
@@ -153,7 +153,7 @@ static int _ifNew( AudioIf *aif, const char *device )
 \*=========================================================================*/
 static int _ifDelete( AudioIf *aif, AudioTermMode mode )
 {
-  DBGMSG( "Audio Null: deleting interface" ); 
+  DBGMSG( "Audio Null (%s): deleting interface", aif->devName ); 
 
 /*------------------------------------------------------------------------*\
     That's it
@@ -167,14 +167,14 @@ static int _ifDelete( AudioIf *aif, AudioTermMode mode )
 \*=========================================================================*/
 static int _ifPlay( AudioIf *aif, AudioFormat *format )
 {
-  DBGMSG( "Audio Null: start playback" ); 
+  DBGMSG( "Audio Null (%s): start playback", aif->devName ); 
 
 /*------------------------------------------------------------------------*\
     Stop current playback
 \*------------------------------------------------------------------------*/
   if( aif->state==AudioIfRunning ) {
   	if( _ifStop(aif,AudioDrop) ) {
-      logerr( "Audio Null: Could not stop running playback." );
+      logerr( "Audio Null (%s): Could not stop running playback.", aif->devName );
       return -1;
     }
   }	
@@ -183,7 +183,7 @@ static int _ifPlay( AudioIf *aif, AudioFormat *format )
     Check state
 \*------------------------------------------------------------------------*/
   if( aif->state!=AudioIfInitialized ) {
-    logerr( "Audio Null: Cannot start playback, wrong state: %d", aif->state );
+    logerr( "Audio Null (%s): Cannot start playback, wrong state: %d", aif->devName, aif->state );
     return -1;
   }
   
@@ -192,7 +192,7 @@ static int _ifPlay( AudioIf *aif, AudioFormat *format )
 \*------------------------------------------------------------------------*/
   int rc = pthread_create( &aif->thread, NULL, _ifThread, aif );
   if( rc ) {
-    logerr( "Unable to start audio backend thread: %s", strerror(rc) );
+    logerr( "Audio Null (%s): Unable to start audio backend thread: %s", aif->devName, strerror(rc) );
     return -1;
   }
   	  
@@ -208,7 +208,7 @@ static int _ifPlay( AudioIf *aif, AudioFormat *format )
 \*=========================================================================*/
 static int _ifStop( AudioIf *aif, AudioTermMode mode )
 {
-  DBGMSG( "Audio Null: %d", mode ); 
+  DBGMSG( "Audio Null (%s): %d", aif->devName, mode ); 
 
 /*------------------------------------------------------------------------*\
     reset state to initialized, that's it

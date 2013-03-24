@@ -72,18 +72,23 @@ Remarks         : -
 /*=========================================================================*\
 	Private symbols
 \*=========================================================================*/
-// none  
+typedef struct {
+  snd_pcm_t        *pcm;        // PCM output
+  snd_mixer_elem_t *mixerElem;  // Volume control
+} AlsaData; 
 
 
 /*=========================================================================*\
 	Private prototypes
 \*=========================================================================*/
 static int    _backendGetDeviceList( char ***deviceListPtr, char ***descrListPtr );
-static int    _ifNew( AudioIf *aif, const char *device ); 
+static int    _ifNew( AudioIf *aif );
+static int    _ifGetMixer( AudioIf *aif );
 static int    _ifDelete( AudioIf *aif, AudioTermMode mode ); 
 static int    _ifPlay( AudioIf *aif, AudioFormat *format );
 static int    _ifStop( AudioIf *aif, AudioTermMode mode );
 static int    _ifSetPause( AudioIf *aif, bool pause );
+static int    _ifSetVolume( AudioIf *aif, double volume, bool muted ); 
 
 static int               _ifSetParameters( AudioIf *aif, AudioFormat *format );
 static snd_pcm_format_t  _getAlsaFormat( const AudioFormat *format );
@@ -108,6 +113,7 @@ AudioBackend *audioAlsaDescriptor( void )
   backend.play           = &_ifPlay;
   backend.stop           = &_ifStop;
   backend.pause          = &_ifSetPause;
+  backend.setVolume      = &_ifSetVolume;
 
   return &backend;	
 }
@@ -182,27 +188,38 @@ static int _backendGetDeviceList( char ***deviceListPtr, char ***descrListPtr )
 /*=========================================================================*\
     Open device and start thread
 \*=========================================================================*/
-static int _ifNew( AudioIf *aif, const char *device )
+static int _ifNew( AudioIf *aif )
 {
-  snd_pcm_t *pcm;
+  AlsaData  *ifData;
   int        rc;
   
-    DBGMSG( "Alsa: new interface" ); 
+  DBGMSG( "Alsa (%s): open new interface", aif->devName ); 
+
+/*------------------------------------------------------------------------*\
+    Create auxiliary data
+\*------------------------------------------------------------------------*/
+  ifData = calloc( 1, sizeof(AlsaData) );
+  if( !ifData ) {
+    logerr( "Out of memory." );
+    return -1;
+  }
+  aif->ifData = ifData;
 
 /*------------------------------------------------------------------------*\
     Open sound device 
 \*------------------------------------------------------------------------*/
-  rc = snd_pcm_open( &pcm, device, SND_PCM_STREAM_PLAYBACK, 0 );
+  rc = snd_pcm_open( &ifData->pcm, aif->devName, SND_PCM_STREAM_PLAYBACK, 0 );
   if( rc<0 ) {
-    logerr( "Error opening alsa pcm device \"%s\": %s", 
-                     device, snd_strerror(rc) );
+    logerr( "Alsa (%s): Error opening pcm device: %s", aif->devName, snd_strerror(rc) );
+    Sfree( aif->ifData );
     return -1;
   }
-  
+
 /*------------------------------------------------------------------------*\
-    Store handle 
+    Is there a mixer availabale 
 \*------------------------------------------------------------------------*/
-  aif->ifData = (void*)pcm;
+  if( !_ifGetMixer(aif) )
+    aif->hasVolume = true;
 
 /*------------------------------------------------------------------------*\
     That's it
@@ -212,12 +229,106 @@ static int _ifNew( AudioIf *aif, const char *device )
 
 
 /*=========================================================================*\
+    Get mixer for interface
+\*=========================================================================*/
+static int _ifGetMixer( AudioIf *aif )
+{
+  AlsaData         *ifData = (AlsaData*)aif->ifData;
+  snd_pcm_info_t   *pcmInfo;
+  char              cardName[32];
+  snd_mixer_t      *handle;
+  snd_mixer_elem_t *elem;
+  int               rc; 
+
+/*------------------------------------------------------------------------*\
+    Get info for this pcm channel 
+\*------------------------------------------------------------------------*/
+  snd_pcm_info_alloca( &pcmInfo );
+  rc = snd_pcm_info( ifData->pcm, pcmInfo );
+  if( rc<0 ) {
+    logerr( "Alsa (%s): Could not get info for pcm device: %s", 
+             aif->devName, snd_strerror(rc) );
+    snd_pcm_close( ifData->pcm );
+    Sfree( aif->ifData );
+    return -1;
+  }
+  sprintf( cardName, "hw:%d", snd_pcm_info_get_card(pcmInfo) );
+
+/*------------------------------------------------------------------------*\
+    Get mixer 
+\*------------------------------------------------------------------------*/
+  rc = snd_mixer_open( &handle, 0 );
+  if( rc<0 ) {
+    logerr( "Alsa (%s): Could not open mixer: %s", 
+            aif->devName, snd_strerror(rc) );
+    return -1;
+  }
+  rc = snd_mixer_attach( handle, cardName );
+  if( rc<0 ) {
+    logerr( "Alsa (%s): Could not attach mixer: %s", 
+            aif->devName, snd_strerror(rc) );
+    return -1;
+  }
+  rc = snd_mixer_selem_register( handle, NULL, NULL );
+  if( rc<0 ) {
+    logerr( "Alsa (%s): Could not register mixer: %s", 
+            aif->devName, snd_strerror(rc) );
+    return -1;
+  }
+  rc = snd_mixer_load( handle );
+  if( rc<0 ) {
+    logerr( "Alsa (%s): Could not load mixer: %s", 
+            aif->devName, snd_strerror(rc) );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    Find channel for playback volume control 
+\*------------------------------------------------------------------------*/
+  for( elem=snd_mixer_first_elem(handle); elem; elem=snd_mixer_elem_next(elem) ) {
+    snd_mixer_selem_id_t *sid;
+	snd_mixer_selem_id_alloca(&sid);
+    snd_mixer_selem_get_id( elem, sid );
+	DBGMSG( "Alsa (%s): Simple mixer control \"%s\",%i", aif->devName, 
+            snd_mixer_selem_id_get_name(sid), snd_mixer_selem_id_get_index(sid) );
+
+    // Not active?
+	if( !snd_mixer_selem_is_active(elem) )
+      continue;
+
+    // No Playback volume?
+    if( !snd_mixer_selem_has_playback_volume(elem) )
+      continue;
+
+    // Capture volume?
+    if( snd_mixer_selem_has_capture_volume(elem) )
+      continue;
+
+    // Success...
+    DBGMSG( "Alsa (%s): found mixer for card %s: %s", aif->devName, 
+                cardName, snd_mixer_selem_id_get_name(sid) ); 
+    break;
+  }
+  if( !elem )
+    DBGMSG( "Alsa (%s): found no mixer for card %s.", aif->devName, cardName ); 
+
+  // snd_mixer_close(handle);
+
+/*------------------------------------------------------------------------*\
+    That's it 
+\*------------------------------------------------------------------------*/
+  ifData->mixerElem = elem;
+  return 0;
+}
+
+
+/*=========================================================================*\
     Close device
 \*=========================================================================*/
 static int _ifDelete( AudioIf *aif, AudioTermMode mode )
 {
-  snd_pcm_t *pcm = (snd_pcm_t*)aif->ifData;
-  int        rc  = 0;
+  AlsaData *ifData = (AlsaData*)aif->ifData;
+  int       rc     = 0;
   
   DBGMSG( "Alsa: deleting interface" ); 
 
@@ -232,11 +343,15 @@ static int _ifDelete( AudioIf *aif, AudioTermMode mode )
   }
 
 /*------------------------------------------------------------------------*\
-    Close alsa device
+    Close alsa pcm device
 \*------------------------------------------------------------------------*/
-  if( pcm )
-    snd_pcm_close( pcm );
-  aif->ifData = NULL;
+  if( ifData->pcm )
+    snd_pcm_close( ifData->pcm );
+
+/*------------------------------------------------------------------------*\
+    Get rid of auxiliary data
+\*------------------------------------------------------------------------*/
+  Sfree( aif->ifData );
 
 /*------------------------------------------------------------------------*\
     That's it
@@ -297,7 +412,7 @@ static int _ifPlay( AudioIf *aif, AudioFormat *format )
 \*=========================================================================*/
 static int _ifStop( AudioIf *aif, AudioTermMode mode )
 {
-  snd_pcm_t *pcm = (snd_pcm_t*)aif->ifData;
+  AlsaData *ifData = (AlsaData*)aif->ifData;
 
   DBGMSG( "Alsa stop: %d", mode ); 
 
@@ -312,9 +427,9 @@ static int _ifStop( AudioIf *aif, AudioTermMode mode )
     How to deal with data in buffer?
 \*------------------------------------------------------------------------*/
   if( mode==AudioDrain )
-    snd_pcm_drain( pcm );
+    snd_pcm_drain( ifData->pcm );
   else
-    snd_pcm_drop( pcm );
+    snd_pcm_drop( ifData->pcm );
   
 /*------------------------------------------------------------------------*\
     Error?
@@ -335,14 +450,14 @@ static int _ifStop( AudioIf *aif, AudioTermMode mode )
 \*=========================================================================*/
 static int _ifSetPause( AudioIf *aif, bool pause )
 {
-  snd_pcm_t *pcm = (snd_pcm_t*)aif->ifData;
+  AlsaData *ifData = (AlsaData*)aif->ifData;
 
   DBGMSG( "Alsa pause: %s", pause?"On":"Off" ); 
 
 /*------------------------------------------------------------------------*\
     Set flag
 \*------------------------------------------------------------------------*/
-  int rc = snd_pcm_pause( pcm, pause?1:0 ); 
+  int rc = snd_pcm_pause( ifData->pcm, pause?1:0 ); 
   if( rc<0 ) {
   	logerr( "Unable to pause alsa device: %s", aif->devName );
     return -1;
@@ -356,11 +471,60 @@ static int _ifSetPause( AudioIf *aif, bool pause )
 
 
 /*=========================================================================*\
+    Set volume
+\*=========================================================================*/
+static int _ifSetVolume( AudioIf *aif, double volume, bool muted )
+{
+  AlsaData *ifData = (AlsaData*)aif->ifData;
+  long      min, max;
+  int       rc = 0;
+  DBGMSG( "Alsa (%s): set volume to %.2lf%% %s", aif->devName, 
+           volume*100, muted?"(muted)":"(unmuted)" ); 
+
+/*------------------------------------------------------------------------*\
+    Set muting
+\*------------------------------------------------------------------------*/
+  if( snd_mixer_selem_has_playback_switch(ifData->mixerElem) ) {
+    DBGMSG( "Alsa (%s): using mixer switch for muting", aif->devName ); 
+    rc = snd_mixer_selem_set_playback_switch_all( ifData->mixerElem, muted?0:1 );
+    if( rc<0 ) {
+      logerr( "Alsa (%s): Warning setting playback mixer switch: %s", 
+              aif->devName, snd_strerror(rc) );
+      if( muted )
+        volume = 0;
+    }
+  }
+  else if( muted )
+    volume = 0;
+
+/*------------------------------------------------------------------------*\
+    Set volume
+\*------------------------------------------------------------------------*/
+  snd_mixer_selem_get_playback_volume_range( ifData->mixerElem, &min, &max);
+  DBGMSG( "Alsa (%s): volume range [%ld,%ld], set: %ld", 
+           aif->devName, min, max, min+(long)(volume*max)); 
+  rc = snd_mixer_selem_set_playback_volume_all( ifData->mixerElem, min+(long)(volume*max) );
+  if( rc<0 ) {
+    logerr( "Alsa (%s): Error setting volume %ld [%ld,%ld]: %s", 
+            aif->devName, min, max, min+(long)(volume*max), snd_strerror(rc) );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  return 0;
+ 
+}
+
+
+
+/*=========================================================================*\
     (re)set stream parameters
 \*=========================================================================*/
 static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
 {
-  snd_pcm_t           *pcm = (snd_pcm_t*)aif->ifData;
+  AlsaData            *ifData = (AlsaData*)aif->ifData;
   snd_pcm_format_t     alsaFormat;
   snd_pcm_hw_params_t *hwParams;
   unsigned int         realRate;
@@ -381,28 +545,28 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
     Collect hardware parameters on stack 
 \*------------------------------------------------------------------------*/
   snd_pcm_hw_params_alloca( &hwParams );
-  snd_pcm_hw_params_any( pcm, hwParams );
+  snd_pcm_hw_params_any( ifData->pcm, hwParams );
 
   // Get pause support
   aif->canPause = snd_pcm_hw_params_can_pause( hwParams );
   DBGMSG( "Alsa: pausing %ssupported", aif->canPause?"":"not " );
 
   // Multi channel is interleaved
-  rc = snd_pcm_hw_params_set_channels( pcm, hwParams, format->channels );
+  rc = snd_pcm_hw_params_set_channels( ifData->pcm, hwParams, format->channels );
   if( rc<0 ) {
   	logerr( "Unable to set alsa pcm hw parameter: channels (%d)",
                      format->channels );
     return -1;
   }
   if( format->channels>1 )
-    rc = snd_pcm_hw_params_set_access( pcm, hwParams, SND_PCM_ACCESS_RW_INTERLEAVED );
+    rc = snd_pcm_hw_params_set_access( ifData->pcm, hwParams, SND_PCM_ACCESS_RW_INTERLEAVED );
   if( rc<0 ) {
   	logerr( "Unable to set alsa pcm hw parameter: SND_PCM_ACCESS_RW_INTERLEAVED" );
     return -1;
   }
 
   // Set data format and calculate frame size (sample size*channels)
-  rc = snd_pcm_hw_params_set_format( pcm, hwParams, alsaFormat );
+  rc = snd_pcm_hw_params_set_format( ifData->pcm, hwParams, alsaFormat );
   if( rc<0 ) {
   	logerr( "Unable to set alsa pcm hw format to: %s", audioFormatStr(NULL,format) );
     return -1;
@@ -411,7 +575,7 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
 
   // Sample rate 
   realRate = format->sampleRate;
-  rc = snd_pcm_hw_params_set_rate_near( pcm, hwParams, &realRate, NULL);
+  rc = snd_pcm_hw_params_set_rate_near( ifData->pcm, hwParams, &realRate, NULL);
   if( rc<0 ) {
   	logerr( "Unable to set alsa pcm hw parameter: rate (%d)", format->sampleRate );
     return -1;
@@ -423,7 +587,7 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
   }
 
   // Set number of periods to two
-  rc = snd_pcm_hw_params_set_periods( pcm, hwParams, 2, 0 );
+  rc = snd_pcm_hw_params_set_periods( ifData->pcm, hwParams, 2, 0 );
   if( rc<0 ) {
   	logerr( "Unable to set alsa pcm hw parameter: periods 2, 0" );
     return -1;
@@ -432,7 +596,7 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
 /*------------------------------------------------------------------------*\
     Apply the hardware parameters 
 \*------------------------------------------------------------------------*/
-  rc = snd_pcm_hw_params( pcm, hwParams );
+  rc = snd_pcm_hw_params( ifData->pcm, hwParams );
   if( rc<0 ) {
     logerr( "Unable to set alsa pcm hw parameters: %s", snd_strerror(rc) );
     return -1;
@@ -447,7 +611,7 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
 /*------------------------------------------------------------------------*\
     Prepare interface 
 \*------------------------------------------------------------------------*/
-  rc = snd_pcm_prepare( pcm );
+  rc = snd_pcm_prepare( ifData->pcm );
   if( rc<0 ) {
     logerr( "Unable to prepare alsa interface: %s", snd_strerror(rc) );
     return -1;
@@ -518,9 +682,8 @@ static snd_pcm_format_t _getAlsaFormat( const AudioFormat *format )
 \*=========================================================================*/
 static void *_ifThread( void *arg )
 {
-  AudioIf            *aif     = (AudioIf*)arg; 
-  snd_pcm_t          *pcm     = (snd_pcm_t*)aif->ifData;
-
+  AudioIf  *aif    = (AudioIf*)arg; 
+  AlsaData *ifData = (AlsaData*)aif->ifData;
   DBGMSG( "Alsa thread: starting." ); 
   
 /*------------------------------------------------------------------------*\
@@ -532,13 +695,13 @@ static void *_ifThread( void *arg )
     
     // Wait (max 500ms) till data is actually needed
     //0: timedout  1: ready  <0: xrun, suspend or error  
-    rc =  snd_pcm_wait( pcm, 500 );
+    rc =  snd_pcm_wait( ifData->pcm, 500 );
     if( !rc ) {
       DBGMSG( "Alsa thread: timout while waiting for free buffer size." ); 
       continue;
     }
     if( rc==-EPIPE || rc==-ESTRPIPE ) {
-      rc = snd_pcm_recover( pcm, rc, 0 ); 
+      rc = snd_pcm_recover( ifData->pcm, rc, 0 ); 
       if( rc ) {
         logerr( "Alsa thread (after wait): Unable to recover alsa interface: %s", strerror(rc) );
         aif->state = AudioIfTerminatedError;
@@ -564,15 +727,15 @@ static void *_ifThread( void *arg )
     }
     
     // How much data can be delivered
-    snd_pcm_sframes_t frames_writable = snd_pcm_avail_update( pcm );
+    snd_pcm_sframes_t frames_writable = snd_pcm_avail_update( ifData->pcm );
     snd_pcm_sframes_t frames_readable = fifoGetSize( aif->fifoIn, FifoNextReadable )/aif->framesize;
     snd_pcm_sframes_t frames = MIN( frames_writable, frames_readable );
 
     // Do transfer the data
     DBGMSG( "Alsa thread: writing %ld frames", (long)frames );
-    rc = snd_pcm_writei( pcm, aif->fifoIn->readp, frames );		
+    rc = snd_pcm_writei( ifData->pcm, aif->fifoIn->readp, frames );		
     if( rc==-EPIPE || rc==-ESTRPIPE ){
-      rc = snd_pcm_recover( pcm, rc, 0 ); 
+      rc = snd_pcm_recover( ifData->pcm, rc, 0 ); 
       if( rc ) {
         logerr( "Alsa thread (after write): Unable to recover alsa interface: %s", strerror(rc) );
         aif->state = AudioIfTerminatedError;

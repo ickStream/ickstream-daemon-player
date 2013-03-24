@@ -61,6 +61,7 @@ Remarks         : -
 #include <mpg123.h>
 
 #include "utils.h"
+#include "audio.h"
 #include "codec.h"
 #include "codecMpg123.h"
 
@@ -82,14 +83,14 @@ const char *defaultFormatStr[] = {
 /*=========================================================================*\
 	Private prototypes
 \*=========================================================================*/
-static int    _codecInit( struct _codec *codec );
-static int    _codecShutdown( struct _codec *codec, bool force );
-static bool   _codecCheckType(const char *type, const struct _audioFormat *format );
+static int    _codecInit( Codec *codec );
+static int    _codecShutdown( Codec *codec, bool force );
+static bool   _codecCheckType(const char *type, const AudioFormat *format );
 static int    _codecNewInstance( CodecInstance *instance ); 
 static int    _codecDeleteInstance( CodecInstance *instance ); 
 static int    _codecAcceptInput( CodecInstance *instance, void *data, size_t length, size_t *accepted );  
 static int    _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxLength, size_t *realSize );
-static int    _codecSetVolume( CodecInstance *instance, double volume );
+static int    _codecSetVolume( CodecInstance *instance, double volume, bool muted );
 static int    _codecGetSeekTime( CodecInstance *instance, double *pos );  
 
 static enum mpg123_enc_enum _getMpg123Format( const AudioFormat *format );
@@ -128,7 +129,7 @@ Codec *mpg123Descriptor( void )
       Global init for codec lib 
         return false on error
 \*=========================================================================*/
-static int _codecInit( struct _codec *codec )
+static int _codecInit( Codec *codec )
 {
   int i, rc;
   
@@ -161,7 +162,7 @@ static int _codecInit( struct _codec *codec )
 /*=========================================================================*\
       Global shutdown for codec lib 
 \*=========================================================================*/
-static int _codecShutdown( struct _codec *codec, bool force )
+static int _codecShutdown( Codec *codec, bool force )
 {
 
 /*------------------------------------------------------------------------*\
@@ -184,7 +185,7 @@ static int _codecShutdown( struct _codec *codec, bool force )
 /*=========================================================================*\
       Check if codec supports audio type and format 
 \*=========================================================================*/
-static bool _codecCheckType(const char *type, const struct _audioFormat *format )
+static bool _codecCheckType(const char *type, const AudioFormat *format )
 {
   enum mpg123_enc_enum  mpg123Format;
   const long           *rateList;
@@ -401,7 +402,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
       	// Fixme...
       	
       	// and deliver...
-      	instance->metaCallback( (struct _codecinstance*)instance, &format, meta );
+      	instance->metaCallback( instance, &format, meta );
       }	
       break;
 
@@ -425,7 +426,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
 /*=========================================================================*\
       Set output volume
 \*=========================================================================*/
-static int _codecSetVolume( CodecInstance *instance, double volume )
+static int _codecSetVolume( CodecInstance *instance, double volume, bool muted )
 {
   mpg123_handle *mh = (mpg123_handle*)instance->instanceData;
   int            rc;
@@ -434,17 +435,18 @@ static int _codecSetVolume( CodecInstance *instance, double volume )
     Call library
 \*------------------------------------------------------------------------*/ 
   pthread_mutex_lock( &instance->mutex ); 
-  rc = mpg123_volume( mh, volume );
+  rc = mpg123_volume( mh, muted?0.0:volume );
   pthread_mutex_unlock( &instance->mutex );
   if( rc )
-    logerr( "mpg123: could not set volume to %.2lf%%: %s", 
-                     volume*100, mpg123_plain_strerror(rc)  );
-                       
+    logerr( "mpg123: could not set volume to %f %s: %s", 
+             volume, muted?"(muted)":"(unmuted)", mpg123_plain_strerror(rc)  );
+
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/  
   return rc ? -1 : 0;
 }
+
 
 /*=========================================================================*\
       Get seek position (in seconds)

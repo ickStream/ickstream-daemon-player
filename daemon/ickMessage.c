@@ -346,31 +346,32 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     Adjust player volume 
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"setVolume") ) {
+    double volume = playerGetVolume();
+    bool   muted  = playerGetMuting();
 
-    // Set volume absultely
-    jObj = json_object_get( jParams, "volumeLevel" );
-    if( jObj && json_is_real(jObj) ) {
-      playerSetVolume( json_real_value(jObj), true );
-    }
+    // Get and set muting state
+    muted = playerGetMuting();
+    jObj = json_object_get( jParams, "muted" );
+    if( jObj && json_is_boolean(jObj) )
+      muted = json_is_true( jObj );
 
     // Set volume relative to current value
     jObj = json_object_get( jParams, "relativeVolumeLevel" );
-    if( jObj && json_is_real(jObj) ) {
-      double volume =  playerGetVolume();
+    if( jObj && json_is_real(jObj) )
       volume *= 1 + json_real_value( jObj );
-      playerSetVolume( volume, true );
-    }
 
-    // Set muting state 
-    jObj = json_object_get( jParams, "muted" );
-    if( jObj && json_is_boolean(jObj) ) {
-      playerSetMuting( json_is_true(jObj), true );
-    }
+    // Set volume absultely
+    jObj = json_object_get( jParams, "volumeLevel" );
+    if( jObj && json_is_real(jObj) )
+      volume = json_real_value( jObj );
+
+    // Set Volume
+    playerSetVolume( volume, muted, true );
 
     // report current state
     jResult = json_pack( "{sfsb}",
                          "volumeLevel", playerGetVolume(),
-                         "muted", playerGetMuting() );                         
+                         "muted",       playerGetMuting() );                         
   }
 
 /*------------------------------------------------------------------------*\

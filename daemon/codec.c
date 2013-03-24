@@ -251,7 +251,7 @@ CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format )
 /*=========================================================================*\
       Delete a codec instance
 \*=========================================================================*/
-int codecDeleteInstance(CodecInstance *instance, bool wait )
+int codecDeleteInstance( CodecInstance *instance, bool wait )
 {
 #ifdef DEBUG    
   Codec *codec = instance->codec;
@@ -380,11 +380,12 @@ int codecWaitForEnd( CodecInstance *instance, int timeout )
 /*=========================================================================*\
       Set volume in codec
 \*=========================================================================*/
-int codecSetVolume( CodecInstance *instance, double volume )
+int codecSetVolume( CodecInstance *instance, double volume, bool muted )
 {
   Codec *codec = instance->codec;
   
-  DBGMSG( "codec %s volume: %.2lf%%", codec->name, volume*100 );
+  DBGMSG( "codec %s set volume: %f %s", 
+           codec->name, volume, muted?"(muted)":"(unmuted)" );
   
   // Not supported?
   if( !codec->setVolume ) {
@@ -394,7 +395,7 @@ int codecSetVolume( CodecInstance *instance, double volume )
   } 	
     
   // Call codec function
-  return codec->setVolume( instance, volume );
+  return codec->setVolume( instance, volume, muted );
 }
 
 

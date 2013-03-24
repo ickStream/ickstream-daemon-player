@@ -108,8 +108,7 @@ void               playerSetAudioDevice( const char *name );
 void               playerSetModel( const char *name );
 void               playerSetToken( const char *token );
 void               playerSetName( const char *name, bool broadcast );
-double             playerSetVolume( double volume, bool broadcast );
-bool               playerSetMuting( bool mute, bool broadcast );
+double             playerSetVolume( double volume, bool muted, bool broadcast );
 int                playerSetRepeatMode( PlayerRepeatMode state, bool broadcast );
 int                playerSetState( PlayerState state, bool broadcast );
 

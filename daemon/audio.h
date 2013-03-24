@@ -64,28 +64,18 @@ Remarks         : -
 /*=========================================================================*\
        Macro and type definitions 
 \*=========================================================================*/
-struct  _audioBackend;
+struct _audioFormat;
+typedef struct _audioFormat AudioFormat;
 
-
-typedef struct _audioFormat {
-  int  sampleRate;   // 1/s (<0: undefined)
-  int  channels;     // (<0: undefined)
-  int  bitWidth;     // per channel (<0: undefined)
-  bool isSigned;       // Valid only if bitWith>0
-  bool isFloat;        // valid only if bitWith>0
-} AudioFormat;
-
-typedef struct _audioFormatElement {
-  struct _audioFormatElement  *next;
-  AudioFormat                  format;
-} AudioFormatElement;
+struct _audioFormatElement;
+typedef struct _audioFormatElement  AudioFormatElement;
 typedef AudioFormatElement *AudioFormatList;
 
-typedef enum {
-  AudioDrain,
-  AudioDrop,
-  AudioForce
-} AudioTermMode;
+struct  _audioBackend;
+typedef struct _audioBackend AudioBackend;
+
+struct _audioIf;
+typedef struct _audioIf AudioIf;
 
 typedef enum {
   AudioIfInitialized,
@@ -95,30 +85,44 @@ typedef enum {
   AudioIfTerminatedError
 } AudioIfState;
 
-typedef struct _audioIf {
-  AudioIfState                  state;
-  const struct _audioBackend   *backend;          // weak
-  char                         *devName;          // strong
-  Fifo                         *fifoIn;           // strong
-  AudioFormat                   format;
-  bool                          canPause;
-  int                           framesize;
-  pthread_t                     thread;
-  void                         *ifData;           // handled by individual backend
-} AudioIf;
+typedef enum {
+  AudioDrain,
+  AudioDrop,
+  AudioForce
+} AudioTermMode;
 
+/*------------------------------------------------------------------------*\
+    Signatures for function pointers
+\*------------------------------------------------------------------------*/
 typedef int    (*AudioBackendInit)( void );
 typedef int    (*AudioBackendShutdown)( AudioTermMode mode );
 typedef int    (*AudioBackendGetDevs)( char ***deviceListPtr, char ***descrListPtr );
-typedef int    (*AudioIfNew)( AudioIf *aif, const char *device );
+typedef int    (*AudioIfNew)( AudioIf *aif );
 typedef int    (*AudioIfDelete)( AudioIf *aif, AudioTermMode mode );
 typedef int    (*AudioIfPlay)( AudioIf *aif, AudioFormat *format );
 typedef int    (*AudioIfStop)( AudioIf *aif, AudioTermMode mode );
 typedef int    (*AudioIfPause)( AudioIf *aif, bool pause );
+typedef int    (*AudioIfVolume)( AudioIf *aif, double volume, bool muted ); 
 
+/*------------------------------------------------------------------------*\
+    The follwing needs to be public, since direct access by audio modules 
+    seems to be more convenient
+\*------------------------------------------------------------------------*/
+struct _audioFormat {
+  int  sampleRate;   // 1/s (<0: undefined)
+  int  channels;     // (<0: undefined)
+  int  bitWidth;     // per channel (<0: undefined)
+  bool isSigned;       // Valid only if bitWith>0
+  bool isFloat;        // valid only if bitWith>0
+};
 
-typedef struct _audioBackend {
-  struct _audioBackend *next;
+struct _audioFormatElement {
+  AudioFormatElement  *next;
+  AudioFormat          format;
+};
+
+struct _audioBackend {
+  AudioBackend         *next;
   char                 *name;
   AudioBackendInit      init;              // optional
   AudioBackendShutdown  shutdown;          // optional
@@ -128,8 +132,27 @@ typedef struct _audioBackend {
   AudioIfPlay           play;
   AudioIfStop           stop;
   AudioIfPause          pause;             // optional
-} AudioBackend;
+  AudioIfVolume         setVolume;         // optional
+};
 
+struct _audioIf {
+  AudioIfState        state;
+  const AudioBackend *backend;          // weak
+  char               *devName;          // strong
+  Fifo               *fifoIn;           // strong
+  AudioFormat        format;
+  bool               canPause;
+  bool               hasVolume;
+  int                framesize;
+  pthread_t          thread;
+  void              *ifData;           // handled by individual backend
+};
+
+
+/*=========================================================================*\
+       Global symbols 
+\*=========================================================================*/
+// none
 
 
 /*=========================================================================*\
@@ -157,7 +180,10 @@ AudioIf            *audioIfNew( const AudioBackend *backend, const char *device 
 int                 audioIfDelete( AudioIf *aif, AudioTermMode mode );
 Fifo               *audioIfPlay( AudioIf *aif, AudioFormat *format );
 int                 audioIfStop( AudioIf *aif, AudioTermMode mode );
+#define             audioIfSupportsPause( aif ) ((aif)->canPause)
 int                 audioIfSetPause( AudioIf *aif, bool pause );
+#define             audioIfSupportsVolume( aif )  ((aif)->hasVolume)
+int                 audioIfSetVolume( AudioIf *aif, double volume, bool muted );
 
 
 #endif  /* __AUDIO_H */

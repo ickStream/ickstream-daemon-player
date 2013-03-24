@@ -57,12 +57,19 @@ Remarks         : -
 #include "audio.h"
 #include "fifo.h"
 
-/*=========================================================================*\
-       Macro and type definitions 
-\*=========================================================================*/
-struct  _codec;
-struct  _codecinstance;
+/*========================================================================*\
+   Some definitions
+\*========================================================================*/
 
+// A codec
+struct  _codec;
+typedef struct _codec Codec;
+
+// A codec instance
+struct  _codecinstance;
+typedef struct _codecInstance CodecInstance;
+
+// State of codec instances
 typedef enum {
   CodecInitialized,
   CodecRunning,
@@ -72,12 +79,30 @@ typedef enum {
   CodecTerminatedError
 } CodecInstanceState;
 
-typedef int    (*CodecMetaCallback)( struct _codecinstance *instance, AudioFormat *format, json_t *meta );
+/*------------------------------------------------------------------------*\
+    Signatures for function pointers
+\*------------------------------------------------------------------------*/
+typedef int    (*CodecInit)( Codec *codec );
+typedef int    (*CodecShutdown)( Codec *codec, bool force );
+typedef bool   (*CodecCheckType)(const char *type, const AudioFormat *format );
+typedef int    (*CodecInstanceNew)( CodecInstance *instance ); 
+typedef int    (*CodecInstanceDelete)( CodecInstance *instance ); 
+typedef int    (*CodecInput)( CodecInstance *instance, void *data, size_t length, size_t *accepted );  
+typedef int    (*CodecOutput)( CodecInstance *instance, void *data, size_t maxLength, size_t *realSize );  
+typedef int    (*CodecVolume)( CodecInstance *instance, double volume, bool muted );  
+typedef int    (*CodecGetSeekTime)( CodecInstance *instance, double *pos );  
 
-typedef struct _codecInstance {
-  struct _codecinstance  *next;
+typedef int    (*CodecMetaCallback)( CodecInstance *instance, AudioFormat *format, json_t *meta );
+
+
+/*------------------------------------------------------------------------*\
+    The follwing needs to be public, since direct access by codec modules 
+    seems to be more convenient
+\*------------------------------------------------------------------------*/
+struct _codecInstance {
+  CodecInstance          *next;
   CodecInstanceState      state;
-  struct _codec          *codec;            // weak
+  Codec                  *codec;            // weak
   void                   *instanceData;     // handled by individual codec
   Fifo                   *fifoOut;          // weak
   int                     endOfInput;
@@ -86,21 +111,11 @@ typedef struct _codecInstance {
   pthread_t               thread;
   pthread_mutex_t         mutex;
   pthread_cond_t          condEndOfTrack;
-} CodecInstance;
+};
  
-typedef int    (*CodecInit)( struct _codec *codec );
-typedef int    (*CodecShutdown)( struct _codec *codec, bool force );
-typedef bool   (*CodecCheckType)(const char *type, const AudioFormat *format );
-typedef int    (*CodecInstanceNew)( CodecInstance *instance ); 
-typedef int    (*CodecInstanceDelete)( CodecInstance *instance ); 
-typedef int    (*CodecInput)( CodecInstance *instance, void *data, size_t length, size_t *accepted );  
-typedef int    (*CodecOutput)( CodecInstance *instance, void *data, size_t maxLength, size_t *realSize );  
-typedef int    (*CodecVolume)( CodecInstance *instance, double volume );  
-typedef int    (*CodecGetSeekTime)( CodecInstance *instance, double *pos );  
 
-
-typedef struct _codec {
-  struct _codec       *next;
+struct _codec {
+  Codec               *next;
   char                *name;
   size_t               feedChunkSize;       // optional
   AudioFormatList      defaultAudioFormats; // optional, strong
@@ -113,7 +128,7 @@ typedef struct _codec {
   CodecOutput          deliverOutput;
   CodecVolume          setVolume;
   CodecGetSeekTime     getSeekTime;
-} Codec;
+};
 
 
 /*=========================================================================*\
@@ -128,7 +143,7 @@ int            codecDeleteInstance(CodecInstance *instance, bool wait );
 int            codecFeedInput( CodecInstance *instance, void *content, size_t size, size_t *accepted );
 void           codecSetEndOfInput( CodecInstance *instance );
 int            codecWaitForEnd( CodecInstance *instance, int timeout );
-int            codecSetVolume( CodecInstance *instance, double volume );
+int            codecSetVolume( CodecInstance *instance, double volume, bool muted );
 int            codecGetSeekTime( CodecInstance *instance, double *pos );
 
 #endif  /* __CODEC_H */

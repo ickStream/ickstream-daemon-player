@@ -90,6 +90,11 @@ struct _playlist {
   pthread_mutex_t   mutex;
 };
 
+// Enable or disable consistency checks (performance)
+#ifdef DEBUG
+#define CONSISTENCYCHECKING
+#endif
+
 
 /*=========================================================================*\
         Private prototypes
@@ -102,7 +107,13 @@ static void          _playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem );
 static void          _playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistItem *pItem2 );
 static PlaylistItem *_playlistGetItem( Playlist *plst, int pos );
 static PlaylistItem *_playlistGetItemById( Playlist *plst, const char *id );
-// static int           _playlistCheckList( Playlist *plst );
+
+#ifdef CONSISTENCYCHECKING
+#define CHKLIST( p ) _playlistCheckList( __FILE__, __LINE__, (p) );
+static int _playlistCheckList( const char *file, int line, Playlist *plst );
+#else
+#define CHKLIST( p ) {}
+#endif
 
 
 /*=========================================================================*\
@@ -195,6 +206,7 @@ Playlist *playlistFromJSON( json_t *jQueue )
 /*------------------------------------------------------------------------*\
     That's all 
 \*------------------------------------------------------------------------*/
+  CHKLIST( plst );
   return plst;
 }
 
@@ -205,7 +217,8 @@ Playlist *playlistFromJSON( json_t *jQueue )
 void playlistDelete( Playlist *plst )
 {
   DBGMSG( "playlistDelete: %p", plst );
-  
+  CHKLIST( plst );
+
 /*------------------------------------------------------------------------*\
     Lock mutex
 \*------------------------------------------------------------------------*/
@@ -235,9 +248,11 @@ void playlistDelete( Playlist *plst )
 \*=========================================================================*/
 void playlistSetId( Playlist *plst, const char *id )
 {
+  DBGMSG( "playlistSetID %p: %s", plst, id?id:"NULL" ); 
+  CHKLIST( plst );
+
   Sfree( plst->id );
   plst->id = strdup( id );    
-  DBGMSG( "playlistSetID %p: %s", plst, id?id:"NULL" ); 
 }
 
 
@@ -246,9 +261,11 @@ void playlistSetId( Playlist *plst, const char *id )
 \*=========================================================================*/
 void playlistSetName( Playlist *plst, const char *name )
 {
+  DBGMSG( "playlistSetName %p: %s", plst, name?name:"NULL" ); 
+  CHKLIST( plst );
+
   Sfree( plst->name );
   plst->name = strdup( name );    
-  DBGMSG( "playlistSetName %p: %s", plst, name?name:"NULL" ); 
 }
 
 
@@ -257,7 +274,9 @@ void playlistSetName( Playlist *plst, const char *name )
 \*=========================================================================*/
 const char *playlistGetId( Playlist *plst )
 {
-  DBGMSG( "playlistGetID %p: %s", plst, plst->id?plst->id:"NULL" ); 
+  DBGMSG( "playlistGetID %p: %s", plst, plst->id?plst->id:"NULL" );
+  CHKLIST( plst );
+ 
   return plst->id;
 }
 
@@ -267,7 +286,9 @@ const char *playlistGetId( Playlist *plst )
 \*=========================================================================*/
 const char *playlistGetName( Playlist *plst )
 {
-  DBGMSG( "playlistGetName %p: %s", plst, plst->name?plst->name:"NULL" ); 
+  DBGMSG( "playlistGetName %p: %s", plst, plst->name?plst->name:"NULL" );
+  CHKLIST( plst );
+
   return plst->name;
 }
 
@@ -277,7 +298,9 @@ const char *playlistGetName( Playlist *plst )
 \*=========================================================================*/
 int playlistGetLength( Playlist *plst )
 {
-  DBGMSG( "playlistGetLength %p: %d", plst, plst->_numberOfItems ); 
+  DBGMSG( "playlistGetLength %p: %d", plst, plst->_numberOfItems );
+  CHKLIST( plst );
+
   return plst->_numberOfItems;    
 }
 
@@ -288,6 +311,8 @@ int playlistGetLength( Playlist *plst )
 double playlistGetLastChange( Playlist *plst )
 {
   DBGMSG( "playlistGetLastChange %p: %lf", plst, plst->lastChange ); 
+  CHKLIST( plst );
+
   return plst->lastChange;        
 }
 
@@ -325,6 +350,7 @@ int playlistGetCursorPos( Playlist *plst )
 \*=========================================================================*/
 PlaylistItem *playlistGetCursorItem( Playlist *plst )
 {
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Lock mutex
@@ -391,6 +417,7 @@ PlaylistItem *playlistIncrCursorItem( Playlist *plst )
   PlaylistItem *item = playlistGetCursorItem( plst );
 
   DBGMSG( "playlistIncrCursorPos %p: items %p->%p", plst, item, item?item->next:NULL );  
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Lock mutex
@@ -439,6 +466,7 @@ PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool mo
 
   DBGMSG( "playlistShuffle (%p): %d-%d/%d cursorToStart:%s", 
            plst, startPos, endPos, plst->_numberOfItems, moveCursorToStart?"Yes":"No"  );  
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Lock mutex
@@ -516,6 +544,7 @@ json_t *playlistGetJSON( Playlist *plst, int offset, int count )
   PlaylistItem *pItem;
   
   DBGMSG( "playlistGetJSON (%p): offset:%d count:%d", plst, offset, count );  
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Lock mutex
@@ -755,6 +784,7 @@ int playlistAddItems( Playlist *plst, int pos, json_t *jItems, bool resetFlag )
   PlaylistItem *anchorItem = NULL;  // Item to add list before
 
   DBGMSG( "playlistAddItems (%p): before:%d reset:%d", plst, pos, resetFlag ); 
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Lock mutex
@@ -813,6 +843,7 @@ int playlistDeleteItems( Playlist *plst, json_t *jItems )
   int rc = 0;
 
   DBGMSG( "playlistdeteletItems (%p)", plst ); 
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Lock mutex
@@ -887,6 +918,7 @@ int playlistMoveItems( Playlist *plst, int pos, json_t *jItems )
   int            rc = 0;
 
   DBGMSG( "playlistMoveItems (%p): before:%d", plst, pos ); 
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Lock mutex
@@ -1086,6 +1118,7 @@ void playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem )
 \*=========================================================================*/
 static int _playlistGetCursorPos( Playlist *plst )
 {
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Find position of current item if index is invalid
@@ -1114,6 +1147,8 @@ static int _playlistGetCursorPos( Playlist *plst )
 static void _playlistReset( Playlist *plst )
 {
   PlaylistItem *item, *next;
+  DBGMSG( "_playlistReset (%p)", plst ); 
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Free all items (unlinking not necessary)
@@ -1143,6 +1178,7 @@ static void _playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem,
 {
   DBGMSG( "_playlistAddItemBefore (%p): anchor:%p new:%p", 
            plst, anchorItem, newItem ); 
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Default
@@ -1189,8 +1225,9 @@ static void _playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem,
 static void _playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem, 
                                             PlaylistItem *newItem )
 {
-   DBGMSG( "_playlistAddItemAfter (%p): anchor:%p new:%p", 
+  DBGMSG( "_playlistAddItemAfter (%p): anchor:%p new:%p", 
             plst, anchorItem, newItem ); 
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Default
@@ -1240,6 +1277,7 @@ static void _playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem,
 static void _playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem )
 {
   DBGMSG( "_playlistUnlinkItem (%p): %p", plst, pItem ); 
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Unlink item from list
@@ -1276,6 +1314,7 @@ static void _playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistIt
   PlaylistItem *item;
 
   DBGMSG( "_playlistTranspose (%p): %p <-> %p", plst, pItem1, pItem2 ); 
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Nothing to do?
@@ -1341,6 +1380,7 @@ static PlaylistItem *_playlistGetItem( Playlist *plst, int pos )
 #ifdef DEBUG
   int posbuf = pos;
 #endif
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Check for lower bound
@@ -1369,6 +1409,7 @@ static PlaylistItem *_playlistGetItem( Playlist *plst, int pos )
 static PlaylistItem *_playlistGetItemById( Playlist *plst, const char *id )
 {
   PlaylistItem *item;
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Loop over list and check Id
@@ -1387,8 +1428,9 @@ static PlaylistItem *_playlistGetItemById( Playlist *plst, const char *id )
 /*=========================================================================*\
        Check consistency of playlist
 \*=========================================================================*/
-#if 0
-static int _playlistCheckList( Playlist *plst )
+#ifdef CONSISTENCYCHECKING
+
+static int _playlistCheckList( const char *file, int line, Playlist *plst )
 {
   PlaylistItem *item, *last = NULL;
   int           i, rc = 0;
@@ -1397,9 +1439,9 @@ static int _playlistCheckList( Playlist *plst )
     Loop over list and check bakward links
 \*------------------------------------------------------------------------*/
   for( i=0,item=plst->firstItem; item; i++,item=item->next ) {
-    DBGMSG( "item #%d: %p <%p,%p> (%s)", i, item, item->prev, item->next, item->text );
+    // DBGMSG( "item #%d: %p <%p,%p> (%s)", i, item, item->prev, item->next, item->text );
     if( item->prev!=last ) {
-      logerr( "item #%d (%p, %s): prevpointer %p corrupt (should be %p)",
+      _srvlog( file, line, LOG_ERR, "item #%d (%p, %s): prevpointer %p corrupt (should be %p)",
               i, item, item->text, item->prev, last );
       rc = -1;
     }
@@ -1411,9 +1453,9 @@ static int _playlistCheckList( Playlist *plst )
 \*------------------------------------------------------------------------*/
   last = NULL;
   for( i=plst->_numberOfItems-1,item=plst->lastItem; item; i--,item=item->prev ) {
-    DBGMSG( "item #%d: %p <%p,%p> (%s)", i, item, item->prev, item->next, item->text );
+    // DBGMSG( "item #%d: %p <%p,%p> (%s)", i, item, item->prev, item->next, item->text );
     if( item->next!=last ) {
-      logerr( "item #%d (%p, %s): nextpointer %p corrupt (should be %p)",
+      _srvlog( file, line, LOG_ERR, "item #%d (%p, %s): nextpointer %p corrupt (should be %p)",
               i, item, item->text, item->next, last );
       rc = -1;
     }
@@ -1426,6 +1468,7 @@ static int _playlistCheckList( Playlist *plst )
   return rc;
 }
 #endif
+
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/

@@ -94,9 +94,6 @@ typedef enum {
   PlayerThreadTerminatedError
 } PlayerThreadState;
 
-// Utilities
-#define EffectiveVolume() (playerMuted?0.0:playerVolume)
-
  
 /*=========================================================================*\
 	Private symbols
@@ -132,6 +129,7 @@ static CodecInstance      *codecInstance;
 /*=========================================================================*\
 	Private prototypes
 \*=========================================================================*/
+static int        _playerSetVolume( double volume, bool muted );
 static void      *_playbackThread( void *arg );
 static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec );
 
@@ -545,8 +543,9 @@ void playerSetName( const char *name, bool broadcast )
 
 /*=========================================================================*\
       Set Volume 
+        returns effective volume (set to 0 if muted)
 \*=========================================================================*/
-double playerSetVolume( double volume, bool broadcast )
+double playerSetVolume( double volume, bool muted, bool broadcast )
 {
   loginfo( "Setting Volume to %lf", volume );
 
@@ -559,17 +558,20 @@ double playerSetVolume( double volume, bool broadcast )
     volume = 1;
 
 /*------------------------------------------------------------------------*\
-    Parametrize codec (if any )
+    use internal interface to backend or codec
 \*------------------------------------------------------------------------*/
-  if( codecInstance && codecSetVolume(codecInstance,EffectiveVolume()) )
-    logwarn( "playerSetVolume: could not set volume to %.2lf%%", 
-                         EffectiveVolume()*100 ); 
+  if( _playerSetVolume(playerVolume,playerMuted) )
+    logwarn( "playerSetVolume: could not set volume to %.2lf%%%s", 
+              playerVolume*100, playerMuted?" (muted)":"" ); 
 
 /*------------------------------------------------------------------------*\
-    Store new volume 
+    Store new volume and muting state
 \*------------------------------------------------------------------------*/
   playerVolume = volume;
   persistSetReal( "PlayerVolume", volume );
+  playerMuted = muted;
+  persistSetBool( "playerMuted", muted );
+
 
 /*------------------------------------------------------------------------*\
     Update timestamp and broadcast new player state
@@ -582,42 +584,46 @@ double playerSetVolume( double volume, bool broadcast )
 /*------------------------------------------------------------------------*\
     Return new volume 
 \*------------------------------------------------------------------------*/
-  return playerVolume;
+  return muted?0:playerVolume;
 }
 
 
 /*=========================================================================*\
-      Set Muting 
+      Set Volume 
+        internal interface to audio backand or codec 
 \*=========================================================================*/
-bool playerSetMuting( bool muted, bool broadcast )
+static int _playerSetVolume( double volume, bool muted )
 {
-  loginfo( "Setting Muting to %s", muted?"On":"Off");
+  int rc = 0;
+  DBGMSG( "_playerSetVolume: %lf%s", volume, muted?" (muted)":"" );
 
 /*------------------------------------------------------------------------*\
-    Parametrize codec (if any )
+    Use backend
 \*------------------------------------------------------------------------*/
-  if( codecInstance && codecSetVolume(codecInstance,EffectiveVolume()) )
-    logwarn( "playerSetMuting: could not set volume to %.2lf%%",
-                         EffectiveVolume()*100  ); 
+  if( audioIf && audioIfSupportsVolume(audioIf) ) {
+    if( audioIfSetVolume(audioIf,volume,muted) ) {
+      logerr( "_playerSetVolume: could not set volume to %.2lf%%%s for backend \"%s\"", 
+               volume*100, muted?" (muted)":"", audioIf->devName ); 
+      rc = -1;
+    }
+
+  }
 
 /*------------------------------------------------------------------------*\
-    Store new state 
+    Use codec
 \*------------------------------------------------------------------------*/
-  playerMuted = muted;
-  persistSetBool( "playerMuted", muted );
+  else if( codecInstance ) {
+    if( codecSetVolume(codecInstance,playerVolume,playerMuted) ) {
+      logerr( "_playerSetVolume: could not set volume to %.2lf%%%s for codec %s", 
+                volume*100, muted?" (muted)":"", codecInstance->codec->name );
+      rc = -1;
+    } 
+  }
 
 /*------------------------------------------------------------------------*\
-    Update timestamp and broadcast new player state
+    Return new volume 
 \*------------------------------------------------------------------------*/
-  lastChange = srvtime( );
-  hmiNewVolume( playerVolume, playerMuted );
-  if( broadcast )
-    ickMessageNotifyPlayerState();
-
-/*------------------------------------------------------------------------*\
-    Return new state 
-\*------------------------------------------------------------------------*/
-  return playerMuted;
+  return rc;
 }
 
 
@@ -690,6 +696,9 @@ int playerSetState( PlayerState state, bool broadcast )
           rc = -1;
           break;
         }
+        if( _playerSetVolume(playerVolume,playerMuted) )
+          logwarn( "_playerThread: could not set volume to %.2lf%%%s", 
+                   playerVolume*100, playerMuted?" (muted)":"" ); 
       }
   	  
       // Is there a track to play ?
@@ -909,9 +918,9 @@ static void *_playbackThread( void *arg )
     }
     
     // initialize volume
-    if( codecSetVolume(codecInst,EffectiveVolume()) )
-      logwarn( "_playerThread: could not set volume to %.2lf%%", 
-                           EffectiveVolume()*100 ); 
+    if( _playerSetVolume(playerVolume,playerMuted) )
+      logwarn( "_playerThread: could not set volume to %.2lf%%%s", 
+                playerVolume*100, playerMuted?" (muted)":"" ); 
  
     // Attach feed to codec and start...
     if( audioFeedStart(feed,codecInst) ) {
