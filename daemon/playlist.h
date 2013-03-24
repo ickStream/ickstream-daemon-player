@@ -107,9 +107,9 @@ json_t       *playlistItemGetStreamingRefs( PlaylistItem *pItem );
 PlaylistItem *playlistGetItem( Playlist *plst, int pos );
 PlaylistItem *playlistGetItemById( Playlist *plst, const char *id );
 PlaylistItem *playlistGetCursorItem( Playlist *plst );
-int           playlistAddItems( Playlist *plst, PlaylistItem *anchorItem, json_t *jItems, bool resetFlag );
+int           playlistAddItems( Playlist *plst, int pos, json_t *jItems, bool resetFlag );
 int           playlistDeleteItems( Playlist *plst, json_t *jItems );
-int           playlistMoveItems( Playlist *plst, PlaylistItem *anchorItem, json_t *jItems );
+int           playlistMoveItems( Playlist *plst, int pos, json_t *jItems );
 
 
 void          playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem, PlaylistItem *newItem );

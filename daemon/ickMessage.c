@@ -448,15 +448,13 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
            !strcasecmp(method,"setTracks") ) {
     Playlist     *plst       = playerGetQueue();
     bool          resetFlag  = strcasecmp(method,"setTracks") ? true : false;
-    PlaylistItem *anchorItem = NULL;  // Item to add list before
+    int           pos        = -1;        // Item to add list before
     json_t       *jItems;                 // List of new items
  
     // Get explicite position 
     jObj = json_object_get( jParams, "playlistPos" );
-    if( jObj && json_is_integer(jObj) ) {
-      int pos    = json_integer_value( jObj );
-      anchorItem = playlistGetItem( plst, pos );
-    }
+    if( jObj && json_is_integer(jObj) )
+      pos    = json_integer_value( jObj );
     
     // Get list of new items
     jItems = json_object_get( jParams, "items" );
@@ -469,7 +467,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     }
     
     // Add tracks to playlist
-    if( playlistAddItems(plst,anchorItem,jItems,resetFlag) ) {
+    if( playlistAddItems(plst,pos,jItems,resetFlag) ) {
       logerr( "ickMessage from %s: could not add items to playlist: %s", 
                szDeviceId, message );
       json_decref( jRoot );
@@ -525,16 +523,14 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     Move tracks within playlist
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"moveTracks") ) {
-    Playlist      *plst = playerGetQueue();
+    Playlist      *plst    = playerGetQueue();
     json_t        *jItems;
-    PlaylistItem  *anchorItem = NULL;          // Item to move others before
+    int            pos     = -1;        // Item to add list before
     
     // Get explicite position 
     jObj = json_object_get( jParams, "playlistPos" );
-    if( jObj && json_is_integer(jObj) ) {
-       int pos    = json_integer_value( jObj );
-       anchorItem = playlistGetItem( plst, pos );
-    }
+    if( jObj && json_is_integer(jObj) )
+      pos = json_integer_value( jObj );
     
     // Get list of items to move
     jItems = json_object_get( jParams, "items" );
@@ -547,7 +543,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     }
 
     // Move tracks within playlist
-    if( playlistMoveItems(plst,anchorItem,jItems) ) {
+    if( playlistMoveItems(plst,pos,jItems) ) {
       logerr( "ickMessage from %s: could not move items in playlist: %s", 
                szDeviceId, message );
       json_decref( jRoot );
@@ -683,7 +679,7 @@ void ickMessageNotifyPlaylist( void )
 /*------------------------------------------------------------------------*\
     Set up message
 \*------------------------------------------------------------------------*/
-    jMsg = json_pack( "{ss ss so }",
+    jMsg = json_pack( "{ss ss so}",
                       "jsonrpc", "2.0", 
                       "method", "playlistChanged",
                       "params", jMsg );
@@ -705,7 +701,22 @@ void ickMessageNotifyPlayerState( void )
   
   DBGMSG( "ickMessageNotifyPlayerState" );    
   
-  jMsg = _jPlayerStatus();                        
+/*------------------------------------------------------------------------*\
+    Get player state
+\*------------------------------------------------------------------------*/
+  jMsg = _jPlayerStatus();     
+
+/*------------------------------------------------------------------------*\
+    Set up message
+\*------------------------------------------------------------------------*/
+  jMsg = json_pack( "{ss ss so}",
+                    "jsonrpc", "2.0", 
+                    "method", "playerStatusChanged",
+                    "params", jMsg );
+                   
+/*------------------------------------------------------------------------*\
+    Broadcast and clean up
+\*------------------------------------------------------------------------*/
   sendIckMessage( NULL, jMsg );
   json_decref( jMsg );                       	
 }

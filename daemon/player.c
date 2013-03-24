@@ -987,8 +987,10 @@ static void *_playbackThread( void *arg )
       item = playlistSetCursorPos( playerQueue, 0 );
 
     // repeat at end of list with shuffling
-    else if( playerRepeatMode==PlayerRepeatShuffle )
+    else if( playerRepeatMode==PlayerRepeatShuffle ) {
       item = playlistShuffle( playerQueue, 0, playlistGetLength(playerQueue)-1, false );
+      ickMessageNotifyPlaylist();
+     }
 
   }  // End of: Thread main loop
  

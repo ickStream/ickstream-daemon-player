@@ -126,6 +126,30 @@ void _srvlog( const char *file, int line,  int prio, const char *fmt, ... )
 
 
 /*========================================================================*\
+   Draw a random nuber from range [min, max] (both included)
+\*========================================================================*/
+long rndInteger( long min, long max )
+{
+  static unsigned int seed = 0;
+
+  // Init with seed?
+  if( !seed ) {
+    seed = (unsigned int) srvtime();
+    DBGMSG( "rndSeed = %u", seed );
+    srandom( seed );
+  }
+
+  // Use simple random facility
+  long rnd = random();
+
+  // Scale to requested range
+  rnd =  min + rnd%(max-min+1L);
+
+  DBGMSG( "rnd[%ld,%ld] = %ld", min, max, rnd );
+  return rnd;
+}
+
+/*========================================================================*\
    Get time including frational seconds
 \*========================================================================*/
 double srvtime( void )

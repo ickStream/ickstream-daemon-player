@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-// #undef DEBUG 
+#undef DEBUG 
 
 #include <stdio.h>
 #include <stdlib.h>
