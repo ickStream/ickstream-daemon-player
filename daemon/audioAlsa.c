@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef DEBUG
+#undef ICK_DEBUG
 
 #include <stdio.h>
 #include <strings.h>
@@ -222,8 +222,9 @@ static int _ifNew( AudioIf *aif )
     aif->hasVolume = true;
 
 /*------------------------------------------------------------------------*\
-    That's it
+    Set state, that's it
 \*------------------------------------------------------------------------*/
+  aif->state = AudioIfInitialized;
   return 0;
 }
 
@@ -561,14 +562,14 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
   if( format->channels>1 )
     rc = snd_pcm_hw_params_set_access( ifData->pcm, hwParams, SND_PCM_ACCESS_RW_INTERLEAVED );
   if( rc<0 ) {
-  	logerr( "Unable to set alsa pcm hw parameter: SND_PCM_ACCESS_RW_INTERLEAVED" );
+    logerr( "Unable to set alsa pcm hw parameter: SND_PCM_ACCESS_RW_INTERLEAVED" );
     return -1;
   }
 
   // Set data format and calculate frame size (sample size*channels)
   rc = snd_pcm_hw_params_set_format( ifData->pcm, hwParams, alsaFormat );
   if( rc<0 ) {
-  	logerr( "Unable to set alsa pcm hw format to: %s", audioFormatStr(NULL,format) );
+    logerr( "Unable to set alsa pcm hw format to: %s", audioFormatStr(NULL,format) );
     return -1;
   }
   aif->framesize = format->bitWidth/8*format->channels;
@@ -577,7 +578,7 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
   realRate = format->sampleRate;
   rc = snd_pcm_hw_params_set_rate_near( ifData->pcm, hwParams, &realRate, NULL);
   if( rc<0 ) {
-  	logerr( "Unable to set alsa pcm hw parameter: rate (%d)", format->sampleRate );
+    logerr( "Unable to set alsa pcm hw parameter: rate (%d)", format->sampleRate );
     return -1;
   }
   if( realRate!=format->sampleRate ) {
@@ -589,7 +590,7 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
   // Set number of periods to two
   rc = snd_pcm_hw_params_set_periods( ifData->pcm, hwParams, 2, 0 );
   if( rc<0 ) {
-  	logerr( "Unable to set alsa pcm hw parameter: periods 2, 0" );
+    logerr( "Unable to set alsa pcm hw parameter: periods 2, 0" );
     return -1;
   }
   
@@ -739,13 +740,11 @@ static void *_ifThread( void *arg )
       if( rc ) {
         logerr( "Alsa thread (after write): Unable to recover alsa interface: %s", strerror(rc) );
         aif->state = AudioIfTerminatedError;
-        break;
       } 
     }
     else if( rc<0 ) {
       logerr( "Alsa thread: Error while writing data to alsa interface: %s", strerror(rc) );
       aif->state = AudioIfTerminatedError;
-      break;
     } 
 
     // Check out accepted data from fifo

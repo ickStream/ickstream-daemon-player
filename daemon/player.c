@@ -65,6 +65,9 @@ Remarks         : -
 #include <net/if.h>
 #include <netdb.h>
 #include <jansson.h>
+#ifdef ICK_UUID
+#include <uuid/uuid.h>
+#endif
 
 #include "utils.h"
 #include "ickService.h"
@@ -349,8 +352,39 @@ const char *playerGetHWID( void )
 \*=========================================================================*/
 const char *playerGetUUID( void )
 {
+
+/*------------------------------------------------------------------------*\
+    Get persistent value
+\*------------------------------------------------------------------------*/
   if( !playerUUID )
     playerUUID = persistGetString( "DeviceUUID" );
+
+/*------------------------------------------------------------------------*\
+    Need to set value once
+\*------------------------------------------------------------------------*/
+  if( !playerUUID ) {
+#ifdef ICK_UUID
+    uuid_t newUUID;
+    char   strUUID[37];
+    uuid_generate_random( newUUID );
+    uuid_unparse_lower( newUUID, strUUID );
+    persistSetString( "DeviceUUID", strUUID );  // persist local buffer
+    playerUUID = persistGetString( "DeviceUUID" );
+#else
+    logwarn( "No UUID generator, trying to use hardware id as default." );
+    playerUUID = playerGetHWID();
+    if( !playerUUID ) {
+      logerr( "Could not determine player UUID" );
+      return NULL;
+    }
+    persistSetString( "DeviceUUID", playerUUID );
+#endif
+    lognotice( "Initialized player UUID to: %s", playerUUID );
+  }
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
   DBGMSG( "playerGetUUID: \"%s\"", playerUUID?playerUUID:"(null)" );
   return playerUUID;
 }
@@ -458,14 +492,16 @@ double playerGetSeekPos( void )
 
 
 /*=========================================================================*\
-    Set player UUID
+    Set player UUID (only in debug mode)
 \*=========================================================================*/
+#ifdef ICK_DEBUG
 void playerSetUUID( const char *uuid )
 {	
   loginfo( "Setting player UUID to \"%s\"", uuid );
   playerUUID = uuid;  
   persistSetString( "DeviceUUID", uuid );
 }
+#endif
 
 
 /*=========================================================================*\
@@ -537,7 +573,7 @@ void playerSetName( const char *name, bool broadcast )
 \*------------------------------------------------------------------------*/
   lastChange = srvtime( );
   if( broadcast )
-    ickMessageNotifyPlayerState();
+    ickMessageNotifyPlayerState( NULL );
 }
 
 
@@ -579,7 +615,7 @@ double playerSetVolume( double volume, bool muted, bool broadcast )
   lastChange = srvtime( );
   hmiNewVolume( playerVolume, playerMuted );
   if( broadcast )
-    ickMessageNotifyPlayerState();
+    ickMessageNotifyPlayerState( NULL );
 
 /*------------------------------------------------------------------------*\
     Return new volume 
@@ -646,7 +682,7 @@ int playerSetRepeatMode( PlayerRepeatMode mode, bool broadcast )
   lastChange = srvtime( );
   hmiNewRepeatMode( mode );
   if( broadcast )
-    ickMessageNotifyPlayerState();
+    ickMessageNotifyPlayerState( NULL );
 
 /*=========================================================================*\
       return new mode 
@@ -783,9 +819,10 @@ int playerSetState( PlayerState state, bool broadcast )
         break;
       }
       
+      lognotice( "_playbackPause: current track changed, stopping..." );
       // no break here, as we'll change the status to PlayerStateStop in case 
       // we were changing the track in paused state...
-  	  lognotice( "_playbackPause: current track changed, stopping..." );
+
 
 /*------------------------------------------------------------------------*\
     Stop playback
@@ -825,7 +862,7 @@ int playerSetState( PlayerState state, bool broadcast )
   pthread_mutex_unlock( &playerMutex );
   hmiNewState( playerState );
   if( broadcast )
-    ickMessageNotifyPlayerState();
+    ickMessageNotifyPlayerState( NULL );
 
 /*------------------------------------------------------------------------*\
     That's it 
@@ -936,7 +973,7 @@ static void *_playbackThread( void *arg )
     Sfree( currentTrackId );
     currentTrackId = strdup( playlistItemGetId(item) );
     codecInstance = codecInst;
-    ickMessageNotifyPlayerState();
+    ickMessageNotifyPlayerState( NULL );
     lognotice( "_playerThread: Playing track \"%s\" (%s) with %s", 
       	                playlistItemGetText(item), playlistItemGetId(item), 
                         audioFormatStr(NULL,&backendFormat) );
@@ -944,7 +981,7 @@ static void *_playbackThread( void *arg )
     // Inform HMI
     hmiNewItem( playerQueue, item );
     hmiNewFormat( &backendFormat );
-#ifndef NOHMI
+#ifndef ICK_NOHMI
     double seekPos = 0;
     hmiNewPosition( seekPos );
 #endif
@@ -958,7 +995,7 @@ static void *_playbackThread( void *arg )
         playbackThreadState = PlayerThreadTerminatedError;
       
       // Inform HMI about new player position but suppress updates in paused state
-#ifndef NOHMI
+#ifndef ICK_NOHMI
       double pos;
       if( rc>0 && !codecGetSeekTime(codecInst,&pos) ) {
         if( pos!=seekPos && playerState==PlayerStatePlay ) {
@@ -998,7 +1035,7 @@ static void *_playbackThread( void *arg )
     // repeat at end of list with shuffling
     else if( playerRepeatMode==PlayerRepeatShuffle ) {
       item = playlistShuffle( playerQueue, 0, playlistGetLength(playerQueue)-1, false );
-      ickMessageNotifyPlaylist();
+      ickMessageNotifyPlaylist( NULL );
      }
 
   }  // End of: Thread main loop
@@ -1015,7 +1052,7 @@ static void *_playbackThread( void *arg )
   if( playbackThreadState==PlayerThreadRunning ) {
     lognotice( "_playerThread: End of playlist." );
     playerState = PlayerStateStop;
-    ickMessageNotifyPlayerState();
+    ickMessageNotifyPlayerState( NULL );
     hmiNewState( playerState );
     hmiNewPosition( 0.0 );
   }

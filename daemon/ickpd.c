@@ -124,7 +124,9 @@ int main( int argc, char *argv[] )
   addarg( "devices",  "-al", &adev_flag,   NULL,       "List audio devices and quit" );
   addarg( "config",   "-c",  &cfg_fname,   "filename", "Set name of configuration file" );
   addarg( "*pers",    "-p",  &pers_fname,  "filename", "Set name of persistency file" );
+#ifdef ICK_DEBUG
   addarg( "*uuid",    "-u",  &player_uuid, "uuid",     "Init/change UUID for this player" );
+#endif
   addarg( "*name",    "-n",  &player_name, "name",     "Init/change Name for this player" );
   addarg( "*idev",    "-i",  &if_name,     "interface","Init/change network interface" );
   addarg( "*adevice", "-ad", &adev_name,   "name",     "Init/change audio device name" );
@@ -166,12 +168,12 @@ int main( int argc, char *argv[] )
       return 1;
     }
   }
-#ifndef DEBUG
+#ifndef ICK_DEBUG
   if( streamloglevel>=LOG_DEBUG ) {
      fprintf( stderr, "%s: binary not compiled for debugging, loglevel %d might be too high!\n", 
-                      argv[0], srvloglevel );
-  } 
-#endif 
+                      argv[0], streamloglevel );
+  }
+#endif
 
 /*-------------------------------------------------------------------------*\
     List available audio devices and exit
@@ -179,14 +181,31 @@ int main( int argc, char *argv[] )
   if( adev_flag ) {
     const AudioBackend *backend;
     int                 tot = 0;
+    int                 devWidth = 0;
     if( audioInit(NULL) ) {
-      printf( "Could not init audio moule for testing devices.\n" );
+      printf( "Could not init audio module for testing devices.\n" );
       return -1;
     }
     backend = audioBackendsRoot( );
     while( backend ) {
+      char **devList;
+      int    i, n;
+      n = audioGetDeviceList( backend, &devList, NULL );
+      if( n<0 )
+        return -1;
+      for( i=0; i<n; i++ ) {
+        int len = strlen( backend->name )+1;
+        if( devList[i] )
+          len += strlen( devList[i] );
+        if( len>devWidth )
+          devWidth = len;
+      }
+      backend = backend->next;
+    }
+    backend = audioBackendsRoot( );
+    while( backend ) {
       char **devList, **dscrList, *res;
-      int    i, n; 
+      int    i, n;
       n = audioGetDeviceList( backend, &devList, &dscrList );       
       if( n<0 )
         return -1;
@@ -198,10 +217,10 @@ int main( int argc, char *argv[] )
           res = malloc( strlen(backend->name)+2+strlen(devList[i]) );
           sprintf( res, "%s:%s", backend->name, devList[i] );
         }
-        printf( "%-35s - %s\n", res, descrLine );
+        printf( "%-*s - %s\n", devWidth, res, descrLine );
         Sfree( res );
         while( (descrLine=strtok(NULL,"\n")) )
-          printf( "%38s%s\n", "", descrLine );
+          printf( "%*s%s\n", devWidth+3, "", descrLine );
       }
       audioFreeStringList( devList );
       audioFreeStringList( dscrList );
@@ -242,17 +261,13 @@ int main( int argc, char *argv[] )
 /*------------------------------------------------------------------------*\
     Uuid changed or unavilabale ?
 \*------------------------------------------------------------------------*/  
-  if( player_uuid )                  // comand line or config file argument
+#ifdef ICK_DEBUG
+  if( player_uuid )                  // command line or config file argument
     playerSetUUID( player_uuid );
-  player_uuid = playerGetUUID();     // persistent storage
-  if( !player_uuid && playerGetHWID() ) {  // use hardware ID as fallback
-  	playerSetUUID( playerGetHWID() );
-  	player_uuid = playerGetUUID();
-        logwarn( "Need UUID, using MAC \"%s\" as default...",
-                             player_uuid );
-  } 
+#endif
+  player_uuid = playerGetUUID();
   if( !player_uuid ) {
-     fprintf( stderr, "Need player uuid!\n" );
+     fprintf( stderr, "NO player UUID!\n" );
      return 1;
   }
   loginfo( "Using uuid     : \"%s\"", player_uuid );
@@ -277,7 +292,7 @@ int main( int argc, char *argv[] )
   loginfo( "Using name     : \"%s\"", player_name );  
 
 /*------------------------------------------------------------------------*\
-    Player device changed or unavailabale ?
+    Player device changed or unavailable ?
 \*------------------------------------------------------------------------*/  
   if( adev_name )
     playerSetAudioDevice( adev_name );
@@ -366,8 +381,8 @@ int main( int argc, char *argv[] )
     Init player and announce state
 \*------------------------------------------------------------------------*/
   playerInit();
-  ickMessageNotifyPlaylist();
-  ickMessageNotifyPlayerState();
+  ickMessageNotifyPlaylist( NULL );
+  ickMessageNotifyPlayerState( NULL );
   
 /*------------------------------------------------------------------------*\
     Mainloop:

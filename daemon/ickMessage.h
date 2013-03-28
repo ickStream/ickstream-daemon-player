@@ -68,8 +68,8 @@ void ickMessage( const char *szDeviceId, const void *message,
 enum ickMessage_communicationstate  sendIckMessage( const char *szDeviceId, json_t *jMsg );
 enum ickMessage_communicationstate  sendIckCommand( const char *szDeviceId, const char *method, json_t *jParams, int *requestID, IckCmdCallback callBack );
 
-void ickMessageNotifyPlaylist( void );
-void ickMessageNotifyPlayerState( void );
+void ickMessageNotifyPlaylist( const char *szDeviceId );
+void ickMessageNotifyPlayerState( const char *szDeviceId );
 
 #endif  /* __ICKMESSAGE_H */
 

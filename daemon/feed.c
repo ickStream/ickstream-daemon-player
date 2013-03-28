@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef DEBUG
+#undef ICK_DEBUG
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,6 +58,8 @@ Remarks         : -
 #include <string.h>
 #include <strings.h>
 #include <errno.h>
+#include <curl/curl.h>
+
 
 #include "utils.h"
 #include "codec.h"

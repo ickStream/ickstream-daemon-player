@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef DEBUG
+#undef ICK_DEBUG
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -111,7 +111,7 @@ AudioBackend *audioNullDescriptor( void )
 
 
 /*=========================================================================*\
-      Get all ALSA pcm devices 
+      Get all backend devices
         descrListPtr might be NULL;
 \*=========================================================================*/
 static int _backendGetDeviceList( char ***deviceListPtr, char ***descrListPtr )
@@ -250,7 +250,7 @@ static void *_ifThread( void *arg )
     size_t bytes_readable = fifoGetSize( aif->fifoIn, FifoNextReadable );
 
     // Do transfer the data
-    DBGMSG( "Audio Null thread: consuming %ld frames", (long)frames );
+    DBGMSG( "Audio Null thread: consuming %ld frames", (long)bytes_readable );
 
     // Check out accepted data from fifo
     fifoUnlockAfterRead( aif->fifoIn,bytes_readable ); 

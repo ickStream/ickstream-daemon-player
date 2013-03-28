@@ -140,12 +140,12 @@ struct _audioIf {
   const AudioBackend *backend;          // weak
   char               *devName;          // strong
   Fifo               *fifoIn;           // strong
-  AudioFormat        format;
-  bool               canPause;
-  bool               hasVolume;
-  int                framesize;
-  pthread_t          thread;
-  void              *ifData;           // handled by individual backend
+  AudioFormat         format;
+  bool                canPause;
+  bool                hasVolume;
+  int                 framesize;
+  pthread_t           thread;
+  void               *ifData;           // handled by individual backend
 };
 
 

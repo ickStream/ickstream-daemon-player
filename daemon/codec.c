@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef DEBUG 
+#undef ICK_DEBUG
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -253,7 +253,7 @@ CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format )
 \*=========================================================================*/
 int codecDeleteInstance( CodecInstance *instance, bool wait )
 {
-#ifdef DEBUG    
+#ifdef ICK_DEBUG
   Codec *codec = instance->codec;
 #endif
   DBGMSG( "Deleting codec instance \"%s\"", codec->name );	
@@ -305,7 +305,7 @@ int codecFeedInput( CodecInstance *instance, void *data, size_t size, size_t *ac
 \*=========================================================================*/
 void codecSetEndOfInput( CodecInstance *instance )
 {
-#ifdef DEBUG	
+#ifdef ICK_DEBUG
   Codec *codec = instance->codec;
   DBGMSG( "codec %s: end of input", codec->name );
 #endif  

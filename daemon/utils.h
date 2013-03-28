@@ -68,12 +68,16 @@ Remarks         : -
        Macro and type definitions 
 \*=========================================================================*/
 
+#ifndef MAX
 #define MAX(a,b) ((a)>(b)?(a):(b))
+#endif
+#ifndef MIN
 #define MIN(a,b) ((a)<(b)?(a):(b))
+#endif
 
 #define srvmsg(prio, args...) _srvlog( NULL, 0, prio, args )
 
-#ifdef DEBUG
+#ifdef ICK_DEBUG
 #define DBGMSG( args... ) _srvlog( __FILE__, __LINE__, LOG_DEBUG, args )
 //#define DBGMSG( args... ) printf( args );
 #else

@@ -171,7 +171,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     if( json_is_integer(requestId) )
       id = json_integer_value( requestId );
     else if( json_is_string(requestId) ) {
-#ifdef DEBUG    	
+#ifdef ICK_DEBUG
       logwarn( "ickMessage from %s returned id as string: %s", 
                             szDeviceId, message );
 #endif                            
@@ -640,7 +640,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
   DBGMSG( "ickMessage from %s: need to update playlist: %s", 
             szDeviceId, playlistChanged?"Yes":"No" );
   if( playlistChanged )
-    ickMessageNotifyPlaylist();
+    ickMessageNotifyPlaylist( NULL );
 
 /*------------------------------------------------------------------------*\
     Clean up: Free JSON message object and check for timedout requests
@@ -654,7 +654,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 /*=========================================================================*\
 	Send a notification for playlist update
 \*=========================================================================*/
-void ickMessageNotifyPlaylist( void )
+void ickMessageNotifyPlaylist( const char *szDeviceId )
 {
   Playlist   *plst;
   json_t     *jMsg;
@@ -688,7 +688,7 @@ void ickMessageNotifyPlaylist( void )
 /*------------------------------------------------------------------------*\
     Broadcast and clean up
 \*------------------------------------------------------------------------*/
-    sendIckMessage( NULL, jMsg );
+    sendIckMessage( szDeviceId, jMsg );
     json_decref( jMsg );                       	
 }
 
@@ -696,7 +696,7 @@ void ickMessageNotifyPlaylist( void )
 /*=========================================================================*\
 	Send a notification for plyer status update
 \*=========================================================================*/
-void ickMessageNotifyPlayerState( void )
+void ickMessageNotifyPlayerState( const char *szDeviceId )
 {
   json_t *jMsg;
   
@@ -718,7 +718,7 @@ void ickMessageNotifyPlayerState( void )
 /*------------------------------------------------------------------------*\
     Broadcast and clean up
 \*------------------------------------------------------------------------*/
-  sendIckMessage( NULL, jMsg );
+  sendIckMessage( szDeviceId, jMsg );
   json_decref( jMsg );                       	
 }
 

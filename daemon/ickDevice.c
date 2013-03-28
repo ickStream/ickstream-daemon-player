@@ -88,6 +88,11 @@ void ickDevice( const char *szDeviceId, enum ickDiscovery_command cmd,
         sendIckCommand( szDeviceId, "getServiceInformation", NULL, NULL, 
                                     &_handleGetServiceInformation );
       }
+
+      // New controller found: send current player state
+      if( type==ICKDEVICE_CONTROLLER )
+        ickMessageNotifyPlayerState( szDeviceId );
+
       break;
 
     case ICKDISCOVERY_REMOVE_DEVICE:

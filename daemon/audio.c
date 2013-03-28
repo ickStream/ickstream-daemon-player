@@ -63,12 +63,15 @@ Remarks         : -
 
 // Audio Backends
 #include "audioNull.h"
-#ifdef ALSA
+#ifdef ICK_ALSA
 #include "audioAlsa.h"
+#endif
+#ifdef ICK_PULSEAUDIO
+#include "audioPulse.h"
 #endif
 
 // Codecs
-#ifdef MPG123
+#ifdef ICK_MPG123
 #include "codecMpg123.h"
 #endif
 
@@ -100,7 +103,10 @@ int audioInit( const char *deviceName )
 /*------------------------------------------------------------------------*\
     Register available audio backends
 \*------------------------------------------------------------------------*/
-#ifdef ALSA
+#ifdef ICK_PULSEAUDIO
+  _audioRegister( audioPulseDescriptor() );
+#endif
+#ifdef ICK_ALSA
   _audioRegister( audioAlsaDescriptor() );
 #endif
 _audioRegister( audioNullDescriptor() );
@@ -108,7 +114,7 @@ _audioRegister( audioNullDescriptor() );
 /*------------------------------------------------------------------------*\
     Register available codecs
 \*------------------------------------------------------------------------*/
-#ifdef MPG123
+#ifdef ICK_MPG123
   codecRegister( mpg123Descriptor() );
 #endif
   
@@ -296,7 +302,7 @@ int audioStrFormat( AudioFormat *format, const char *str )
 \*=========================================================================*/
 int audioFormatCompare( const AudioFormat *format1, const AudioFormat *format2 )
 {
-#ifdef DEBUG
+#ifdef ICK_DEBUG
   char buf1[64], buf2[64];
   DBGMSG( "compare formats: %s ?= %s", 
           audioFormatStr(buf1,format1), audioFormatStr(buf2,format2) );
@@ -350,7 +356,7 @@ int audioFormatComplete( AudioFormat *destFormat, const AudioFormat *refFormat )
 {
   int rc = 1;
 
-#ifdef DEBUG
+#ifdef ICK_DEBUG
   char buf1[64], buf2[64];
   DBGMSG( "complete format %s with %s", 
           audioFormatStr(buf1,destFormat), audioFormatStr(buf2,refFormat) );

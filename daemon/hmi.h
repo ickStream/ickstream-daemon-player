@@ -86,7 +86,7 @@ void hmiNewPosition( double seekPos );
 /*=========================================================================*\
        Dummies if no HMI is used
 \*=========================================================================*/
-#ifdef NOHMI
+#ifdef ICK_NOHMI
 #define hmiInit()           0
 #define hmiShutdown()       {}
 #define hmiNewItem(a,b)     {}

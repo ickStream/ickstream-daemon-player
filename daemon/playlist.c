@@ -53,6 +53,7 @@ Remarks         : -
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include <pthread.h>
 #include <jansson.h>
 #include <ickDiscovery.h>
 
@@ -91,7 +92,7 @@ struct _playlist {
 };
 
 // Enable or disable consistency checks (performance)
-#ifdef DEBUG
+#ifdef ICK_DEBUG
 #define CONSISTENCYCHECKING
 #endif
 
@@ -132,7 +133,7 @@ Playlist *playlistNew( void )
   // plst->name = strdup( "ickpd player queue" );
  
 /*------------------------------------------------------------------------*\
-    init mutex and conditions 
+    Init mutex
 \*------------------------------------------------------------------------*/
   pthread_mutex_init( &plst->mutex, NULL );
  
@@ -1377,7 +1378,7 @@ static void _playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistIt
 static PlaylistItem *_playlistGetItem( Playlist *plst, int pos )
 {
   PlaylistItem *item = plst->firstItem;
-#ifdef DEBUG
+#ifdef ICK_DEBUG
   int posbuf = pos;
 #endif
   CHKLIST( plst );
