@@ -478,6 +478,7 @@ static int _ifSetVolume( AudioIf *aif, double volume, bool muted )
 {
   AlsaData *ifData = (AlsaData*)aif->ifData;
   long      min, max;
+  double    setVol = volume;
   int       rc = 0;
   DBGMSG( "Alsa (%s): set volume to %.2lf%% %s", aif->devName, 
            volume*100, muted?"(muted)":"(unmuted)" ); 
@@ -512,10 +513,11 @@ static int _ifSetVolume( AudioIf *aif, double volume, bool muted )
   }
 
 /*------------------------------------------------------------------------*\
-    That's it
+    Store values and that's it
 \*------------------------------------------------------------------------*/
+  aif->volume = setVol;
+  aif->muted  = muted;
   return 0;
- 
 }
 
 

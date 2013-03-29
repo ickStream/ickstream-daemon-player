@@ -536,16 +536,20 @@ AudioIf *audioIfNew( const AudioBackend *backend, const char *device )
   AudioIf *aif;  
 
 /*------------------------------------------------------------------------*\
-    Create header 
+    Create and initialze header
 \*------------------------------------------------------------------------*/
   aif = calloc( 1, sizeof(AudioIf) );
   if( !aif ) {
     logerr( "audioIfNew: out of memeory!" );
     return NULL;
   }
-  aif->state   = AudioIfInitialized;
-  aif->backend = backend;
-  aif->devName = strdup( device );
+  aif->state     = AudioIfInitialized;
+  aif->backend   = backend;
+  aif->devName   = strdup( device );
+  aif->canPause  = false;
+  aif->hasVolume = false;
+  aif->volume    = 0.0;
+  aif->muted     = false;
   DBGMSG( "Audio instance %s (%p): created", aif->backend->name, aif );
     
 /*------------------------------------------------------------------------*\

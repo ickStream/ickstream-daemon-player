@@ -9,7 +9,7 @@
 #
 # Date            : 13.02.2013
 #
-# Updates         : -
+# Updates         : 28.03.2013 added help option, be less verbose  //MAF
 #
 # Author          : //maf
 #                  
@@ -22,7 +22,6 @@
 
 contact='sales@ickstream.com'
 PCKNAME=ickpd
-
 PWD=`pwd`
 
 #echo Distribution: `git rev-list --all | head -1`
@@ -75,7 +74,8 @@ if ${help:-false}; then
   echo "  hmi=X     - Use HMI X (one of Generic)"
   echo "  noalsa    - Don't use alsa audio backend"
   echo "  nopulse   - Don't use pulse audio backend"
-  exit
+  echo
+  exit 1
 fi
 
 
@@ -113,7 +113,7 @@ case $systype-$reltype-$mchname in
     echo "so far your system is neither known nor supported by the" 
     echo "ickstream team. We'll proceed with generic settings."
     echo "Feel free to add optimized settings for $systype-$reltype-$mchname"
-    if t${debug:-false}; then
+    if ${debug:-false}; then
       CFLAGS="-g $CFLAGS -DICK_DEBUG"
       LDFLAGS="-g $LDFLAGS"
     fi

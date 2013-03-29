@@ -143,6 +143,8 @@ struct _audioIf {
   AudioFormat         format;
   bool                canPause;
   bool                hasVolume;
+  double              volume;
+  bool                muted;
   int                 framesize;
   pthread_t           thread;
   void               *ifData;           // handled by individual backend
