@@ -217,7 +217,7 @@ int fifoLockWaitWritable( Fifo *fifo, int timeout )
    pthread_mutex_lock( &fifo->mutex );
   
 /*------------------------------------------------------------------------*\
-    Get absolut timestamp for timeout
+    Get absolute timestamp for timeout
 \*------------------------------------------------------------------------*/
   if( timeout>0 ) {
     gettimeofday( &now, NULL );
@@ -230,7 +230,7 @@ int fifoLockWaitWritable( Fifo *fifo, int timeout )
   }
 
 /*------------------------------------------------------------------------*\
-    Loop while condtion is not met (cope with "spurious  wakeups")
+    Loop while condition is not met (cope with "spurious  wakeups")
 \*------------------------------------------------------------------------*/
   while( !FifoIsWritable(fifo) ) {
 
@@ -252,12 +252,11 @@ int fifoLockWaitWritable( Fifo *fifo, int timeout )
       pthread_cond_signal( &fifo->condIsReadable );		
   }
   
-  DBGMSG( "Fifo %p (%s): waiting for writable: %s", 
-          fifo, fifo->name?fifo->name:"<unknown>", err?strerror(err):"Locked" ); 
-
 /*------------------------------------------------------------------------*\
     That's it
 \*------------------------------------------------------------------------*/
+  DBGMSG( "Fifo %p (%s): waiting for writable: %s",
+          fifo, fifo->name?fifo->name:"<unknown>", err?strerror(err):"Locked" );
   return err;
 }
 

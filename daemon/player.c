@@ -202,6 +202,14 @@ void playerShutdown( void )
   persistSetJSON_new( "PlayerQueue", playlistGetJSON(playerQueue,0,0) );
 
 /*------------------------------------------------------------------------*\
+    Close audio interface
+\*------------------------------------------------------------------------*/
+  if( audioIf ) {
+    audioIfDelete( audioIf, true );
+    audioIf = NULL;
+  }
+
+/*------------------------------------------------------------------------*\
     Delete mutex
 \*------------------------------------------------------------------------*/
   pthread_mutex_destroy( &playerMutex );
@@ -903,7 +911,7 @@ static void *_playbackThread( void *arg )
       continue;
     }
 
-    // Get fifo from audio interface, try to use explicite format
+    // Get fifo from audio interface, try to use explicit format
     memcpy( &backendFormat, &feed->format, sizeof(AudioFormat) );
     fifo = audioIfPlay( audioIf, &backendFormat );
 

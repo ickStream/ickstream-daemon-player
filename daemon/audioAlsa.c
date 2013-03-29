@@ -700,7 +700,7 @@ static void *_ifThread( void *arg )
     //0: timedout  1: ready  <0: xrun, suspend or error  
     rc =  snd_pcm_wait( ifData->pcm, 500 );
     if( !rc ) {
-      DBGMSG( "Alsa thread: timout while waiting for free buffer size." ); 
+      DBGMSG( "Alsa thread: timeout while waiting for free buffer size." );
       continue;
     }
     if( rc==-EPIPE || rc==-ESTRPIPE ) {

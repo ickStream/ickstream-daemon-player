@@ -399,8 +399,9 @@ int main( int argc, char *argv[] )
    loginfo( "Exiting due to signal %d ...", stop_signal );
 
 /*------------------------------------------------------------------------*\
-    Close ickstream environment... 
+    Stop player and close ickstream environment...
 \*------------------------------------------------------------------------*/
+  playerSetState( PlayerStateStop, false );
   ickEndDiscovery( 1 );
 
 /*------------------------------------------------------------------------*\
@@ -410,7 +411,6 @@ int main( int argc, char *argv[] )
   playerShutdown();
   audioShutdown( AudioDrain );
   persistShutdown();
-
 
 /*------------------------------------------------------------------------*\
     Cleanup PID file
