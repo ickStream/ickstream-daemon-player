@@ -720,7 +720,7 @@ static void *_ifThread( void *arg )
     // Wait for data in fifo
     rc = fifoLockWaitReadable( aif->fifoIn, 500 );
     if( rc==ETIMEDOUT ) {
-      DBGMSG( "Alsa thread: timout while waiting for fifo data." );	
+      DBGMSG( "Alsa thread: timeout while waiting for fifo data." );
   	  continue;
   	}
     if( rc ) {
