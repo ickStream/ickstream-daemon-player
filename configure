@@ -25,17 +25,27 @@ PCKNAME=ickpd
 
 PWD=`pwd`
 
-echo '------------------- '
-echo 'Configuration tool for the ickstream player deamon started. '
 #echo Distribution: `git rev-list --all | head -1`
 
+# ----------------------------------------
 # Interpret arguments
-debug=0
 while test $# -gt 0; do
 
   # build for debugging
-  if test "$1" = "debug"; then
-    debug=1
+  if test "$1" = "help"; then
+    help=true
+
+  # build for debugging
+  elif test "$1" = "debug"; then
+    debug=true
+
+  # suppress alsa
+  elif test "$1" = "noalsa"; then
+    noalsa=true
+
+  # suppress pulse audio
+  elif test "$1" = "nopulse"; then
+    nopulse=true
 
   # select hmi source
   elif echo "$1" | grep -q "^hmi="; then
@@ -47,16 +57,31 @@ while test $# -gt 0; do
 
   # unknown option
   else
-    echo "unknown parameter $1"
-    exit 1
+    echo "$0: unknown parameter \"$1\""
+    echo
+    help=true
   fi
   shift
 done
 
-echo '------------------- '
+
+# ----------------------------------------
+if ${help:-false}; then
+  echo "Usage: $0 [args ...]" 
+  echo ""
+  echo "Possible arguments:"
+  echo "  help      - this help"
+  echo "  debug     - build for debugging"
+  echo "  hmi=X     - Use HMI X (one of Generic)"
+  echo "  noalsa    - Don't use alsa audio backend"
+  echo "  nopulse   - Don't use pulse audio backend"
+  exit
+fi
+
+
+# ----------------------------------------
+echo
 echo -n 'Determine system type           : '
-
-
 systype=`uname -s`
 mchtype=`uname -m`
 reltype=`uname -r`
@@ -75,7 +100,7 @@ case $systype-$reltype-$mchname in
 
   Linux-*)
     echo "this seems to be a Linux machine, fine."
-    if test $debug = 1; then
+    if ${debug:-false}; then
       CFLAGS="-g -pipe -Wall -DICK_DEBUG"
       LDFLAGS="-g -rdynamic"
     else
@@ -85,10 +110,10 @@ case $systype-$reltype-$mchname in
     ;;
 
   *)
-	echo "so far your system is neither known nor supported by the"
-	echo "ickstream team. We'll proceed with generic settings."
-	echo "Feel free to add optimized settings for $systype-$reltype-$mchname"
-    if test $debug = 1; then
+    echo "so far your system is neither known nor supported by the" 
+    echo "ickstream team. We'll proceed with generic settings."
+    echo "Feel free to add optimized settings for $systype-$reltype-$mchname"
+    if t${debug:-false}; then
       CFLAGS="-g $CFLAGS -DICK_DEBUG"
       LDFLAGS="-g $LDFLAGS"
     fi
@@ -148,7 +173,7 @@ if echo "#include <curl/curl.h>" | gcc -o /dev/null -E -x c - 2>/dev/null; then
   #don't need -L part:     EXTRALIBS="$EXTRALIBS `curl-config --libs`"
   EXTRALIBS="$EXTRALIBS -lcurl"
 else
-  echo 'please install libcurl and retry...'
+  echo "please install libcurl and retry..."
   exit 1
 fi
 
@@ -159,13 +184,15 @@ if echo "#include <uuid/uuid.h>" | gcc -o /dev/null -E -x c - 2>/dev/null; then
   CFLAGS="$CFLAGS -DICK_UUID"
   EXTRALIBS="$EXTRALIBS -luuid"
 else
-  echo "not found"
+  echo "please install libuuid and retry..."
   exit 1
 fi
 
 # ----------------------------------------
 echo -n 'Check for alsa                  : '
-if echo "#include <alsa/asoundlib.h>" | gcc -o /dev/null -E -x c - 2>/dev/null; then
+if ${noalsa:-false}; then
+  echo "ignored"
+elif echo "#include <alsa/asoundlib.h>" | gcc -o /dev/null -E -x c - 2>/dev/null; then
   CFLAGS="$CFLAGS -DICK_ALSA"
   EXTRASRCS="$EXTRASRCS audioAlsa.c"
   EXTRALIBS="$EXTRALIBS -lasound"
@@ -176,7 +203,9 @@ fi
 
 # ----------------------------------------
 echo -n 'Check for pulse audio           : '
-if echo "#include <pulse/pulseaudio.h>" | gcc -o /dev/null -E -x c - 2>/dev/null; then
+if ${noaudio:-false}; then
+  echo "ignored"
+elif echo "#include <pulse/pulseaudio.h>" | gcc -o /dev/null -E -x c - 2>/dev/null; then
   CFLAGS="$CFLAGS -DICK_PULSEAUDIO"
   EXTRASRCS="$EXTRASRCS audioPulse.c"
   EXTRALIBS="$EXTRALIBS -lpulse"
@@ -219,7 +248,7 @@ CONFIG_INFO="# DO NOT EDIT (generated on `date` by $PWD/configure)"
 
 # ----------------------------------------
 echo -n 'Debugging                       : ' 
-if test $debug = 1; then
+if ${debug:-false}; then
   echo "enabled"
 else
   echo "disabled"
@@ -230,7 +259,9 @@ echo 'Used extra sources              :' $EXTRASRCS
 echo 'Used extra libs                 :' $EXTRALIBS
 
 
-echo '------------------- '
+# ----------------------------------------
+# Process templates
+#echo
 mkdir -p scripts
 cat > scripts/config.status << eof
 #!/bin/sh
@@ -238,7 +269,7 @@ dest=\`basename \$1 .in\`
 if test -r \$dest; then
   mv -f \$dest \$dest.bak
 fi
-echo Creating \$dest from \$1
+#echo Creating \$dest from \$1
 sed -e 's,@cinfo@,$CONFIG_INFO,g' \\
     -e 's,@icklibroot@,$ICK_ROOT,g' \\
     -e 's,@pkgname@,$PKGNAME,g' \\
@@ -262,18 +293,19 @@ chmod +x scripts/config.status
 # echo 'Running config.status : '
 ROOTDIR=$PWD
 for a in *.in `find daemon -name '*.in' -print`; do
-  echo -n "./`dirname $a` : "
+#  echo -n "./`dirname $a` : "
   cd `dirname $a`
   $ROOTDIR/scripts/config.status `basename $a`
   cd $ROOTDIR
 done
-echo '------------------- '
-echo Makefiles are configured for your system environment now. Type 
-echo '  make' 
-echo to build the library and executables
+
+# ----------------------------------------
 echo
-echo 'Have fun!  <c>2013 ickstream GmbH'
-echo '------------------- '
+echo "Makefiles are configured for your system environment now. Type"
+echo "  make"
+echo "to build the library and executables"
+echo
+echo "Have fun!  <c>2013 //MAF, ickstream GmbH"
 echo
 
 

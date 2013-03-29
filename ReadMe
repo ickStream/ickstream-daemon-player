@@ -5,11 +5,11 @@ Note that this is work in progress in alpha state, i.e. the code and even
 the underlying concept and architecture might and will change at any time!
 
 Before configuring make sure that the following libs are installed in 
-development version (i.e. with headers):
+development version (i.e. including headers):
 - libickstreamp2p
 - libjansson
 - libcurl
-- libuuid   (optional, recommended)
+- libuuid
 - libasound (optional, recommended)
 - libpulse  (optional)
 - libmpg123 (optional, recommended)
@@ -19,13 +19,9 @@ Configure the package by running configure, e.g.
 or
 ./configure debug hmi=Generic
 
-Options:
-  debug      - Set debug flag
-  hmi=X      - use HMI module X (omitted/default: no HMI)
-               available modules: Generic
-
-Run make and solve any missing dependencies by installing the libs mentioned 
-above and reconfiguring.
+Solve any missing dependencies by installing the libs mentioned above and 
+rerun configure. 
+Use "./configure help" for further options.
 
 For the first run, select an audio device (run "ickpd -al" to list all devices).
 Optionally select a network interface (if different from eth0):
@@ -39,9 +35,10 @@ Note: by default the device settings are persisted as part of the player state
 in the file ".ickpd_persist" and it is only necessary to set them once.
 You can reset the player state by deleting that file.
 
-Use "./ickpd" to find out how to set other parameters.
+Use "./ickpd -?" to find out how to set other parameters.
 
 Send SIGINT (Ctrl-c) to gracefully shut down the player.
+
 
 *************************************************************************
  * Copyright (c) 2013, //MAF, ickStream GmbH
