@@ -202,6 +202,12 @@ void playerShutdown( void )
   persistSetJSON_new( "PlayerQueue", playlistGetJSON(playerQueue,0,0) );
 
 /*------------------------------------------------------------------------*\
+    Shut down player thread (if any)
+\*------------------------------------------------------------------------*/
+  if( playerState==PlayerStatePlay || playerState==PlayerStatePause )
+    pthread_join( playbackThread, NULL );
+
+/*------------------------------------------------------------------------*\
     Close audio interface
 \*------------------------------------------------------------------------*/
   if( audioIf ) {
@@ -723,7 +729,7 @@ int playerSetState( PlayerState state, bool broadcast )
     Switch on target state 
 \*------------------------------------------------------------------------*/
   switch( state ) {
-  	
+
 /*------------------------------------------------------------------------*\
     Start or unpause playback
 \*------------------------------------------------------------------------*/
@@ -744,30 +750,30 @@ int playerSetState( PlayerState state, bool broadcast )
           logwarn( "_playerThread: could not set volume to %.2lf%%%s", 
                    playerVolume*100, playerMuted?" (muted)":"" ); 
       }
-  	  
+
       // Is there a track to play ?
       if( !newTrack ) {
-  	    lognotice( "_playbackStart: Empty queue or no cursor" );
-  	    rc = -1;
-  	    break;
+        lognotice( "_playbackStart: Empty queue or no cursor" );
+        rc = -1;
+       break;
       }
       
       // Unpausing existing track ?
       if( playerState==PlayerStatePause && currentTrackId && 
            !strcmp(playlistItemGetId(newTrack),currentTrackId) ) {
-  	    lognotice( "_playbackStart: Track \"%s\" (%s) unpaused", 
+        lognotice( "_playbackStart: Track \"%s\" (%s) unpaused",
                    playlistItemGetText(newTrack), playlistItemGetId(newTrack) );
         playerState = PlayerStatePlay;
-  	    rc = audioIfSetPause( audioIf, false );
-  	    break;
+        rc = audioIfSetPause( audioIf, false );
+        break;
       }
-  	  
-  	  // Need to stop running track?
-  	  if( playerState==PlayerStatePlay ) {
+
+     // Need to stop running track?
+      if( playerState==PlayerStatePlay ) {
         DBGMSG( "Stopping active player thread." );
-  	  	if( !currentTrackId )
-  	  	  logerr( "_playbackStart: internal error: playing but no current track." );
-  	  	else 
+        if( !currentTrackId )
+          logerr( "_playbackStart: internal error: playing but no current track." );
+        else
           lognotice( "_playbackStart: stopping current track (%s)", currentTrackId );
         if( playbackThreadState!=PlayerThreadRunning )
           logerr( "_playbackStart: internal error: playing but no running playback thread." );
@@ -775,8 +781,8 @@ int playerSetState( PlayerState state, bool broadcast )
           playbackThreadState = PlayerThreadTerminating;
           pthread_join( playbackThread, NULL ); 
         }
-  	  }
-  	  
+      }
+
       // Create new playback thread
       rc = pthread_create( &playbackThread, NULL, _playbackThread, NULL );
       DBGMSG( "Starting new player thread." );
@@ -798,15 +804,15 @@ int playerSetState( PlayerState state, bool broadcast )
      // not yet initialized?
       if( !audioIf ) {
         logerr( "_playbackPause: audio device not yet initialized." );
-      	rc = -1;
-      	break;
+        rc = -1;
+        break;
       } 
 
       // Is there a new track to play ?
       if( !newTrack ) {
-  	    lognotice( "_playbackPause: Empty queue or no cursor" );
-  	    rc = -1;
-  	    break;
+        lognotice( "_playbackPause: Empty queue or no cursor" );
+        rc = -1;
+        break;
       }
       
       // if the track did not change: set pause flag
@@ -846,14 +852,17 @@ int playerSetState( PlayerState state, bool broadcast )
 
       // request thread to stop playback and set new player state
       playbackThreadState = PlayerThreadTerminating;
+      if( playerState==PlayerStatePlay || playerState==PlayerStatePause )
+        pthread_join( playbackThread, NULL );
       playerState = PlayerStateStop;
+
       // Inform HMI
       hmiNewPosition( 0.0 );
       if( newTrack && (!currentTrackId || strcmp(playlistItemGetId(newTrack),currentTrackId)) )
         hmiNewItem( playerQueue, newTrack );
 
       break; 
-  	
+
 /*------------------------------------------------------------------------*\
     Unknown command
 \*------------------------------------------------------------------------*/
@@ -983,7 +992,7 @@ static void *_playbackThread( void *arg )
     codecInstance = codecInst;
     ickMessageNotifyPlayerState( NULL );
     lognotice( "_playerThread: Playing track \"%s\" (%s) with %s", 
-      	                playlistItemGetText(item), playlistItemGetId(item), 
+                        playlistItemGetText(item), playlistItemGetId(item),
                         audioFormatStr(NULL,&backendFormat) );
 
     // Inform HMI
@@ -1022,7 +1031,7 @@ static void *_playbackThread( void *arg )
     codecInstance = NULL;
     if( codecDeleteInstance(codecInst,true) )
       logerr( "_playerThread: Could not delete codec instance" );
-     	
+
     // Terminating ?
     if( playbackThreadState!=PlayerThreadRunning )
       break;
