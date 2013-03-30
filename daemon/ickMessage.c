@@ -280,6 +280,38 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
   }  
 
 /*------------------------------------------------------------------------*\
+    Set repeat mode
+\*------------------------------------------------------------------------*/
+  else if( !strcasecmp(method,"setRepeatMode") ) {
+    PlayerRepeatMode   mode;
+
+    // Get mode
+    jObj = json_object_get( jParams, "repeatMode" );
+    if( !jObj || !json_is_string(jObj) )  {
+      logerr( "ickMessage from %s: missing field \"repeatMode\": %s",
+                       szDeviceId, message );
+      json_decref( jRoot );
+      Sfree( message );
+      return;
+    }
+    mode = playerRepeatModeFromStr( json_string_value(jObj) );
+    if( mode<0 ) {
+      logerr( "ickMessage from %s: unknown repeat mode: %s",
+                       szDeviceId, json_string_value(jObj) );
+      json_decref( jRoot );
+      Sfree( message );
+      return;
+    }
+
+    // Set and broadcast player mode to account for skipped tracks
+    playerSetRepeatMode( mode, true );
+
+    // report current state
+    jResult = json_pack( "{si}",
+                         "repeatMode", playerRepeatModeToStr(playerGetRepeatMode()) );
+  }
+
+/*------------------------------------------------------------------------*\
     Set track index to play 
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"setTrack") ) {
@@ -560,6 +592,39 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
                          "result", 1, 
                          "playlistPos", playlistGetCursorPos(plst) );
   } 
+
+/*------------------------------------------------------------------------*\
+   Shuffle within playlist
+\*------------------------------------------------------------------------*/
+  else if( !strcasecmp(method,"shuffleTracks") ) {
+    Playlist      *plst    = playerGetQueue();
+    PlaylistItem  *item;
+    int            rangeStart = 0;
+    int            rangeEnd   = playlistGetLength( plst )-1;
+    int            result     = 1;
+
+    // Get explicit positions
+    jObj = json_object_get( jParams, "playlistStartPos" );
+    if( jObj && json_is_integer(jObj) )
+      rangeStart = json_integer_value( jObj );
+    jObj = json_object_get( jParams, "playlistEndPos" );
+    if( jObj && json_is_integer(jObj) )
+      rangeEnd = json_integer_value( jObj );
+
+    // Do the shuffling
+    if( rangeStart<rangeEnd ) {
+      if( !playlistShuffle(plst,rangeStart,rangeEnd,true) )
+        result = 0;
+
+      // Player queue has changed
+      playlistChanged = true;
+    }
+
+    // report result
+    jResult = json_pack( "{sbsi}",
+                         "result", result,
+                         "playlistPos", playlistGetCursorPos(plst) );
+  }
   
 /*------------------------------------------------------------------------*\
     Set player configuration
@@ -740,12 +805,13 @@ json_t *_jPlayerStatus( void )
   cursorPos = playlistGetCursorPos( plst );
   pChange   = playlistGetLastChange( plst );
   aChange   = playerGetLastChange( );
-  jResult   = json_pack( "{sbsfsisfsbsf}",
+  jResult   = json_pack( "{sbsfsisfsbsssf}",
   	                       "playing",     playerGetState()==PlayerStatePlay,
                            "seekPos",     playerGetSeekPos(),
                            "playlistPos", cursorPos,
                            "volumeLevel", playerGetVolume(), 
                            "muted",       playerGetMuting(),
+                           "repeatMode",  playerRepeatModeToStr(playerGetRepeatMode()),
                            "lastChanged", MAX(aChange,pChange) );
 
 /*------------------------------------------------------------------------*\

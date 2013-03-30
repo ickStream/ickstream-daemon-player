@@ -112,6 +112,9 @@ double             playerSetVolume( double volume, bool muted, bool broadcast );
 int                playerSetRepeatMode( PlayerRepeatMode state, bool broadcast );
 int                playerSetState( PlayerState state, bool broadcast );
 
+const char        *playerRepeatModeToStr( PlayerRepeatMode );
+PlayerRepeatMode   playerRepeatModeFromStr( const char *str );
+
 
 
 #endif  /* __PLAYER_H */

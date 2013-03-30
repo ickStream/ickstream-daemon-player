@@ -1084,6 +1084,46 @@ static void *_playbackThread( void *arg )
 
 
 /*=========================================================================*\
+      Get an ickstream protocol string from repeat mode
+\*=========================================================================*/
+const char *playerRepeatModeToStr( PlayerRepeatMode mode )
+{
+  DBGMSG( "playerRepeatModeToStr: mode %d", mode );
+
+  // Translate
+  switch( mode ) {
+    case PlayerRepeatOff:     return "REPEAT_OFF";
+    case PlayerRepeatItem:    break;
+    case PlayerRepeatQueue:   return "REPEAT_PLAYLIST";
+    case PlayerRepeatShuffle: return "REPEAT_PLAYLIST_AND_SHUFFLE";
+  }
+
+  // Not known or unsupported
+  logerr( "Repeat mode %d unknown or not supported by ickstream protocol.");
+  return "REPEAT_OFF";
+}
+
+/*=========================================================================*\
+      Get repeat mode form ickstream protocol string
+\*=========================================================================*/
+PlayerRepeatMode playerRepeatModeFromStr( const char *str )
+{
+  DBGMSG( "playerRepeatModeFromStr: \"%s\"", str );
+
+  // Translate
+  if( !strcmp(str,"REPEAT_OFF") )
+    return PlayerRepeatOff;
+  if( !strcmp(str,"REPEAT_PLAYLIST") )
+    return PlayerRepeatQueue;
+  if( !strcmp(str,"REPEAT_PLAYLIST_AND_SHUFFLE") )
+    return PlayerRepeatShuffle;
+
+  // Not known or unsupported
+  return -1;
+}
+
+
+/*=========================================================================*\
       Get an audio feed for an playlist item 
         return Feed on success, NULL on error
         *codec is set to the first matching codec
