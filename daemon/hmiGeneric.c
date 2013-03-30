@@ -111,8 +111,10 @@ void hmiNewItem( Playlist *plst, PlaylistItem *item )
   DBGMSG( "new track: %p", item );
   currentItem = item;
 
+  playlistLock( plst );
   printf( "HMI Playback track   : (%d/%d) \"%s\"\n", playlistGetCursorPos(plst)+1, 
            playlistGetLength(plst), item?playlistItemGetText(item):"<None>" );
+  playlistUnlock( plst );
 }
 
 

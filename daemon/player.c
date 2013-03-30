@@ -160,7 +160,9 @@ int playerInit( void )
 \*------------------------------------------------------------------------*/
   json_t *jQueue = persistGetJSON( "PlayerQueue" );
   playerQueue    = playlistFromJSON( jQueue );
+  playlistLock( playerQueue );
   playlistSetCursorPos( playerQueue, persistGetInteger("PlayerQueuePosition") );
+  playlistUnlock( playerQueue );
 
 /*------------------------------------------------------------------------*\
     Get repeat mode
@@ -196,10 +198,12 @@ void playerShutdown( void )
   DBGMSG( "Shutting down player module..." );
   
 /*------------------------------------------------------------------------*\
-    Save playlist state
+    Save playback queue state
 \*------------------------------------------------------------------------*/
+  playlistLock( playerQueue );
   persistSetInteger( "PlayerQueuePosition", playlistGetCursorPos(playerQueue) );
   persistSetJSON_new( "PlayerQueue", playlistGetJSON(playerQueue,0,0) );
+  playlistUnlock( playerQueue );
 
 /*------------------------------------------------------------------------*\
     Shut down player thread (if any)
@@ -267,8 +271,9 @@ Playlist *playerGetQueue( void )
 void playerResetQueue( void )
 {
   DBGMSG( "playerResetQueue" );
-  playlistDelete( playerQueue );
-  playerQueue = playlistNew();
+  playlistLock( playerQueue );
+  playlistReset( playerQueue );
+  playlistUnlock( playerQueue );
 }
 
 
@@ -723,8 +728,10 @@ int playerSetState( PlayerState state, bool broadcast )
 /*------------------------------------------------------------------------*\
     Get current playback item to detect changes in the queue 
 \*------------------------------------------------------------------------*/
+  playlistLock( playerQueue );
   newTrack = playlistGetCursorItem( playerQueue );
-   
+  playlistUnlock( playerQueue );
+
 /*------------------------------------------------------------------------*\
     Switch on target state 
 \*------------------------------------------------------------------------*/
@@ -898,8 +905,10 @@ static void *_playbackThread( void *arg )
 /*------------------------------------------------------------------------*\
     Loop over player queue 
 \*------------------------------------------------------------------------*/
-  playbackThreadState = PlayerThreadRunning; 
+  playbackThreadState = PlayerThreadRunning;
+  playlistLock( playerQueue );
   item = playlistGetCursorItem( playerQueue );
+  playlistUnlock( playerQueue );
   while( item && playbackThreadState==PlayerThreadRunning ) {
     AudioFeed     *feed;
     Codec         *codec;
@@ -916,7 +925,9 @@ static void *_playbackThread( void *arg )
     if( !feed ) {
       lognotice( "_playerThread: Track \"%s\" (%s) unavailable or unsupported by audio module", 
                           playlistItemGetText(item), playlistItemGetId(item) );
+      playlistLock( playerQueue );
       item = playlistIncrCursorItem( playerQueue );
+      playlistUnlock( playerQueue );
       continue;
     }
 
@@ -1041,17 +1052,24 @@ static void *_playbackThread( void *arg )
       continue;
 
     // Get next item
+    playlistLock( playerQueue );
     item = playlistIncrCursorItem( playerQueue );
+    playlistUnlock( playerQueue );
     if( item )
       continue;
 
     // repeat at end of list
-    if( playerRepeatMode==PlayerRepeatQueue )
+    if( playerRepeatMode==PlayerRepeatQueue ) {
+      playlistLock( playerQueue );
       item = playlistSetCursorPos( playerQueue, 0 );
+      playlistUnlock( playerQueue );
+    }
 
     // repeat at end of list with shuffling
     else if( playerRepeatMode==PlayerRepeatShuffle ) {
+      playlistLock( playerQueue );
       item = playlistShuffle( playerQueue, 0, playlistGetLength(playerQueue)-1, false );
+      playlistUnlock( playerQueue );
       ickMessageNotifyPlaylist( NULL );
      }
 

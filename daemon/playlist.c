@@ -100,15 +100,6 @@ struct _playlist {
 /*=========================================================================*\
         Private prototypes
 \*=========================================================================*/
-static int           _playlistGetCursorPos( Playlist *plst );
-static void          _playlistReset( Playlist *plst );
-static void          _playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem, PlaylistItem *newItem );
-static void          _playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem, PlaylistItem *newItem );
-static void          _playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem );
-static void          _playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistItem *pItem2 );
-static PlaylistItem *_playlistGetItem( Playlist *plst, int pos );
-static PlaylistItem *_playlistGetItemById( Playlist *plst, const char *id );
-
 #ifdef CONSISTENCYCHECKING
 #define CHKLIST( p ) _playlistCheckList( __FILE__, __LINE__, (p) );
 static int _playlistCheckList( const char *file, int line, Playlist *plst );
@@ -226,10 +217,63 @@ void playlistDelete( Playlist *plst )
    pthread_mutex_lock( &plst->mutex );
 
 /*------------------------------------------------------------------------*\
-    Free all items
+    Free all items and reset header
 \*------------------------------------------------------------------------*/
-  _playlistReset( plst );
+  playlistReset( plst );
   
+/*------------------------------------------------------------------------*\
+    Unlock and free header
+\*------------------------------------------------------------------------*/
+  pthread_mutex_unlock( &plst->mutex );
+  Sfree( plst );
+}
+
+
+/*=========================================================================*\
+       Lock playlist
+\*=========================================================================*/
+void playlistLock( Playlist *plst )
+{
+  DBGMSG( "playlistLock: %p", plst );
+  pthread_mutex_lock( &plst->mutex );
+}
+
+/*=========================================================================*\
+       Unlock playlist
+\*=========================================================================*/
+void playlistUnlock( Playlist *plst )
+{
+  DBGMSG( "playlistUnock: %p", plst );
+  pthread_mutex_unlock( &plst->mutex );
+}
+
+
+/*=========================================================================*\
+       Reset a playlist: remove all entries
+\*=========================================================================*/
+void playlistReset( Playlist *plst )
+{
+  PlaylistItem *item, *next;
+  DBGMSG( "playlistReset (%p)", plst );
+  CHKLIST( plst );
+
+/*------------------------------------------------------------------------*\
+    Free all items (unlinking not necessary)
+\*------------------------------------------------------------------------*/
+  for( item=plst->firstItem; item; item=next ) {
+    next = item->next;
+    playlistItemDelete( item );
+  }
+
+/*------------------------------------------------------------------------*\
+    Reset pointers
+\*------------------------------------------------------------------------*/
+  plst->firstItem      = NULL;
+  plst->lastItem       = NULL;
+  plst->_cursorItem    = NULL;
+  plst->_numberOfItems = 0;
+  plst->_cursorPos     = 0;
+
 /*------------------------------------------------------------------------*\
     Free all header features
 \*------------------------------------------------------------------------*/
@@ -237,10 +281,8 @@ void playlistDelete( Playlist *plst )
   Sfree( plst->name );
 
 /*------------------------------------------------------------------------*\
-    Unlock and free header
+    That's all
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &plst->mutex );
-  Sfree( plst );
 }
 
 
@@ -253,7 +295,7 @@ void playlistSetId( Playlist *plst, const char *id )
   CHKLIST( plst );
 
   Sfree( plst->id );
-  plst->id = strdup( id );    
+  plst->id = strdup( id );
 }
 
 
@@ -266,7 +308,7 @@ void playlistSetName( Playlist *plst, const char *name )
   CHKLIST( plst );
 
   Sfree( plst->name );
-  plst->name = strdup( name );    
+  plst->name = strdup( name );
 }
 
 
@@ -302,7 +344,7 @@ int playlistGetLength( Playlist *plst )
   DBGMSG( "playlistGetLength %p: %d", plst, plst->_numberOfItems );
   CHKLIST( plst );
 
-  return plst->_numberOfItems;    
+  return plst->_numberOfItems;
 }
 
 
@@ -314,7 +356,7 @@ double playlistGetLastChange( Playlist *plst )
   DBGMSG( "playlistGetLastChange %p: %lf", plst, plst->lastChange ); 
   CHKLIST( plst );
 
-  return plst->lastChange;        
+  return plst->lastChange;
 }
 
 
@@ -325,22 +367,26 @@ double playlistGetLastChange( Playlist *plst )
 \*=========================================================================*/
 int playlistGetCursorPos( Playlist *plst )
 {
+  CHKLIST( plst );
 
-/*------------------------------------------------------------------------*\
-    Lock mutex
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
-    
 /*------------------------------------------------------------------------*\
     Find position of current item if index is invalid
 \*------------------------------------------------------------------------*/
-  _playlistGetCursorPos( plst );
+  if( plst->_cursorPos<0 ) {
+    int pos = 0;
+    PlaylistItem *item = plst->firstItem;
+    while( item && item!=plst->_cursorItem && plst->_cursorItem ) {
+      item = item->next;
+      pos++;
+    }
+    plst->_cursorPos = pos;
+  }
 
 /*------------------------------------------------------------------------*\
-    Unlock mutex and return result
+    Return position
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &plst->mutex );
-  return plst->_cursorPos;    
+  DBGMSG( "playlistGetCursorPos %p: %d", plst, plst->_cursorPos );
+  return plst->_cursorPos;
 }
 
 
@@ -354,21 +400,15 @@ PlaylistItem *playlistGetCursorItem( Playlist *plst )
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
-    Lock mutex
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
-    
-/*------------------------------------------------------------------------*\
     Set first item as default
 \*------------------------------------------------------------------------*/
   if( !plst->_cursorItem )
     plst->_cursorItem = plst->firstItem;
       
 /*------------------------------------------------------------------------*\
-    Unlock mutex and return item at cursor
+    Return item at cursor
 \*------------------------------------------------------------------------*/
   DBGMSG( "playlistGetCursorItem %p:  %p", plst, plst->_cursorItem );
-  pthread_mutex_unlock( &plst->mutex );
   return plst->_cursorItem;
 }
 
@@ -383,14 +423,9 @@ PlaylistItem *playlistSetCursorPos( Playlist *plst, int pos )
   PlaylistItem *item;
 
 /*------------------------------------------------------------------------*\
-    Lock mutex
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
-     
-/*------------------------------------------------------------------------*\
     Get item at pos
 \*------------------------------------------------------------------------*/
-  item = _playlistGetItem( plst, pos );
+  item = playlistGetItem( plst, pos );
 
 /*------------------------------------------------------------------------*\
     If found: store at pointer and invalidate index
@@ -401,9 +436,8 @@ PlaylistItem *playlistSetCursorPos( Playlist *plst, int pos )
   }
 
 /*------------------------------------------------------------------------*\
-   Unlock and return 
+   That's all
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &plst->mutex );
   DBGMSG( "playlistSetCursor %p: pos=%d -> %p", plst, pos, item );            
   return item;
 }
@@ -419,11 +453,6 @@ PlaylistItem *playlistIncrCursorItem( Playlist *plst )
 
   DBGMSG( "playlistIncrCursorPos %p: items %p->%p", plst, item, item?item->next:NULL );  
   CHKLIST( plst );
-
-/*------------------------------------------------------------------------*\
-    Lock mutex
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
 
 /*------------------------------------------------------------------------*\
     No successor?
@@ -445,10 +474,74 @@ PlaylistItem *playlistIncrCursorItem( Playlist *plst )
     plst->_cursorPos++;
 
 /*------------------------------------------------------------------------*\
-    Unlock mutex and return current item
+    Return current item
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &plst->mutex );
   return plst->_cursorItem;
+}
+
+
+/*=========================================================================*\
+       Transpose two items
+          returns true, if items are different, false else
+\*=========================================================================*/
+bool playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistItem *pItem2 )
+{
+  PlaylistItem *item;
+
+  DBGMSG( "playlistTranspose (%p): %p <-> %p", plst, pItem1, pItem2 );
+  CHKLIST( plst );
+
+/*------------------------------------------------------------------------*\
+    Nothing to do?
+\*------------------------------------------------------------------------*/
+  if( pItem1==pItem2 )
+    return 0;
+
+/*------------------------------------------------------------------------*\
+    Swap forward links and adjust backward pointers of following elements
+\*------------------------------------------------------------------------*/
+  item = pItem1->next;
+  pItem1->next = pItem2->next;
+  pItem2->next = item;
+  if( pItem1->next )
+    pItem1->next->prev = pItem1;
+  if( pItem2->next )
+    pItem2->next->prev = pItem2;
+
+/*------------------------------------------------------------------------*\
+    Swap backward links and adjust forward pointers of previous elements
+\*------------------------------------------------------------------------*/
+  item = pItem1->prev;
+  pItem1->prev = pItem2->prev;
+  pItem2->prev = item;
+  if( pItem1->prev )
+    pItem1->prev->next = pItem1;
+  if( pItem2->prev )
+    pItem2->prev->next = pItem2;
+
+/*------------------------------------------------------------------------*\
+    Adjust root pointers
+\*------------------------------------------------------------------------*/
+  if( !pItem2->prev )
+    plst->firstItem = pItem2;
+  else if( !pItem1->prev )
+    plst->firstItem = pItem1;
+  if( !pItem2->next )
+    plst->lastItem = pItem2;
+  else if( !pItem1->next )
+    plst->lastItem = pItem1;
+
+/*------------------------------------------------------------------------*\
+    Invlidate cursor index if cursor is part of the exchange
+\*------------------------------------------------------------------------*/
+  if( plst->_cursorItem==pItem1 || plst->_cursorItem==pItem2  )
+    plst->_cursorPos = -1;
+
+/*------------------------------------------------------------------------*\
+    Adjust timestamp and return
+\*------------------------------------------------------------------------*/
+  plst->lastChange = srvtime();
+  return true;
 }
 
 
@@ -470,27 +563,20 @@ PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool mo
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
-    Lock mutex
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
-
-/*------------------------------------------------------------------------*\
     Check end position
 \*------------------------------------------------------------------------*/
   if( endPos>=plst->_numberOfItems ) {
     logerr( "playlistShuffle (%p): invalid end position %d/%d", 
             plst, endPos, plst->_numberOfItems );
-    pthread_mutex_unlock( &plst->mutex );
     return NULL;
   }
 
 /*------------------------------------------------------------------------*\
     Get first element and swap with cursor if requested
 \*------------------------------------------------------------------------*/
-  item1 = _playlistGetItem( plst, startPos );
+  item1 = playlistGetItem( plst, startPos );
   if( !item1 ) {
     logerr( "playlistShuffle (%p): invalid start position %d", plst, startPos );
-    pthread_mutex_unlock( &plst->mutex );
     return NULL;
   }
 
@@ -498,7 +584,7 @@ PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool mo
     Swap with cursor if requested and increment to next element
 \*------------------------------------------------------------------------*/
   if( moveCursorToStart ) {
-    _playlistTranspose( plst, item1, plst->_cursorItem );
+    playlistTranspose( plst, item1, plst->_cursorItem );
     item1 = plst->_cursorItem->next;
     pos++;
   }
@@ -508,14 +594,14 @@ PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool mo
 \*------------------------------------------------------------------------*/
   while( pos<endPos ) {
     int rnd = (int)rndInteger( pos, endPos );
-    item2   = _playlistGetItem( plst, rnd );
+    item2   = playlistGetItem( plst, rnd );
     if( !item1 || !item2 ) {
       logerr( "playlistShuffle (%p): corrupt linked list @%d(%p)<->%d(%p)/%d", 
                plst, pos, item1, rnd, item2, endPos );
       break;
     }
     DBGMSG( "playlistShuffle (%p): swap %d<->%d/%d ", plst, pos, rnd, endPos  );  
-    _playlistTranspose( plst, item1, item2 );
+    playlistTranspose( plst, item1, item2 );
     item1 = item2->next;
     pos++;
   }
@@ -523,13 +609,12 @@ PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool mo
 /*------------------------------------------------------------------------*\
     Set cursor to start of range
 \*------------------------------------------------------------------------*/
-  plst->_cursorItem = _playlistGetItem( plst, startPos );
+  plst->_cursorItem = playlistGetItem( plst, startPos );
   plst->_cursorPos  = -1;
 
 /*------------------------------------------------------------------------*\
-    Unlock mutex and return item under cursor
+    Return item under cursor
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &plst->mutex );
   return plst->_cursorItem;
 }
 
@@ -548,11 +633,6 @@ json_t *playlistGetJSON( Playlist *plst, int offset, int count )
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
-    Lock mutex
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
-
-/*------------------------------------------------------------------------*\
     A zero count argument means all
 \*------------------------------------------------------------------------*/
   if( !count )
@@ -561,7 +641,7 @@ json_t *playlistGetJSON( Playlist *plst, int offset, int count )
 /*------------------------------------------------------------------------*\
     Collect all requested items
 \*------------------------------------------------------------------------*/
-  pItem = _playlistGetItem( plst, offset );
+  pItem = playlistGetItem( plst, offset );
   while( pItem && count-- ) {
     json_array_append(jResult, pItem->jItem);
     // DBGMSG( "playlistGetJSON: JSON refCnt=%d", pItem->jItem->refcount );
@@ -583,11 +663,10 @@ json_t *playlistGetJSON( Playlist *plst, int offset, int count )
     json_object_set_new( jResult, "playlistId", json_string(plst->id) );
   if( plst->name )
     json_object_set_new( jResult, "playlistName", json_string(plst->name) );
-                                                    
+
 /*------------------------------------------------------------------------*\
-    Unlock mutex and return
+    That's all
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &plst->mutex );
   DBGMSG( "playlistGetJSON: result %p", jResult ); 
   return jResult;                       
 }
@@ -600,22 +679,28 @@ json_t *playlistGetJSON( Playlist *plst, int offset, int count )
 \*=========================================================================*/
 PlaylistItem *playlistGetItem( Playlist *plst, int pos )
 {
-  PlaylistItem *item;
+  PlaylistItem *item = plst->firstItem;
+#ifdef ICK_DEBUG
+  int posbuf = pos;
+#endif
+  CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
-    Lock mutex
+    Check for lower bound
 \*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
-  
+  if( pos<0 )
+    item = NULL;
+
 /*------------------------------------------------------------------------*\
-    use internal function
+    Loop over list
 \*------------------------------------------------------------------------*/
-  item = _playlistGetItem( plst, pos );
+  while( pos-- && item )
+     item = item->next;
      
 /*------------------------------------------------------------------------*\
-    Unlock mutex and return
+    Return
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &plst->mutex );
+  DBGMSG( "playlistGetItem (%p): pos=%d -> %p", plst, posbuf, item );
   return item;         
 }
 
@@ -627,22 +712,20 @@ PlaylistItem *playlistGetItem( Playlist *plst, int pos )
 PlaylistItem *playlistGetItemById( Playlist *plst, const char *id )
 {
   PlaylistItem *item;
+  CHKLIST( plst );
 
-/*------------------------------------------------------------------------*\
-    Lock mutex
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
+ /*------------------------------------------------------------------------*\
+     Loop over list and check Id
+ \*------------------------------------------------------------------------*/
+   for( item=plst->firstItem; item; item=item->next )
+     if( !strcmp(item->id,id) )
+       break;
 
-/*------------------------------------------------------------------------*\
-    use internal function
-\*------------------------------------------------------------------------*/
-  item = _playlistGetItemById( plst, id );
-  
-/*------------------------------------------------------------------------*\
-    Unlock mutex and return
-\*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &plst->mutex );
-  return item;         
+ /*------------------------------------------------------------------------*\
+     Return
+ \*------------------------------------------------------------------------*/
+   DBGMSG( "playlistGetItemById(%p): id=\"%s\" -> %p", plst, id, item );
+   return item;
 }
 
 
@@ -756,6 +839,7 @@ const char *playlistItemGetId( PlaylistItem *pItem )
   return pItem->id;
 }
 
+
 /*=========================================================================*\
        Get JSON representation of playlist item
 \*=========================================================================*/
@@ -764,12 +848,25 @@ json_t *playlistItemGetJSON( PlaylistItem *pItem )
   return pItem->jItem;
 }
 
+
 /*=========================================================================*\
        Get stream reference list for playlist item
 \*=========================================================================*/
 json_t *playlistItemGetStreamingRefs( PlaylistItem *pItem )
 {
   return pItem->jStreamingRefs;
+}
+
+
+/*=========================================================================*\
+       Manipulate meta data of the playlist item
+\*=========================================================================*/
+int playlistItemSetMetaData( PlaylistItem *pItem, json_t *metaObj, bool replace )
+{
+  DBGMSG( "playlistItemSetMetaData (%p,%s): %p replace:%s",
+           pItem, pItem->text, metaObj, replace?"On":"Off" );
+
+  return 0;
 }
 
 
@@ -788,21 +885,16 @@ int playlistAddItems( Playlist *plst, int pos, json_t *jItems, bool resetFlag )
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
-    Lock mutex
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
-
-/*------------------------------------------------------------------------*\
     Get anchor item (if any)
 \*------------------------------------------------------------------------*/
   if( pos>=0 )
-    anchorItem = _playlistGetItem( plst, pos );
+    anchorItem = playlistGetItem( plst, pos );
 
 /*------------------------------------------------------------------------*\
     Reset playlist?
 \*------------------------------------------------------------------------*/
   if( resetFlag )
-    _playlistReset( plst );
+    playlistReset( plst );
     
 /*------------------------------------------------------------------------*\
     Loop over all items to add
@@ -819,18 +911,17 @@ int playlistAddItems( Playlist *plst, int pos, json_t *jItems, bool resetFlag )
 
     // Add new item to playlist before anchor 
     else if( anchorItem )
-      _playlistAddItemBefore( plst, anchorItem, pItem );
+      playlistAddItemBefore( plst, anchorItem, pItem );
       
     // Add new item to end of list
     else
-      _playlistAddItemAfter( plst, NULL, pItem );
+      playlistAddItemAfter( plst, NULL, pItem );
 
   }  // next item from list
 
 /*------------------------------------------------------------------------*\
-    Unlock mutex and return
+    That's all
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &plst->mutex );
   return rc;
 }
 
@@ -845,11 +936,6 @@ int playlistDeleteItems( Playlist *plst, json_t *jItems )
 
   DBGMSG( "playlistdeteletItems (%p)", plst ); 
   CHKLIST( plst );
-
-/*------------------------------------------------------------------------*\
-    Lock mutex
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
 
 /*------------------------------------------------------------------------*\
     Loop over all items to remove
@@ -872,14 +958,14 @@ int playlistDeleteItems( Playlist *plst, json_t *jItems )
     jObj = json_object_get( jItem, "playlistPos" );
     if( jObj && json_is_integer(jObj) ) {
       int           pos   = json_integer_value( jObj );
-      PlaylistItem *pItem = _playlistGetItem( plst, pos );
+      PlaylistItem *pItem = playlistGetItem( plst, pos );
       if( pItem && strcmp(id,pItem->id) ) {
         logwarn( "playlistDeleteItems (%p): item #%d id \"%s\" differs from \"%s\" at explicite position %d.", 
                   plst, i, id, pItem->id, pos );
         rc = -1;
       }
       if( pItem ) { 
-        _playlistUnlinkItem( plst, pItem );
+        playlistUnlinkItem( plst, pItem );
         playlistItemDelete( pItem );
       }
       else
@@ -889,19 +975,18 @@ int playlistDeleteItems( Playlist *plst, json_t *jItems )
       
     // Remove all items with this ID
     else for(;;) {
-      PlaylistItem *pItem = _playlistGetItemById( plst, id );
+      PlaylistItem *pItem = playlistGetItemById( plst, id );
       if( !pItem )
         break;
-      _playlistUnlinkItem( plst, pItem );
+      playlistUnlinkItem( plst, pItem );
       playlistItemDelete( pItem );
     }
 
   }  // next item from list
 
 /*------------------------------------------------------------------------*\
-    Unlock mutex and return
+    That's it
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &plst->mutex );
   return rc;
 }
 
@@ -922,15 +1007,10 @@ int playlistMoveItems( Playlist *plst, int pos, json_t *jItems )
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
-    Lock mutex
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
-
-/*------------------------------------------------------------------------*\
     Get anchor item (if any)
 \*------------------------------------------------------------------------*/
   if( pos>=0 )
-    anchorItem = _playlistGetItem( plst, pos );
+    anchorItem = playlistGetItem( plst, pos );
 
 /*------------------------------------------------------------------------*\
     Allocate temporary array of items to move
@@ -939,7 +1019,6 @@ int playlistMoveItems( Playlist *plst, int pos, json_t *jItems )
   pItems   = calloc( json_array_size(jItems), sizeof(PlaylistItem *) );
   if( !pItems ) {
     logerr( "playlistMoveItems (%p): out of memory", plst );
-    pthread_mutex_unlock( &plst->mutex );
     return -1;
   }
 
@@ -964,7 +1043,7 @@ int playlistMoveItems( Playlist *plst, int pos, json_t *jItems )
     pos   = json_integer_value( jObj );
       
     // Get item 
-    pItem = _playlistGetItem( plst, pos );
+    pItem = playlistGetItem( plst, pos );
     if( !pItem ) {
       logwarn( "playlistMoveItems (%p): item #%d has invalid explicite position %d.", 
                 plst, i, pos );
@@ -1011,23 +1090,22 @@ int playlistMoveItems( Playlist *plst, int pos, json_t *jItems )
     Unlink all identified items, but do not delete them
 \*------------------------------------------------------------------------*/
   for( i=0; i<pItemCnt; i++ )
-    _playlistUnlinkItem( plst, pItems[i] ); 
+    playlistUnlinkItem( plst, pItems[i] );
     
 /*------------------------------------------------------------------------*\
     Reinsert the items at new position
 \*------------------------------------------------------------------------*/
   for( i=0; i<pItemCnt; i++ ) {
     if( anchorItem )
-      _playlistAddItemBefore( plst, anchorItem, pItems[i] );
+      playlistAddItemBefore( plst, anchorItem, pItems[i] );
     else 
-      _playlistAddItemAfter( plst, NULL, pItems[i] );
+      playlistAddItemAfter( plst, NULL, pItems[i] );
   }
   
 /*------------------------------------------------------------------------*\
-    Free temporary list of items to move, unlock mutex and return
+    Free temporary list of items to move and return
 \*------------------------------------------------------------------------*/
   Sfree( pItems );
-  pthread_mutex_unlock( &plst->mutex );
   return rc;
 }
 
@@ -1040,145 +1118,6 @@ void playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem,
                                             PlaylistItem *newItem )
 {
   DBGMSG( "playlistAddItemBefore: anchor:%p new:%p", anchorItem, newItem ); 
-
-/*------------------------------------------------------------------------*\
-    Lock mutex
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
-
-/*------------------------------------------------------------------------*\
-    Use internal function
-\*------------------------------------------------------------------------*/
-  _playlistAddItemBefore( plst, anchorItem, newItem );
-
-/*------------------------------------------------------------------------*\
-    Unlock mutex and return
-\*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &plst->mutex );
-}
-
-
-/*=========================================================================*\
-       Add an item after another one
-          if anchor is NULL, the item is added to the end of the list
-\*=========================================================================*/
-void playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem, 
-                                           PlaylistItem *newItem )
-{
-   DBGMSG( "playlistAddItemAfter: anchor:%p new:%p", anchorItem, newItem ); 
-
-/*------------------------------------------------------------------------*\
-    Lock mutex
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
-
-/*------------------------------------------------------------------------*\
-    Use internal function
-\*------------------------------------------------------------------------*/
-  _playlistAddItemAfter( plst, anchorItem, newItem );
-
-/*------------------------------------------------------------------------*\
-    Unlock mutex and return
-\*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &plst->mutex );
-}
-
-
-/*=========================================================================*\
-       Unlink an item from list
-         does not check if item is actually a member of this playlist!
-         item needs to be deleted afterwards
-         links of item will not be changed and can be used after unlinking
-         if the cursor item is unlinked, the curser shifts to the next one
-\*=========================================================================*/
-void playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem )
-{
-  DBGMSG( "playlistUnlinkItem: %p", pItem ); 
-
-/*------------------------------------------------------------------------*\
-    Lock mutex
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
-
-/*------------------------------------------------------------------------*\
-    Use internal function
-\*------------------------------------------------------------------------*/
-  _playlistUnlinkItem( plst, pItem );
-
-/*------------------------------------------------------------------------*\
-    Unlock mutex and return
-\*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &plst->mutex );
-}
-
-
-/*=========================================================================*\
-       Get cursor position (aka current track), internal version without locking 
-         counting starts with 0 (which is also the default)
-         return 0 on empty list
-\*=========================================================================*/
-static int _playlistGetCursorPos( Playlist *plst )
-{
-  CHKLIST( plst );
-
-/*------------------------------------------------------------------------*\
-    Find position of current item if index is invalid
-\*------------------------------------------------------------------------*/
-  if( plst->_cursorPos<0 ) {
-    int pos = 0;
-    PlaylistItem *item = plst->firstItem;
-    while( item && item!=plst->_cursorItem && plst->_cursorItem ) {
-      item = item->next;
-      pos++;
-    }
-    plst->_cursorPos = pos;
-  }
-
-/*------------------------------------------------------------------------*\
-    Return position
-\*------------------------------------------------------------------------*/
-  DBGMSG( "_playlistGetCursorPos %p: %d", plst, plst->_cursorPos );
-  return plst->_cursorPos;
-}
-
-
-/*=========================================================================*\
-       Reset a playlist: remove all entries
-\*=========================================================================*/
-static void _playlistReset( Playlist *plst )
-{
-  PlaylistItem *item, *next;
-  DBGMSG( "_playlistReset (%p)", plst ); 
-  CHKLIST( plst );
-
-/*------------------------------------------------------------------------*\
-    Free all items (unlinking not necessary)
-\*------------------------------------------------------------------------*/
-  for( item=plst->firstItem; item; item=next ) {
-    next = item->next;
-    playlistItemDelete( item );
-  }
-
-/*------------------------------------------------------------------------*\
-    Reset pointers
-\*------------------------------------------------------------------------*/
-  plst->firstItem      = NULL;
-  plst->lastItem       = NULL;
-  plst->_cursorItem    = NULL;
-  plst->_numberOfItems = 0;
-  plst->_cursorPos     = 0;
-}
-
-
-/*=========================================================================*\
-       Add an item before another one
-          if anchor is NULL, the item is added to the beginning of the list
-\*=========================================================================*/
-static void _playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem, 
-                                             PlaylistItem *newItem )
-{
-  DBGMSG( "_playlistAddItemBefore (%p): anchor:%p new:%p", 
-           plst, anchorItem, newItem ); 
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
@@ -1213,7 +1152,7 @@ static void _playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem,
   plst->_cursorPos = -1;
   
 /*------------------------------------------------------------------------*\
-    Adjust timestamp
+    Adjust timestamp, that's it
 \*------------------------------------------------------------------------*/
   plst->lastChange = srvtime();
 }
@@ -1223,12 +1162,11 @@ static void _playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem,
        Add an item after another one
           if anchor is NULL, the item is added to the end of the list
 \*=========================================================================*/
-static void _playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem, 
-                                            PlaylistItem *newItem )
+void playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem,
+                                           PlaylistItem *newItem )
 {
-  DBGMSG( "_playlistAddItemAfter (%p): anchor:%p new:%p", 
-            plst, anchorItem, newItem ); 
-  CHKLIST( plst );
+   DBGMSG( "playlistAddItemAfter: anchor:%p new:%p", anchorItem, newItem );
+   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Default
@@ -1264,7 +1202,7 @@ static void _playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem,
 /*------------------------------------------------------------------------*\
     Adjust timestamp
 \*------------------------------------------------------------------------*/
-  plst->lastChange = srvtime();    
+  plst->lastChange = srvtime();
 }
 
 
@@ -1272,12 +1210,12 @@ static void _playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem,
        Unlink an item from list
          does not check if item is actually a member of this playlist!
          item needs to be deleted afterwards
-         links of items will not be changed and can be used after unlinking
+         links of item will not be changed and can be used after unlinking
          if the cursor item is unlinked, the curser shifts to the next one
 \*=========================================================================*/
-static void _playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem )
+void playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem )
 {
-  DBGMSG( "_playlistUnlinkItem (%p): %p", plst, pItem ); 
+  DBGMSG( "playlistUnlinkItem: %p", pItem );
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
@@ -1291,7 +1229,7 @@ static void _playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem )
     plst->firstItem = pItem->next;
   if( pItem==plst->lastItem )
     plst->lastItem = pItem->prev;
-          
+
 /*------------------------------------------------------------------------*\
     Adjust list count and cursor, invlidate cursor index
 \*------------------------------------------------------------------------*/
@@ -1299,132 +1237,13 @@ static void _playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem )
   plst->_cursorPos = -1;
   if( plst->_cursorItem==pItem )
     plst->_cursorItem = pItem->next;
-    
+
 /*------------------------------------------------------------------------*\
     Adjust timestamp
 \*------------------------------------------------------------------------*/
   plst->lastChange = srvtime();
 }
 
-
-/*=========================================================================*\
-       Transpose two items
-\*=========================================================================*/
-static void _playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistItem *pItem2 )
-{
-  PlaylistItem *item;
-
-  DBGMSG( "_playlistTranspose (%p): %p <-> %p", plst, pItem1, pItem2 ); 
-  CHKLIST( plst );
-
-/*------------------------------------------------------------------------*\
-    Nothing to do?
-\*------------------------------------------------------------------------*/
-  if( pItem1==pItem2 )
-    return;
-
-/*------------------------------------------------------------------------*\
-    Swap forward links and adjust backward pointers of following elements
-\*------------------------------------------------------------------------*/
-  item = pItem1->next;
-  pItem1->next = pItem2->next;
-  pItem2->next = item;
-  if( pItem1->next )
-    pItem1->next->prev = pItem1;
-  if( pItem2->next )
-    pItem2->next->prev = pItem2;
-
-/*------------------------------------------------------------------------*\
-    Swap backward links and adjust forward pointers of previous elements
-\*------------------------------------------------------------------------*/
-  item = pItem1->prev;
-  pItem1->prev = pItem2->prev;
-  pItem2->prev = item;
-  if( pItem1->prev )
-    pItem1->prev->next = pItem1;
-  if( pItem2->prev )
-    pItem2->prev->next = pItem2;
-
-/*------------------------------------------------------------------------*\
-    Adjust root pointers
-\*------------------------------------------------------------------------*/
-  if( !pItem2->prev )
-    plst->firstItem = pItem2;
-  else if( !pItem1->prev )
-    plst->firstItem = pItem1;
-  if( !pItem2->next )
-    plst->lastItem = pItem2;
-  else if( !pItem1->next )
-    plst->lastItem = pItem1;
-
-/*------------------------------------------------------------------------*\
-    Invlidate cursor index if cursor is part of the exchange
-\*------------------------------------------------------------------------*/
-  if( plst->_cursorItem==pItem1 || plst->_cursorItem==pItem2  )
-    plst->_cursorPos = -1;
-    
-/*------------------------------------------------------------------------*\
-    Adjust timestamp
-\*------------------------------------------------------------------------*/
-  plst->lastChange = srvtime();
-}
-
-
-/*=========================================================================*\
-       Get item at a given position
-         count starts with 0
-         returns weak pointer to item or NULL (empty list, pos out of bounds)
-\*=========================================================================*/
-static PlaylistItem *_playlistGetItem( Playlist *plst, int pos )
-{
-  PlaylistItem *item = plst->firstItem;
-#ifdef ICK_DEBUG
-  int posbuf = pos;
-#endif
-  CHKLIST( plst );
-
-/*------------------------------------------------------------------------*\
-    Check for lower bound
-\*------------------------------------------------------------------------*/
-  if( pos<0 )
-    item = NULL;
-    
-/*------------------------------------------------------------------------*\
-    Loop over list
-\*------------------------------------------------------------------------*/
-  while( pos-- && item )
-     item = item->next;
-     
-/*------------------------------------------------------------------------*\
-    Return
-\*------------------------------------------------------------------------*/
-  DBGMSG( "_playlistGetItem (%p): pos=%d -> %p", plst, posbuf, item );         
-  return item;         
-}
-
-
-/*=========================================================================*\
-       Get first item with a given ID
-         returns weak pointer to item or NULL if not found
-\*=========================================================================*/
-static PlaylistItem *_playlistGetItemById( Playlist *plst, const char *id )
-{
-  PlaylistItem *item;
-  CHKLIST( plst );
-
-/*------------------------------------------------------------------------*\
-    Loop over list and check Id
-\*------------------------------------------------------------------------*/
-  for( item=plst->firstItem; item; item=item->next )
-    if( !strcmp(item->id,id) )
-      break;
-  
-/*------------------------------------------------------------------------*\
-    Return
-\*------------------------------------------------------------------------*/
-  DBGMSG( "_playlistGetItemById(%p): id=\"%s\" -> %p", plst, id, item );         
-  return item;         
-}
 
 /*=========================================================================*\
        Check consistency of playlist

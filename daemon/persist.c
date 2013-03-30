@@ -504,7 +504,8 @@ bool persistGetBool( const char *key )
 \*=========================================================================*/
 static int _dumpRepository( const char *name )
 {
-  int retcode = 0;
+  int retcode  = 0;
+  size_t flags = JSON_COMPACT;
   
   DBGMSG( "Dumping persistency file: \"%s\"", name ); 
 
@@ -527,7 +528,11 @@ static int _dumpRepository( const char *name )
 /*------------------------------------------------------------------------*\
     Use toolbox function 
 \*------------------------------------------------------------------------*/
-  if( json_dump_file(jRepository,name,JSON_COMPACT) ) {
+#ifdef ICK_DEBUG
+  flags = JSON_INDENT(2) | JSON_PRESERVE_ORDER;
+#endif
+
+  if( json_dump_file(jRepository,name,flags) ) {
     logerr( "Error writing to persistent repository \"%s\": %s ", 
                      name, strerror(errno) );
     retcode = -1;  
