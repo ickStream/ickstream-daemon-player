@@ -74,6 +74,11 @@ typedef struct _playlist Playlist;
 struct _playlistItem;
 typedef struct _playlistItem  PlaylistItem;
 
+typedef enum {
+  PlaylistItemTrack,
+  PlaylistItemStream
+} PlaylistItemType;
+
 
 /*=========================================================================*\
     Global symbols 
@@ -100,30 +105,31 @@ double        playlistGetLastChange( Playlist *plst );
 int           playlistGetCursorPos( Playlist *plst );
 PlaylistItem *playlistSetCursorPos( Playlist *plst, int pos );
 PlaylistItem *playlistIncrCursorItem( Playlist *plst );
-bool          playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistItem *pItem2 );
-PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool moveCursorToStart );
 
 json_t       *playlistGetJSON( Playlist *plst, int offset, int count );
-
-PlaylistItem *playlistItemFromJSON( json_t *jItem );
-void          playlistItemDelete( PlaylistItem *pItem );
-const char   *playlistItemGetText( PlaylistItem *pItem );
-const char   *playlistItemGetId( PlaylistItem *pItem );
-json_t       *playlistItemGetJSON( PlaylistItem *pItem );
-json_t       *playlistItemGetStreamingRefs( PlaylistItem *pItem );
-int           playlistItemSetMetaData( PlaylistItem *pItem, json_t *metaObj, bool replace );
-
 PlaylistItem *playlistGetItem( Playlist *plst, int pos );
 PlaylistItem *playlistGetItemById( Playlist *plst, const char *id );
 PlaylistItem *playlistGetCursorItem( Playlist *plst );
 int           playlistAddItems( Playlist *plst, int pos, json_t *jItems, bool resetFlag );
 int           playlistDeleteItems( Playlist *plst, json_t *jItems );
 int           playlistMoveItems( Playlist *plst, int pos, json_t *jItems );
-
-
+PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool moveCursorToStart );
+bool          playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistItem *pItem2 );
 void          playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem, PlaylistItem *newItem );
 void          playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem, PlaylistItem *newItem );
 void          playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem );
+
+PlaylistItem     *playlistItemFromJSON( json_t *jItem );
+void              playlistItemDelete( PlaylistItem *pItem );
+void              playlistItemLock( PlaylistItem *item );
+void              playlistItemUnlock( PlaylistItem *item );
+const char       *playlistItemGetText( PlaylistItem *pItem );
+const char       *playlistItemGetId( PlaylistItem *pItem );
+PlaylistItemType  playlistItemGetType( PlaylistItem *pItem );
+json_t           *playlistItemGetJSON( PlaylistItem *pItem );
+json_t           *playlistItemGetStreamingRefs( PlaylistItem *pItem );
+int               playlistItemSetMetaData( PlaylistItem *pItem, json_t *metaObj, bool replace );
+
 
 #endif  /* __PLAYLIST_H */
 

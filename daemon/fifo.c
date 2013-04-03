@@ -81,7 +81,8 @@ Remarks         : -
 \*=========================================================================*/
 Fifo *fifoCreate( const char *name, size_t size )
 {
-  Fifo *fifo;
+  Fifo                *fifo;
+  pthread_mutexattr_t  attr;
 
 /*------------------------------------------------------------------------*\
     Allocate and init header 
@@ -120,7 +121,9 @@ Fifo *fifoCreate( const char *name, size_t size )
 /*------------------------------------------------------------------------*\
     init mutex and conditions 
 \*------------------------------------------------------------------------*/
-  pthread_mutex_init( &fifo->mutex, NULL );
+  pthread_mutexattr_init( &attr );
+  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
+  pthread_mutex_init( &fifo->mutex, &attr );
   pthread_cond_init( &fifo->condIsWritable, NULL );
   pthread_cond_init( &fifo->condIsReadable, NULL );
 

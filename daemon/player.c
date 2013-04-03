@@ -142,6 +142,7 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec );
 \*=========================================================================*/
 int playerInit( void )
 {
+  pthread_mutexattr_t  attr;
   DBGMSG( "Initializing player module..." );
   
 /*------------------------------------------------------------------------*\
@@ -172,7 +173,9 @@ int playerInit( void )
 /*------------------------------------------------------------------------*\
     Init mutex
 \*------------------------------------------------------------------------*/
-  pthread_mutex_init( &playerMutex, NULL );
+  pthread_mutexattr_init( &attr );
+  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
+  pthread_mutex_init( &playerMutex, &attr );
 
 /*------------------------------------------------------------------------*\
     Inform HMI and set timestamp 
@@ -717,6 +720,7 @@ int playerSetState( PlayerState state, bool broadcast )
 {
   int           rc = 0;
   PlaylistItem *newTrack;
+  const char   *newTrackId;
   
   DBGMSG( "playerSetState: %d -> %d", playerState, state );
   
@@ -766,14 +770,19 @@ int playerSetState( PlayerState state, bool broadcast )
       }
       
       // Unpausing existing track ?
+      playlistItemLock( newTrack );
+      newTrackId = playlistItemGetId( newTrack );
+
       if( playerState==PlayerStatePause && currentTrackId && 
-           !strcmp(playlistItemGetId(newTrack),currentTrackId) ) {
+           !strcmp(newTrackId,currentTrackId) ) {
         lognotice( "_playbackStart: Track \"%s\" (%s) unpaused",
                    playlistItemGetText(newTrack), playlistItemGetId(newTrack) );
+        playlistItemUnlock( newTrack );
         playerState = PlayerStatePlay;
         rc = audioIfSetPause( audioIf, false );
         break;
       }
+      playlistItemUnlock( newTrack );
 
      // Need to stop running track?
       if( playerState==PlayerStatePlay ) {
@@ -823,7 +832,10 @@ int playerSetState( PlayerState state, bool broadcast )
       }
       
       // if the track did not change: set pause flag
-      if( currentTrackId && !strcmp(playlistItemGetId(newTrack),currentTrackId) ) {
+      playlistItemLock( newTrack );
+      newTrackId = playlistItemGetId( newTrack );
+      playlistItemUnlock( newTrack );
+      if( currentTrackId && !strcmp(newTrackId,currentTrackId) ) {
 
         // Check for right state
         if( playerState==PlayerStateStop )
@@ -865,7 +877,10 @@ int playerSetState( PlayerState state, bool broadcast )
 
       // Inform HMI
       hmiNewPosition( 0.0 );
-      if( newTrack && (!currentTrackId || strcmp(playlistItemGetId(newTrack),currentTrackId)) )
+      playlistItemLock( newTrack );
+      newTrackId = playlistItemGetId( newTrack );
+      playlistItemUnlock( newTrack );
+      if( newTrack && (!currentTrackId || strcmp(newTrackId,currentTrackId)) )
         hmiNewItem( playerQueue, newTrack );
 
       break; 
@@ -916,15 +931,22 @@ static void *_playbackThread( void *arg )
     Fifo          *fifo;
     AudioFormat    backendFormat;
  
-    DBGMSG( "_playerThread: Starting track \"%s\" (%s)", 
+    playlistItemLock( item );
+    DBGMSG( "_playerThread: Starting %s \"%s\" (%s)",
+              playlistItemGetType(item)==PlaylistItemStream?"stream":"track",
               playlistItemGetText(item), playlistItemGetId(item) );
+    playlistItemUnlock( item );
+
  
     // Try to get feed and codec for new track, if negative skip queue item
     // Fixme: include this in format search loop...
     feed = _feedFromPlayListItem( item, &codec );
     if( !feed ) {
-      lognotice( "_playerThread: Track \"%s\" (%s) unavailable or unsupported by audio module", 
-                          playlistItemGetText(item), playlistItemGetId(item) );
+      playlistItemLock( item );
+      lognotice( "_playerThread: %s \"%s\" (%s) unavailable or unsupported by audio module",
+              playlistItemGetType(item)==PlaylistItemStream?"Stream":"Track",
+              playlistItemGetText(item), playlistItemGetId(item) );
+      playlistItemUnlock( item );
       playlistLock( playerQueue );
       item = playlistIncrCursorItem( playerQueue );
       playlistUnlock( playerQueue );
@@ -932,7 +954,7 @@ static void *_playbackThread( void *arg )
     }
 
     // Get fifo from audio interface, try to use explicit format
-    memcpy( &backendFormat, &feed->format, sizeof(AudioFormat) );
+    memcpy( &backendFormat, audioFeedGetFormat(feed), sizeof(AudioFormat) );
     fifo = audioIfPlay( audioIf, &backendFormat );
 
     // Try to complete format from first default entry
@@ -951,7 +973,7 @@ static void *_playbackThread( void *arg )
     // If necessary try all default audio formats
     if( !fifo ) {
       loginfo( "_playerThread: Cannot setup audio device \"%s\" to format %s.", 
-                        audioIf->devName, audioFormatStr(NULL,&feed->format) );
+                        audioIf->devName, audioFormatStr(NULL,audioFeedGetFormat(feed)) );
       AudioFormatElement *element = formatList;
       while( !fifo && element ) {
         memcpy( &backendFormat, &element->format, sizeof(AudioFormat) );
@@ -965,7 +987,7 @@ static void *_playbackThread( void *arg )
     // still no fifo?
     if( !fifo  ) {
       lognotice( "_playerThread: Cannot setup audio device \"%s\" to format %s or any default format.", 
-                        audioIf->devName, audioFormatStr(NULL,&feed->format) );
+                        audioIf->devName, audioFormatStr(NULL,audioFeedGetFormat(feed)) );
       audioFeedDelete( feed , true );
       playbackThreadState = PlayerThreadTerminatedError;
       break;
@@ -990,7 +1012,7 @@ static void *_playbackThread( void *arg )
     // Attach feed to codec and start...
     if( audioFeedStart(feed,codecInst) ) {
       logerr( "_playerThread: Could not start feed \"%s\" on codec %s", 
-                         feed->uri, codecInst->codec->name );
+          audioFeedGetURI(feed), codecInst->codec->name );
       audioFeedDelete( feed, true );
       codecDeleteInstance( codecInst, true );
       playbackThreadState = PlayerThreadTerminatedError;
@@ -999,12 +1021,17 @@ static void *_playbackThread( void *arg )
     
     // Save new track id and brodcast new player status
     Sfree( currentTrackId );
+    playlistItemLock( item );
     currentTrackId = strdup( playlistItemGetId(item) );
+    playlistItemUnlock( item );
     codecInstance = codecInst;
     ickMessageNotifyPlayerState( NULL );
-    lognotice( "_playerThread: Playing track \"%s\" (%s) with %s", 
+    playlistItemLock( item );
+    lognotice( "_playerThread: Playing %s \"%s\" (%s) with %s",
+                        playlistItemGetType(item)==PlaylistItemStream?"stream":"track",
                         playlistItemGetText(item), playlistItemGetId(item),
                         audioFormatStr(NULL,&backendFormat) );
+    playlistItemUnlock( item );
 
     // Inform HMI
     hmiNewItem( playerQueue, item );
@@ -1047,8 +1074,8 @@ static void *_playbackThread( void *arg )
     if( playbackThreadState!=PlayerThreadRunning )
       break;
 
-    // Repeat track?
-    if( playerRepeatMode==PlayerRepeatItem )
+    // Repeat track or reconnect stream?
+    if( playerRepeatMode==PlayerRepeatItem || playlistItemGetType(item)==PlaylistItemStream )
       continue;
 
     // Get next item
@@ -1149,13 +1176,22 @@ PlayerRepeatMode playerRepeatModeFromStr( const char *str )
 \*=========================================================================*/
 static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec ) 
 {
-  int i;
+  int     i;
   json_t *jStreamingRefs;
- 
+  int     feedFlags;
+
+/*------------------------------------------------------------------------*\
+    Get flags for feed
+\*------------------------------------------------------------------------*/
+  //feedFlags = playlistItemGetType(item)==PlaylistItemStream?FeedIcy:FeedIgnoreHeader;
+  feedFlags = FeedIgnoreHeader;
+
 /*------------------------------------------------------------------------*\
     Get stream hints 
 \*------------------------------------------------------------------------*/
+  playlistItemLock( item );
   jStreamingRefs = playlistItemGetStreamingRefs( item );
+  playlistItemUnlock( item );
   if( !jStreamingRefs ) {
     logerr( "No streaming references found for track \"%s\" (%s).", 
               playlistItemGetText(item), playlistItemGetId(item) );
@@ -1179,8 +1215,10 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
     // Get type
     jObj = json_object_get( jStreamRef, "format" );
     if( !jObj || !json_is_string(jObj) ) {
+      playlistItemLock( item );
       logerr( "StreamRef #%d for track \"%s\" (%s): no format!", 
                i, playlistItemGetText(item), playlistItemGetId(item) );
+      playlistItemUnlock( item );
       continue;
     }
     type = json_string_value( jObj );
@@ -1188,17 +1226,21 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
     // Get URI
     jObj = json_object_get( jStreamRef, "url" );
     if( !jObj || !json_is_string(jObj) ) {
+      playlistItemLock( item );
       logerr( "StreamRef #%d for track \"%s\" (%s): no url!", 
                i, playlistItemGetText(item), playlistItemGetId(item) );
+      playlistItemUnlock( item );
       continue;
     }  
       
     // Try to resolve the URI (will allocate the string)
     uri = ickServiceResolveURI( json_string_value(jObj), "content" );
     if( !uri ) {
+      playlistItemLock( item );
       lognotice( "StreamRef #%d for track \"%s\" (%s): cannot resolve URL \"%s\"!", 
                   i, playlistItemGetText(item), playlistItemGetId(item), 
                   json_string_value(jObj) );
+      playlistItemUnlock( item );
       continue;  
     }
           
@@ -1237,22 +1279,27 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
       AudioFormat tryFormat;
       memcpy( &tryFormat, &format, sizeof(AudioFormat) );
       audioFormatComplete( &tryFormat, &formatList->format );
-      feed = audioFeedCreate( uri, type, &tryFormat );
+      feed = audioFeedCreate( uri, type, &tryFormat, feedFlags );
     }
 
     // If necessary try all default audio formats for codec
     if( !feed ) {
+      playlistItemLock( item );
       loginfo( "_feedFromPlayListItem: Cannot setup audio feed \"%s\" to format %s.", 
                         uri, audioFormatStr(NULL,&format) );
+      playlistItemUnlock( item );
       AudioFormatElement *element = formatList;
       while( !feed && element ) {
         AudioFormat tryFormat;
         memcpy( &tryFormat, &element->format, sizeof(AudioFormat) );
-        feed = audioFeedCreate( uri, type, &tryFormat );
+        feed = audioFeedCreate( uri, type, &tryFormat, feedFlags );
       }
-      if( feed )
+      if( feed ) {
+        playlistItemLock( item );
         loginfo( "_feedFromPlayListItem: using default format %s for audio feed %s.", 
-                       audioFormatStr(NULL,&feed->format), uri );
+                       audioFormatStr(NULL,audioFeedGetFormat(feed)), uri );
+        playlistItemUnlock( item );
+      }
     }
 
     // No feed found? 

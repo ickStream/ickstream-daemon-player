@@ -108,6 +108,7 @@ struct _codecInstance {
   int                     endOfInput;
   CodecMetaCallback       metaCallback;
   AudioFormat             format;
+  long                    icyInterval;
   pthread_t               thread;
   pthread_mutex_t         mutex;
   pthread_cond_t          condEndOfTrack;
@@ -140,6 +141,7 @@ Codec *codecFind( const char *type, AudioFormat *format, Codec *codec );
 
 CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format );
 int            codecDeleteInstance(CodecInstance *instance, bool wait );
+int            codecStartInstanceOutput( CodecInstance *instance, long icyINterval );
 int            codecFeedInput( CodecInstance *instance, void *content, size_t size, size_t *accepted );
 void           codecSetEndOfInput( CodecInstance *instance );
 int            codecWaitForEnd( CodecInstance *instance, int timeout );

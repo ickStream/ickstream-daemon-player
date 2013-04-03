@@ -10,7 +10,7 @@ Comments        : -
 
 Date            : 20.02.2013 
 
-Updates         : -
+Updates         : 03.04.2013 added Json RPC error codes   //MAF
 
 Author          : //MAF 
 
@@ -53,6 +53,21 @@ Remarks         : -
 	Includes needed by definitions from this file
 \*=========================================================================*/
 #include <ickDiscovery.h> 
+
+
+/*=========================================================================*\
+       Macro and type definitions
+\*=========================================================================*/
+
+// Some Json-RPC error codes
+#define RPC_NO_ERROR              0
+#define RPC_PARSE_ERROR      -32700
+#define RPC_INVALID_REQUEST  -32600
+#define RPC_METHOD_NOT_FUND  -32601
+#define RPC_INVALID_PARAMS   -32602
+#define RPC_INTERNAL_JSONRPC -32603
+#define RPC_GENERIC_ERROR    -32000
+
 
 /*=========================================================================*\
        Global symbols 

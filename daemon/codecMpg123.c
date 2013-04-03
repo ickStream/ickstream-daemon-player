@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef ICK_DEBUG
+// #undef ICK_DEBUG
 
 #include <stdio.h>
 #include <string.h>
@@ -80,6 +80,8 @@ const char *defaultFormatStr[] = {
   NULL
 };
 
+#define MPG123ERRSTR(rc,mh) (((rc)==MPG123_ERR&&(mh))?mpg123_strerror(mh):mpg123_plain_strerror(rc))
+
 /*=========================================================================*\
 	Private prototypes
 \*=========================================================================*/
@@ -94,6 +96,7 @@ static int    _codecSetVolume( CodecInstance *instance, double volume, bool mute
 static int    _codecGetSeekTime( CodecInstance *instance, double *pos );  
 
 static enum mpg123_enc_enum _getMpg123Format( const AudioFormat *format );
+static int _translateMpg123Format( int encoding, AudioFormat *format );
 
 
 /*=========================================================================*\
@@ -138,8 +141,7 @@ static int _codecInit( Codec *codec )
 \*------------------------------------------------------------------------*/
   rc = mpg123_init();
   if( rc!=MPG123_OK ) {
-    logerr( "mpg123: could not init lib: %s", 
-                      mpg123_plain_strerror(rc)  );
+    logerr( "mpg123: could not init lib: %s", mpg123_plain_strerror(rc) );
     return -1;	
   }
 
@@ -228,25 +230,61 @@ static int _codecNewInstance( CodecInstance *instance )
   mpg123_handle *mh;
   int            rc = MPG123_OK;
   
+  DBGMSG( "mpg123 (%p): init instance", instance  );
+
 /*------------------------------------------------------------------------*\
     Get libarary handle 
 \*------------------------------------------------------------------------*/
   mh = mpg123_new( NULL, &rc );   
   if( !mh ) {
-    logerr( "mpg123: could not init instance: %s", 
-                      mpg123_plain_strerror(rc)  );
-    return -1;	
+    logerr( "mpg123: could not init instance: %s", mpg123_plain_strerror(rc) );
+    return -1;
   }
   
+/*------------------------------------------------------------------------*\
+    Set debug mode
+\*------------------------------------------------------------------------*/
+#ifdef ICK_DEBUG
+  DBGMSG( "mpg123 (%p): setting verbosity to %d", instance, streamloglevel );
+  rc = mpg123_param( mh, MPG123_VERBOSE, streamloglevel, 0);
+  if( rc!=MPG123_OK ) {
+    logerr( "mpg123: could not set verbosity level (%d): %d, %s",
+            streamloglevel, rc, MPG123ERRSTR(rc,mh) );
+    mpg123_delete( mh );
+    return -1;
+  }
+#endif
+
+/*------------------------------------------------------------------------*\
+    Icy mode?
+\*------------------------------------------------------------------------*/
+  if( instance->icyInterval ) {
+    DBGMSG( "mpg123 (%p): icy enabled (interval %ld)",
+            instance, instance->icyInterval );
+    if( !mpg123_feature(MPG123_FEATURE_PARSE_ICY) ) {
+      logerr( "mpg123: icy not supported by this library version." );
+      mpg123_delete( mh );
+      return -1;
+    }
+    rc = mpg123_param( mh, MPG123_ICY_INTERVAL, instance->icyInterval, 0);
+    if( rc!=MPG123_OK ) {
+      logerr( "mpg123: could not set icy interval (%ld): %d, %s",
+              instance->icyInterval, rc, MPG123ERRSTR(rc,mh) );
+      mpg123_delete( mh );
+      return -1;
+    }
+    // mpg123_param( mh, MPG123_ADD_FLAGS, MPG123_IGNORE_STREAMLENGTH, 0);
+    // mpg123_param( mh, MPG123_REMOVE_FLAGS, MPG123_GAPLESS, 0);
+  }
+
 /*------------------------------------------------------------------------*\
     Start decoder 
 \*------------------------------------------------------------------------*/
   rc = mpg123_open_feed( mh );
   if( rc!=MPG123_OK ) {
-    logerr( "mpg123: could not open feed: %s", 
-                      mpg123_plain_strerror(rc)  );
-    mpg123_delete( mh );                    
-    return -1;	
+    logerr( "mpg123: could not open feed: %d, %s", rc, MPG123ERRSTR(rc,mh) );
+    mpg123_delete( mh );
+    return -1;
   }
 
 /*------------------------------------------------------------------------*\
@@ -277,8 +315,7 @@ static int _codecDeleteInstance( CodecInstance *instance )
 \*------------------------------------------------------------------------*/
   rc = mpg123_close( mh );
   if( rc!=MPG123_OK ) {
-    logerr( "mpg123: could not close handle: %s", 
-                      mpg123_plain_strerror(rc)  );
+    logerr( "mpg123: could not close handle: %s", MPG123ERRSTR(rc,mh) );
   }
 
 /*------------------------------------------------------------------------*\
@@ -314,8 +351,8 @@ static int _codecAcceptInput( CodecInstance *instance, void *data, size_t length
     pthread_mutex_lock( &instance->mutex );
     rc = mpg123_feed( mh, data, length );
     pthread_mutex_unlock( &instance->mutex );
-    DBGMSG( "mpg123: accepted data (%ld bytes): %s", 
-                       (long)length, mpg123_plain_strerror(rc)  );
+    DBGMSG( "mpg123 (%p): accepted data (%ld bytes): %s",
+            instance, (long)length, MPG123ERRSTR(rc,mh)  );
 
 /*------------------------------------------------------------------------*\
     Interpret result
@@ -335,9 +372,8 @@ static int _codecAcceptInput( CodecInstance *instance, void *data, size_t length
   
       // Report real error 
       default:
-        logerr( "mpg123: could not accept data (%ld bytes): %s", 
-                         (long)length, 
-                         rc==MPG123_ERR?mpg123_strerror(mh):mpg123_plain_strerror(rc) );
+        logerr( "mpg123: could not accept data (%ld bytes): %s",
+                (long)length, MPG123ERRSTR(rc,mh) );
         return -1;
     }
   } while (rc!=MPG123_OK);
@@ -358,6 +394,10 @@ static int _codecAcceptInput( CodecInstance *instance, void *data, size_t length
 static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxLength, size_t *realSize )
 {
   mpg123_handle *mh = (mpg123_handle*)instance->instanceData;
+  AudioFormat    format;
+  long           rate;
+  int            channels, encoding;
+  int            metaVector;
   int            rc;
   int            err = 0;
   
@@ -366,21 +406,46 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
 \*------------------------------------------------------------------------*/  
   *realSize = 0;
   pthread_mutex_lock( &instance->mutex );
-  rc = mpg123_read( mh, data, maxLength, realSize );  
+  rc         = mpg123_read( mh, data, maxLength, realSize );
+  metaVector = mpg123_meta_check( mh );
   pthread_mutex_unlock( &instance->mutex );
   
-  DBGMSG( "mpg123: delivered data (%ld/%ld bytes): %s", 
-                     (long)*realSize, (long)maxLength, mpg123_plain_strerror(rc)  );
-  
+  DBGMSG( "mpg123 (%p): delivered data (%ld/%ld bytes), meta=%d: %s",
+          instance, (long)*realSize, (long)maxLength, metaVector, MPG123ERRSTR(rc,mh) );
+
+  /*------------------------------------------------------------------------*\
+      New meta data?
+  \*------------------------------------------------------------------------*/
+    if( metaVector ) {
+
+      // Decode ID3 data
+      if( metaVector&MPG123_NEW_ID3 ) {
+        mpg123_id3v1 *id3V1;
+        mpg123_id3v2 *id3V2;
+        mpg123_id3( mh, &id3V1, &id3V2 );
+        DBGMSG( "New ID3 data: "  );
+      }
+
+      // Decode ICY data
+      if( metaVector&MPG123_NEW_ICY ) {
+        char *icyString;
+        mpg123_icy( mh, &icyString );
+        DBGMSG( "New ICY data: \"%s\"", icyString );
+      }
+
+      // Reset Data in stream
+      mpg123_meta_free( mh );
+    }
+
 /*------------------------------------------------------------------------*\
     Interpret result
 \*------------------------------------------------------------------------*/  
   switch( rc ) {
   
     // Everything fine
-    case MPG123_OK:          
+    case MPG123_OK:
       break;
-      
+
     // Waiting for more data
     // Ignore if not at end of input, else treat like MPG123_DONE
     case MPG123_NEED_MORE:    
@@ -390,29 +455,34 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
     // End of track: set status and call player callback
     case MPG123_DONE:
       instance->state = CodecEndOfTrack;
-      pthread_cond_signal( &instance->condEndOfTrack );		
-      break;
-              	
-    // Format detected or changed: inform player via call back
-    case MPG123_NEW_FORMAT:
-      if( instance->metaCallback ) {
-      	AudioFormat format;
-      	json_t      *meta = NULL;
-      	// Collect data
-      	// Fixme...
-      	
-      	// and deliver...
-      	instance->metaCallback( instance, &format, meta );
-      }	
+      pthread_cond_signal( &instance->condEndOfTrack );
       break;
 
+    // Format detected or changed: inform player via call back
+    case MPG123_NEW_FORMAT:
+      mpg123_getformat( mh, &rate, &channels, &encoding );
+      format.sampleRate = rate;
+      format.channels   = channels;
+      if( _translateMpg123Format(encoding,&format) )
+        logwarn( "mpg123: encoding %d not supported (ignored)", encoding );
+      DBGMSG( "mpg123 (%p): New mpg format: \"%s\"",
+              instance, audioFormatStr(NULL,&format) );
+
+      if( instance->metaCallback ) {
+        json_t      *jMeta = NULL;
+        // Collect data
+        // Fixme...
+
+        // and deliver...
+        instance->metaCallback( instance, &format, jMeta );
+      }
+      break;
 
     // Report real error 
     default:
       logerr( "mpg123: could not deliver data (avail %ld bytes): %s", 
-                       (long)maxLength, 
-                       rc==MPG123_ERR?mpg123_strerror(mh):mpg123_plain_strerror(rc)  );
-      err = -1;	  	
+              (long)maxLength, MPG123ERRSTR(rc,mh) );
+      err = -1;
       break;
   }
 
@@ -420,7 +490,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
     That's all
 \*------------------------------------------------------------------------*/  
   return err; 
-}  
+}
 
 
 /*=========================================================================*\
@@ -439,7 +509,7 @@ static int _codecSetVolume( CodecInstance *instance, double volume, bool muted )
   pthread_mutex_unlock( &instance->mutex );
   if( rc )
     logerr( "mpg123: could not set volume to %f %s: %s", 
-             volume, muted?"(muted)":"(unmuted)", mpg123_plain_strerror(rc)  );
+             volume, muted?"(muted)":"(unmuted)", MPG123ERRSTR(rc,mh) );
 
 /*------------------------------------------------------------------------*\
     That's all
@@ -522,6 +592,78 @@ static enum mpg123_enc_enum _getMpg123Format( const AudioFormat *format )
   return 0;
 }
 
+
+/*=========================================================================*\
+       Translate mpg123 format to internal audio format representation
+\*=========================================================================*/
+static int _translateMpg123Format( int encoding, AudioFormat *format )
+{
+
+  switch( encoding ) {
+    case MPG123_ENC_FLOAT_32:
+      format->isFloat = true;
+      format->bitWidth = 32;
+      break;
+
+    case MPG123_ENC_FLOAT_64:
+      format->isFloat = true;
+      format->bitWidth = 64;
+      break;
+
+    case MPG123_ENC_SIGNED_8:
+      format->isFloat = false;
+      format->isSigned = true;
+      format->bitWidth = 8;
+      break;
+
+    case MPG123_ENC_SIGNED_16:
+      format->isFloat = false;
+      format->isSigned = true;
+      format->bitWidth = 16;
+      break;
+
+    case MPG123_ENC_SIGNED_24:
+      format->isFloat = false;
+      format->isSigned = true;
+      format->bitWidth = 24;
+      break;
+
+    case MPG123_ENC_SIGNED_32:
+      format->isFloat = false;
+      format->isSigned = true;
+      format->bitWidth = 32;
+      break;
+
+    case MPG123_ENC_UNSIGNED_8:
+      format->isFloat = false;
+      format->isSigned = false;
+      format->bitWidth = 8;
+      break;
+
+    case MPG123_ENC_UNSIGNED_16:
+      format->isFloat = false;
+      format->isSigned = false;
+      format->bitWidth = 16;
+      break;
+
+    case MPG123_ENC_UNSIGNED_24:
+      format->isFloat = false;
+      format->isSigned = false;
+      format->bitWidth = 24;
+      break;
+
+    case MPG123_ENC_UNSIGNED_32:
+      format->isFloat = false;
+      format->isSigned = false;
+      format->bitWidth = 32;
+      break;
+
+    default:
+      return -1;
+  }
+
+  return 0;
+}
 
 /*=========================================================================*\
                                     END OF FILE

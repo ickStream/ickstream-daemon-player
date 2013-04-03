@@ -76,7 +76,9 @@ struct _playlistItem {
   json_t               *jItem;
   const char           *id;               // weak
   const char           *text;             // weak
+  PlaylistItemType      type;
   json_t               *jStreamingRefs;   // weak
+  pthread_mutex_t       mutex;
 };
 
 struct _playlist {
@@ -100,6 +102,7 @@ struct _playlist {
 /*=========================================================================*\
         Private prototypes
 \*=========================================================================*/
+static int _playlistItemFillHeader( PlaylistItem *pItem );
 #ifdef CONSISTENCYCHECKING
 #define CHKLIST( p ) _playlistCheckList( __FILE__, __LINE__, (p) );
 static int _playlistCheckList( const char *file, int line, Playlist *plst );
@@ -113,10 +116,16 @@ static int _playlistCheckList( const char *file, int line, Playlist *plst );
 \*=========================================================================*/
 Playlist *playlistNew( void )
 {
-  Playlist *plst = calloc( 1, sizeof(Playlist) );
+  Playlist *plst;
+  pthread_mutexattr_t attr;
+
+/*------------------------------------------------------------------------*\
+    Create header
+\*------------------------------------------------------------------------*/
+  plst = calloc( 1, sizeof(Playlist) );
   if( !plst )
     logerr( "playlistNew: out of memeory!" );
-    
+
 /*------------------------------------------------------------------------*\
     Init header fields
 \*------------------------------------------------------------------------*/
@@ -124,9 +133,11 @@ Playlist *playlistNew( void )
   // plst->name = strdup( "ickpd player queue" );
  
 /*------------------------------------------------------------------------*\
-    Init mutex
+    Init mutex in errr check mode
 \*------------------------------------------------------------------------*/
-  pthread_mutex_init( &plst->mutex, NULL );
+  pthread_mutexattr_init( &attr );
+  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
+  pthread_mutex_init( &plst->mutex, &attr );
  
 /*------------------------------------------------------------------------*\
     That's all
@@ -234,7 +245,7 @@ void playlistDelete( Playlist *plst )
 \*=========================================================================*/
 void playlistLock( Playlist *plst )
 {
-  DBGMSG( "playlistLock: %p", plst );
+  DBGMSG( "playlist (%p): lock", plst );
   pthread_mutex_lock( &plst->mutex );
 }
 
@@ -243,7 +254,7 @@ void playlistLock( Playlist *plst )
 \*=========================================================================*/
 void playlistUnlock( Playlist *plst )
 {
-  DBGMSG( "playlistUnock: %p", plst );
+  DBGMSG( "playlist (%p): unlock", plst );
   pthread_mutex_unlock( &plst->mutex );
 }
 
@@ -481,145 +492,6 @@ PlaylistItem *playlistIncrCursorItem( Playlist *plst )
 
 
 /*=========================================================================*\
-       Transpose two items
-          returns true, if items are different, false else
-\*=========================================================================*/
-bool playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistItem *pItem2 )
-{
-  PlaylistItem *item;
-
-  DBGMSG( "playlistTranspose (%p): %p <-> %p", plst, pItem1, pItem2 );
-  CHKLIST( plst );
-
-/*------------------------------------------------------------------------*\
-    Nothing to do?
-\*------------------------------------------------------------------------*/
-  if( pItem1==pItem2 )
-    return 0;
-
-/*------------------------------------------------------------------------*\
-    Swap forward links and adjust backward pointers of following elements
-\*------------------------------------------------------------------------*/
-  item = pItem1->next;
-  pItem1->next = pItem2->next;
-  pItem2->next = item;
-  if( pItem1->next )
-    pItem1->next->prev = pItem1;
-  if( pItem2->next )
-    pItem2->next->prev = pItem2;
-
-/*------------------------------------------------------------------------*\
-    Swap backward links and adjust forward pointers of previous elements
-\*------------------------------------------------------------------------*/
-  item = pItem1->prev;
-  pItem1->prev = pItem2->prev;
-  pItem2->prev = item;
-  if( pItem1->prev )
-    pItem1->prev->next = pItem1;
-  if( pItem2->prev )
-    pItem2->prev->next = pItem2;
-
-/*------------------------------------------------------------------------*\
-    Adjust root pointers
-\*------------------------------------------------------------------------*/
-  if( !pItem2->prev )
-    plst->firstItem = pItem2;
-  else if( !pItem1->prev )
-    plst->firstItem = pItem1;
-  if( !pItem2->next )
-    plst->lastItem = pItem2;
-  else if( !pItem1->next )
-    plst->lastItem = pItem1;
-
-/*------------------------------------------------------------------------*\
-    Invlidate cursor index if cursor is part of the exchange
-\*------------------------------------------------------------------------*/
-  if( plst->_cursorItem==pItem1 || plst->_cursorItem==pItem2  )
-    plst->_cursorPos = -1;
-
-/*------------------------------------------------------------------------*\
-    Adjust timestamp and return
-\*------------------------------------------------------------------------*/
-  plst->lastChange = srvtime();
-  return true;
-}
-
-
-/*=========================================================================*\
-       Shuffle playlist
-         Shuffles range between startPos and endPos (included)
-         If cursor is in that range, it will be set to startPos 
-         If cursor is in that range and moveCursorToStart is true, 
-           the cursor item will be moved to startPos
-         returns pointer to queue item at startpos or NULL on error
-\*=========================================================================*/
-PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool moveCursorToStart )
-{
-  PlaylistItem *item1, *item2;
-  int           pos = startPos;
-
-  DBGMSG( "playlistShuffle (%p): %d-%d/%d cursorToStart:%s", 
-           plst, startPos, endPos, plst->_numberOfItems, moveCursorToStart?"Yes":"No"  );  
-  CHKLIST( plst );
-
-/*------------------------------------------------------------------------*\
-    Check end position
-\*------------------------------------------------------------------------*/
-  if( endPos>=plst->_numberOfItems ) {
-    logerr( "playlistShuffle (%p): invalid end position %d/%d", 
-            plst, endPos, plst->_numberOfItems );
-    return NULL;
-  }
-
-/*------------------------------------------------------------------------*\
-    Get first element and swap with cursor if requested
-\*------------------------------------------------------------------------*/
-  item1 = playlistGetItem( plst, startPos );
-  if( !item1 ) {
-    logerr( "playlistShuffle (%p): invalid start position %d", plst, startPos );
-    return NULL;
-  }
-
-/*------------------------------------------------------------------------*\
-    Swap with cursor if requested and increment to next element
-\*------------------------------------------------------------------------*/
-  if( moveCursorToStart ) {
-    playlistTranspose( plst, item1, plst->_cursorItem );
-    item1 = plst->_cursorItem->next;
-    pos++;
-  }
-
-/*------------------------------------------------------------------------*\
-    Shuffle: Select the first item from remaining set and step to next one
-\*------------------------------------------------------------------------*/
-  while( pos<endPos ) {
-    int rnd = (int)rndInteger( pos, endPos );
-    item2   = playlistGetItem( plst, rnd );
-    if( !item1 || !item2 ) {
-      logerr( "playlistShuffle (%p): corrupt linked list @%d(%p)<->%d(%p)/%d", 
-               plst, pos, item1, rnd, item2, endPos );
-      break;
-    }
-    DBGMSG( "playlistShuffle (%p): swap %d<->%d/%d ", plst, pos, rnd, endPos  );  
-    playlistTranspose( plst, item1, item2 );
-    item1 = item2->next;
-    pos++;
-  }
-
-/*------------------------------------------------------------------------*\
-    Set cursor to start of range
-\*------------------------------------------------------------------------*/
-  plst->_cursorItem = playlistGetItem( plst, startPos );
-  plst->_cursorPos  = -1;
-
-/*------------------------------------------------------------------------*\
-    Return item under cursor
-\*------------------------------------------------------------------------*/
-  return plst->_cursorItem;
-}
-
-
-/*=========================================================================*\
        Get playlist in ickstream JSON format for method "getPlaylist"
          offset is the offset of the first element to be included
          count is the (max.) number of elements included
@@ -726,147 +598,6 @@ PlaylistItem *playlistGetItemById( Playlist *plst, const char *id )
  \*------------------------------------------------------------------------*/
    DBGMSG( "playlistGetItemById(%p): id=\"%s\" -> %p", plst, id, item );
    return item;
-}
-
-
-/*=========================================================================*\
-       Create (allocate and init) an item from ickstream JSON object
-          return NULL on error
-\*=========================================================================*/
-PlaylistItem *playlistItemFromJSON( json_t *jItem )
-{
-  PlaylistItem *item;
-  json_t       *jObj;
-    
-/*------------------------------------------------------------------------*\
-    Allocate header
-\*------------------------------------------------------------------------*/
-  item = calloc( 1, sizeof(PlaylistItem) );
-  if( !item ) {
-    logerr( "playlistItemFromJSON: out of memeory!" );
-    return NULL;
-  }
-  
-/*------------------------------------------------------------------------*\
-    Keep instance of JSON object
-\*------------------------------------------------------------------------*/
-  item->jItem = json_incref( jItem );
-  // DBGMSG( "playlistItemFromJSON: JSON refCnt=%d", jItem->refcount );
-
-/*------------------------------------------------------------------------*\
-    Extract id for quick access (weak ref.)
-\*------------------------------------------------------------------------*/
-  jObj = json_object_get( jItem, "id" );
-  if( !jObj || !json_is_string(jObj) ) {
-    logerr( "playlistItemFromJSON: Missing field \"id\"!" );
-    Sfree( item );
-    json_decref( jItem );
-    return NULL; 
-  }
-  item->id = json_string_value( jObj );   
-
-/*------------------------------------------------------------------------*\
-    Extract text for quick access (weak ref.)
-\*------------------------------------------------------------------------*/
-  jObj = json_object_get( jItem, "text" );
-  if( !jObj || !json_is_string(jObj) ) {
-    logerr( "playlistItemFromJSON: Missing field \"text\"!" );
-    Sfree( item );
-    json_decref( jItem );
-    return NULL; 
-  }
-  item->text = json_string_value( jObj );   
-
-/*------------------------------------------------------------------------*\
-    Extract streaming data list for quick access (weak ref.)
-\*------------------------------------------------------------------------*/
-  jObj = json_object_get( jItem, "streamingRefs" );
-  if( !jObj || !json_is_array(jObj) ) {
-    logerr( "playlistItemFromJSON: Missing field \"streamingRefs\"!" );
-    Sfree( item );
-    json_decref( jItem );
-    return NULL; 
-  }
-  item->jStreamingRefs = jObj;   
-    
-/*------------------------------------------------------------------------*\
-    That's all
-\*------------------------------------------------------------------------*/
-  DBGMSG( "playlistItemFromJSON: %p id:%s (%s)", 
-                     item, item->text, item->id ); 
-  return item;     
-}
-
-
-/*=========================================================================*\
-       Delete playlist item (needs to be unliked before!!!)
-\*=========================================================================*/
-void playlistItemDelete( PlaylistItem *pItem )
-{
-  DBGMSG( "playlistItemDelete: %p refcnt=%d", pItem, pItem->jItem->refcount ); 
-  /* {  
-    char *out = json_dumps( pItem->jItem, JSON_PRESERVE_ORDER | JSON_COMPACT | JSON_ENSURE_ASCII );
-    DBGMSG( "playlistItemDelete: %s", out );
-    free( out );
-  } */
-    
-/*------------------------------------------------------------------------*\
-    Free all header features
-\*------------------------------------------------------------------------*/
-  json_decref( pItem->jItem );
-
-/*------------------------------------------------------------------------*\
-    Free header
-\*------------------------------------------------------------------------*/
-  Sfree( pItem );
-}
-
-
-/*=========================================================================*\
-       Get text for playlist item
-\*=========================================================================*/
-const char *playlistItemGetText( PlaylistItem *pItem )
-{
-  return pItem->text;
-}
-
-
-/*=========================================================================*\
-       Get id for playlist item
-\*=========================================================================*/
-const char *playlistItemGetId( PlaylistItem *pItem )
-{
-  return pItem->id;
-}
-
-
-/*=========================================================================*\
-       Get JSON representation of playlist item
-\*=========================================================================*/
-json_t *playlistItemGetJSON( PlaylistItem *pItem )
-{
-  return pItem->jItem;
-}
-
-
-/*=========================================================================*\
-       Get stream reference list for playlist item
-\*=========================================================================*/
-json_t *playlistItemGetStreamingRefs( PlaylistItem *pItem )
-{
-  return pItem->jStreamingRefs;
-}
-
-
-/*=========================================================================*\
-       Manipulate meta data of the playlist item
-\*=========================================================================*/
-int playlistItemSetMetaData( PlaylistItem *pItem, json_t *metaObj, bool replace )
-{
-  DBGMSG( "playlistItemSetMetaData (%p,%s): %p replace:%s",
-           pItem, pItem->text, metaObj, replace?"On":"Off" );
-
-  return 0;
 }
 
 
@@ -1111,6 +842,145 @@ int playlistMoveItems( Playlist *plst, int pos, json_t *jItems )
 
 
 /*=========================================================================*\
+       Shuffle playlist
+         Shuffles range between startPos and endPos (included)
+         If cursor is in that range, it will be set to startPos
+         If cursor is in that range and moveCursorToStart is true,
+           the cursor item will be moved to startPos
+         returns pointer to queue item at startpos or NULL on error
+\*=========================================================================*/
+PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool moveCursorToStart )
+{
+  PlaylistItem *item1, *item2;
+  int           pos = startPos;
+
+  DBGMSG( "playlistShuffle (%p): %d-%d/%d cursorToStart:%s",
+           plst, startPos, endPos, plst->_numberOfItems, moveCursorToStart?"Yes":"No"  );
+  CHKLIST( plst );
+
+/*------------------------------------------------------------------------*\
+    Check end position
+\*------------------------------------------------------------------------*/
+  if( endPos>=plst->_numberOfItems ) {
+    logerr( "playlistShuffle (%p): invalid end position %d/%d",
+            plst, endPos, plst->_numberOfItems );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Get first element and swap with cursor if requested
+\*------------------------------------------------------------------------*/
+  item1 = playlistGetItem( plst, startPos );
+  if( !item1 ) {
+    logerr( "playlistShuffle (%p): invalid start position %d", plst, startPos );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Swap with cursor if requested and increment to next element
+\*------------------------------------------------------------------------*/
+  if( moveCursorToStart ) {
+    playlistTranspose( plst, item1, plst->_cursorItem );
+    item1 = plst->_cursorItem->next;
+    pos++;
+  }
+
+/*------------------------------------------------------------------------*\
+    Shuffle: Select the first item from remaining set and step to next one
+\*------------------------------------------------------------------------*/
+  while( pos<endPos ) {
+    int rnd = (int)rndInteger( pos, endPos );
+    item2   = playlistGetItem( plst, rnd );
+    if( !item1 || !item2 ) {
+      logerr( "playlistShuffle (%p): corrupt linked list @%d(%p)<->%d(%p)/%d",
+               plst, pos, item1, rnd, item2, endPos );
+      break;
+    }
+    DBGMSG( "playlistShuffle (%p): swap %d<->%d/%d ", plst, pos, rnd, endPos  );
+    playlistTranspose( plst, item1, item2 );
+    item1 = item2->next;
+    pos++;
+  }
+
+/*------------------------------------------------------------------------*\
+    Set cursor to start of range
+\*------------------------------------------------------------------------*/
+  plst->_cursorItem = playlistGetItem( plst, startPos );
+  plst->_cursorPos  = -1;
+
+/*------------------------------------------------------------------------*\
+    Return item under cursor
+\*------------------------------------------------------------------------*/
+  return plst->_cursorItem;
+}
+
+
+/*=========================================================================*\
+       Transpose two items
+          returns true, if items are different, false else
+\*=========================================================================*/
+bool playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistItem *pItem2 )
+{
+  PlaylistItem *item;
+
+  DBGMSG( "playlistTranspose (%p): %p <-> %p", plst, pItem1, pItem2 );
+  CHKLIST( plst );
+
+/*------------------------------------------------------------------------*\
+    Nothing to do?
+\*------------------------------------------------------------------------*/
+  if( pItem1==pItem2 )
+    return 0;
+
+/*------------------------------------------------------------------------*\
+    Swap forward links and adjust backward pointers of following elements
+\*------------------------------------------------------------------------*/
+  item = pItem1->next;
+  pItem1->next = pItem2->next;
+  pItem2->next = item;
+  if( pItem1->next )
+    pItem1->next->prev = pItem1;
+  if( pItem2->next )
+    pItem2->next->prev = pItem2;
+
+/*------------------------------------------------------------------------*\
+    Swap backward links and adjust forward pointers of previous elements
+\*------------------------------------------------------------------------*/
+  item = pItem1->prev;
+  pItem1->prev = pItem2->prev;
+  pItem2->prev = item;
+  if( pItem1->prev )
+    pItem1->prev->next = pItem1;
+  if( pItem2->prev )
+    pItem2->prev->next = pItem2;
+
+/*------------------------------------------------------------------------*\
+    Adjust root pointers
+\*------------------------------------------------------------------------*/
+  if( !pItem2->prev )
+    plst->firstItem = pItem2;
+  else if( !pItem1->prev )
+    plst->firstItem = pItem1;
+  if( !pItem2->next )
+    plst->lastItem = pItem2;
+  else if( !pItem1->next )
+    plst->lastItem = pItem1;
+
+/*------------------------------------------------------------------------*\
+    Invlidate cursor index if cursor is part of the exchange
+\*------------------------------------------------------------------------*/
+  if( plst->_cursorItem==pItem1 || plst->_cursorItem==pItem2  )
+    plst->_cursorPos = -1;
+
+/*------------------------------------------------------------------------*\
+    Adjust timestamp and return
+\*------------------------------------------------------------------------*/
+  plst->lastChange = srvtime();
+  return true;
+}
+
+
+/*=========================================================================*\
        Add an item before another one
           if anchor is NULL, the item is added to the beginning of the list
 \*=========================================================================*/
@@ -1242,6 +1112,249 @@ void playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem )
     Adjust timestamp
 \*------------------------------------------------------------------------*/
   plst->lastChange = srvtime();
+}
+
+
+/*=========================================================================*\
+       Create (allocate and init) an item from ickstream JSON object
+          return NULL on error
+\*=========================================================================*/
+PlaylistItem *playlistItemFromJSON( json_t *jItem )
+{
+  PlaylistItem        *item;
+  pthread_mutexattr_t attr;
+
+/*------------------------------------------------------------------------*\
+    Allocate header
+\*------------------------------------------------------------------------*/
+  item = calloc( 1, sizeof(PlaylistItem) );
+  if( !item ) {
+    logerr( "playlistItemFromJSON: out of memeory!" );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Init mutex in recursive mode
+\*------------------------------------------------------------------------*/
+  pthread_mutexattr_init( &attr );
+  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
+  pthread_mutex_init( &item->mutex, &attr );
+
+/*------------------------------------------------------------------------*\
+    Keep instance of JSON object
+\*------------------------------------------------------------------------*/
+  item->jItem = json_incref( jItem );
+  // DBGMSG( "playlistItemFromJSON: JSON refCnt=%d", jItem->refcount );
+
+/*------------------------------------------------------------------------*\
+    Extract header info
+\*------------------------------------------------------------------------*/
+  if( _playlistItemFillHeader(item) ) {
+    json_incref( jItem );
+    Sfree( item );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+  DBGMSG( "playlistItemFromJSON: %p id:%s (%s)",
+                     item, item->text, item->id );
+  return item;
+}
+
+
+/*=========================================================================*\
+       Delete playlist item (needs to be unliked before!!!)
+\*=========================================================================*/
+void playlistItemDelete( PlaylistItem *pItem )
+{
+  DBGMSG( "playlistItemDelete: %p refcnt=%d", pItem, pItem->jItem->refcount );
+  /* {
+    char *out = json_dumps( pItem->jItem, JSON_PRESERVE_ORDER | JSON_COMPACT | JSON_ENSURE_ASCII );
+    DBGMSG( "playlistItemDelete: %s", out );
+    free( out );
+  } */
+
+/*------------------------------------------------------------------------*\
+    Free all header features
+\*------------------------------------------------------------------------*/
+  json_decref( pItem->jItem );
+
+/*------------------------------------------------------------------------*\
+    Free header
+\*------------------------------------------------------------------------*/
+  Sfree( pItem );
+}
+
+
+/*=========================================================================*\
+       Lock playlist item
+\*=========================================================================*/
+void playlistItemLock( PlaylistItem *item )
+{
+  DBGMSG( "playlistItem(%p): lock", item );
+  pthread_mutex_lock( &item->mutex );
+}
+
+
+/*=========================================================================*\
+       Unlock playlist item
+\*=========================================================================*/
+void playlistItemUnlock( PlaylistItem *item )
+{
+  DBGMSG( "playlistItem(%p): unlock", item );
+  pthread_mutex_unlock( &item->mutex );
+}
+
+
+/*=========================================================================*\
+       Get text for playlist item
+\*=========================================================================*/
+const char *playlistItemGetText( PlaylistItem *pItem )
+{
+  return pItem->text;
+}
+
+
+/*=========================================================================*\
+       Get id of playlist item
+\*=========================================================================*/
+const char *playlistItemGetId( PlaylistItem *pItem )
+{
+  return pItem->id;
+}
+
+
+/*=========================================================================*\
+       Get type of playlist item
+\*=========================================================================*/
+PlaylistItemType  playlistItemGetType( PlaylistItem *pItem )
+{
+  return pItem->type;
+}
+
+
+/*=========================================================================*\
+       Get JSON representation of playlist item
+\*=========================================================================*/
+json_t *playlistItemGetJSON( PlaylistItem *pItem )
+{
+  return pItem->jItem;
+}
+
+
+/*=========================================================================*\
+       Get stream reference list for playlist item
+\*=========================================================================*/
+json_t *playlistItemGetStreamingRefs( PlaylistItem *pItem )
+{
+  return pItem->jStreamingRefs;
+}
+
+
+/*=========================================================================*\
+       Manipulate meta data of the playlist item
+\*=========================================================================*/
+int playlistItemSetMetaData( PlaylistItem *pItem, json_t *metaObj, bool replace )
+{
+  DBGMSG( "playlistItemSetMetaData (%p,%s): %p replace:%s",
+           pItem, pItem->text, metaObj, replace?"On":"Off" );
+
+/*------------------------------------------------------------------------*\
+    Replace mode: exchange object with new one
+\*------------------------------------------------------------------------*/
+  if( replace ) {
+    json_decref( pItem->jItem );
+    pItem->jItem = json_incref( metaObj );
+  }
+
+/*------------------------------------------------------------------------*\
+    Merge mode: try to merge new Object into existing one
+\*------------------------------------------------------------------------*/
+  else if( json_object_merge(pItem->jItem,metaObj) ) {
+    logerr( "playlistItemSetMetaData (%p,%s): %p could not merge.",
+            pItem, pItem->text, metaObj );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    Adjust header info
+\*------------------------------------------------------------------------*/
+  if( _playlistItemFillHeader(pItem) ) {
+    logerr( "playlistItemSetMetaData (%p,%s): %p invalid header data",
+            pItem, pItem->text, metaObj );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+  return 0;
+}
+
+
+/*=========================================================================*\
+       Extract some header info from playlist JSON item for fast access
+\*=========================================================================*/
+static int _playlistItemFillHeader( PlaylistItem *pItem )
+{
+  json_t *jObj;
+
+/*------------------------------------------------------------------------*\
+    Extract id for quick access (weak ref.)
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( pItem->jItem, "id" );
+  if( !jObj || !json_is_string(jObj) ) {
+    logerr( "_playlistItemFillHeader: Missing field \"id\"!" );
+    return -1;
+  }
+  pItem->id = json_string_value( jObj );
+
+/*------------------------------------------------------------------------*\
+    Extract text for quick access (weak ref.)
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( pItem->jItem, "text" );
+  if( !jObj || !json_is_string(jObj) ) {
+    logerr( "_playlistItemFillHeader: Missing field \"text\"!" );
+    return -1;
+  }
+  pItem->text = json_string_value( jObj );
+
+/*------------------------------------------------------------------------*\
+    Extract item type (Fixme: remove default to track)
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( pItem->jItem, "type" );
+  if( !jObj || !json_is_string(jObj) ) {
+    logwarn( "_playlistItemFillHeader: Missing field \"type\"!" );
+    pItem->type = PlaylistItemTrack;
+  }
+  else {
+    const char *typeStr = json_string_value( jObj );
+    if( !strcmp(typeStr,"track") )
+      pItem->type = PlaylistItemTrack;
+    else if( !strcmp(typeStr,"stream") )
+      pItem->type = PlaylistItemStream;
+    else {
+      logerr( "_playlistItemFillHeader: Unknown type \"%s\"", typeStr );
+      return -1;
+    }
+  }
+
+/*------------------------------------------------------------------------*\
+    Extract streaming data list for quick access (weak ref.)
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( pItem->jItem, "streamingRefs" );
+  if( !jObj || !json_is_array(jObj) ) {
+    logerr( "_playlistItemFillHeader: Missing field \"streamingRefs\"!" );
+    return -1;
+  }
+  pItem->jStreamingRefs = jObj;
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+  return 0;
 }
 
 

@@ -62,6 +62,7 @@ Remarks         : -
 \*=========================================================================*/
 #include "stdio.h"
 #include "syslog.h"
+#include <jansson.h>
 
 
 /*=========================================================================*\
@@ -111,6 +112,8 @@ extern int  sysloglevel;
 \*========================================================================*/
 double srvtime( void );
 long   rndInteger( long min, long max );
+int    json_object_merge( json_t *target, json_t *source );
+
 void   _srvlog( const char *file, int line, int prio, const char *fmt, ... );
 void  *_smalloc( const char *file, int line, size_t s );
 void  *_scalloc( const char *file, int line, size_t n, size_t s );

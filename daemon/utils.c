@@ -159,6 +159,47 @@ double srvtime( void )
   return tv.tv_sec+10e-6*tv.tv_usec;
 }
 
+
+/*========================================================================*\
+   Recursively merge a JSON hierarchy into a target one
+     Arrays are handled as basic types, i.e. not deeply merged
+\*========================================================================*/
+int json_object_merge( json_t *target, json_t *source )
+{
+  void *iter;
+
+/*------------------------------------------------------------------------*\
+    Both arguments need to be objects
+\*------------------------------------------------------------------------*/
+  if( !json_is_object(target) || !json_is_object(source) )
+    return -1;
+
+/*------------------------------------------------------------------------*\
+    Loop over all elements in source
+\*------------------------------------------------------------------------*/
+  for( iter=json_object_iter(source); iter; iter=json_object_iter_next(source,iter) ) {
+    const char *key     = json_object_iter_key( iter );
+    json_t     *srcElem = json_object_iter_value( iter );
+    json_t     *trgElem = json_object_get( target, key );
+
+    // Do recursion if element exists in target and is an object
+    if( trgElem && json_is_object(trgElem) && json_is_object(srcElem) ) {
+      if( json_object_merge(trgElem,srcElem) )
+        return -1;
+    }
+
+    // Add or replace if target element does not exist or one element is of basic type
+    else if( json_object_set_nocheck(target,key,srcElem) )
+      return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    That's all (no more elements in source)
+\*------------------------------------------------------------------------*/
+  return 0;
+}
+
+
 /*========================================================================*\
    Log memory usage (by this code only)
 \*========================================================================*/

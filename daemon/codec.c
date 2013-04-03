@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef ICK_DEBUG
+// #undef ICK_DEBUG
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -117,10 +117,10 @@ void codecShutdown( bool force )
     Loop over all codecs 
 \*------------------------------------------------------------------------*/
   while( codecList ) {
-  	
-  	// Unlink from list
-  	codec = codecList;
-  	codecList = codecList->next;
+
+    // Unlink from list
+    codec = codecList;
+    codecList = codecList->next;
 
     // call optional shutdown method
     if( codec->shutdown )
@@ -198,7 +198,9 @@ Codec *codecFind( const char *type, AudioFormat *format, Codec *codec )
 \*=========================================================================*/
 CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format )
 {
-  CodecInstance *instance;  
+  CodecInstance       *instance;
+  pthread_mutexattr_t  attr;
+
   DBGMSG( "Creating new instance of codec %s", codec->name );
 
 /*------------------------------------------------------------------------*\
@@ -213,38 +215,68 @@ CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format )
   instance->codec   = codec;
   instance->fifoOut = fifo;
   memcpy( &instance->format, format, sizeof(AudioFormat) );
-  
-/*------------------------------------------------------------------------*\
-    Call Codec instance initializer 
-\*------------------------------------------------------------------------*/
-  if( codec->newInstance(instance) ) {
-  	logerr( "codecNewInstance: could not get instance of codec %s", 
-  	                 codec->name );
-    Sfree( instance );
-  	return NULL;
-  }
 
 /*------------------------------------------------------------------------*\
     Init mutex and conditions
 \*------------------------------------------------------------------------*/
-  pthread_mutex_init( &instance->mutex, NULL );
+  pthread_mutexattr_init( &attr );
+  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
+  pthread_mutex_init( &instance->mutex, &attr );
   pthread_cond_init( &instance->condEndOfTrack, NULL );
-  
-/*------------------------------------------------------------------------*\
-    Create codec thread
-\*------------------------------------------------------------------------*/
-  int rc = pthread_create( &instance->thread, NULL, _codecThread, instance );
-  if( rc ) {
-    logerr( "codecNewInstance: Unable to start thread: %s", strerror(rc) );
-    codec->deleteInstance( instance );
-    Sfree( instance );
-    return NULL;
-  }
-  
+
 /*------------------------------------------------------------------------*\
     That's all 
 \*------------------------------------------------------------------------*/
   return instance;
+}
+
+
+/*=========================================================================*\
+      Start output thread for instance of codec
+        fixme: this should be merged with the constructor and
+               called at the appropriate place in the audio chain setup
+\*=========================================================================*/
+int codecStartInstanceOutput( CodecInstance *instance, long icyInterval )
+{
+  DBGMSG( "Starting instance of codec %s", instance->codec->name );
+
+/*------------------------------------------------------------------------*\
+    Check state
+\*------------------------------------------------------------------------*/
+  if( instance->state!=CodecInitialized ) {
+    logerr( "codecStartInstanceOutput: State past init: %d", instance->state );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    Set icy interval
+\*------------------------------------------------------------------------*/
+  instance->icyInterval = icyInterval;
+
+/*------------------------------------------------------------------------*\
+    Call Codec instance initializer
+\*------------------------------------------------------------------------*/
+  if( instance->codec->newInstance(instance) ) {
+    logerr( "codecStartInstanceOutput: could not init instance of codec %s",
+                     instance->codec->name );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    Create codec thread
+\*------------------------------------------------------------------------*/
+  instance->state = CodecRunning;
+  int rc = pthread_create( &instance->thread, NULL, _codecThread, instance );
+  if( rc ) {
+    instance->state = CodecTerminatedError;
+    logerr( "codecNewInstance: Unable to start thread: %s", strerror(rc) );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+  return 0;
 }
 
 
@@ -262,7 +294,7 @@ int codecDeleteInstance( CodecInstance *instance, bool wait )
     Stop thread and optionally wait for termination   
 \*------------------------------------------------------------------------*/
   instance->state = CodecTerminating;
-  if( instance->thread && wait )  //fixme
+  if( instance->state!=CodecInitialized && wait )
      pthread_join( instance->thread, NULL ); 
 
 /*------------------------------------------------------------------------*\
@@ -333,7 +365,7 @@ int codecWaitForEnd( CodecInstance *instance, int timeout )
 /*------------------------------------------------------------------------*\
     Lock mutex
 \*------------------------------------------------------------------------*/
-   pthread_mutex_lock( &instance->mutex );
+  pthread_mutex_lock( &instance->mutex );
   
 /*------------------------------------------------------------------------*\
     Get absolut timestamp for timeout
@@ -431,40 +463,39 @@ static void *_codecThread( void *arg )
 /*------------------------------------------------------------------------*\
     Thread main loop  
 \*------------------------------------------------------------------------*/
-  instance->state = CodecRunning;
   while( instance->state==CodecRunning ) {
     int    rc;
     size_t size = 0;
     
-  	// Wait max. 500 ms for free space in output fifo 
-  	rc = fifoLockWaitWritable( instance->fifoOut, 500 );
-  	if( rc==ETIMEDOUT ) {
-  	  continue;
+    // Wait max. 500 ms for free space in output fifo
+    rc = fifoLockWaitWritable( instance->fifoOut, 500 );
+    if( rc==ETIMEDOUT ) {
+      continue;
     }   
     if( rc ) {
       logerr( "Codec thread: wait error, terminating: %s", strerror(rc) );
-  	  instance->state = CodecTerminatedError;
-  	  break; 	
+      instance->state = CodecTerminatedError;
+      break;
     }
     
-  	// Transfer data from codec to fifo
+    // Transfer data from codec to fifo
     size_t space = fifoGetSize( instance->fifoOut, FifoNextWritable );
-  	rc = codec->deliverOutput( instance, instance->fifoOut->writep, space, &size );
-  	
-  	// Unlock fifo
-  	fifoUnlockAfterWrite( instance->fifoOut, size ); 
+    rc = codec->deliverOutput( instance, instance->fifoOut->writep, space, &size );
+
+    // Unlock fifo
+    fifoUnlockAfterWrite( instance->fifoOut, size );
     
     // Be verbose
     DBGMSG( "Codec thread: %ld bytes written to output (space=%ld, rc=%d)",
                         (long)size, (long)space, rc );
     
     // Error while providing data?
-  	if( rc<0 ) {                  
+    if( rc<0 ) {
       logerr( "Codec thread: output error, terminating" );
-  	  instance->state = CodecTerminatedError;
-  	  break;
-  	}
-  	
+      instance->state = CodecTerminatedError;
+      break;
+    }
+
   }  // End of: Thread main loop
  
 /*------------------------------------------------------------------------*\

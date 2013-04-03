@@ -112,9 +112,16 @@ void hmiNewItem( Playlist *plst, PlaylistItem *item )
   currentItem = item;
 
   playlistLock( plst );
+  if( item )
+    playlistItemLock( item );
+
   printf( "HMI Playback track   : (%d/%d) \"%s\"\n", playlistGetCursorPos(plst)+1, 
            playlistGetLength(plst), item?playlistItemGetText(item):"<None>" );
+
   playlistUnlock( plst );
+  if( item )
+    playlistItemUnlock( item );
+
 }
 
 

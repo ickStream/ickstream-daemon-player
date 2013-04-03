@@ -78,25 +78,28 @@ typedef enum {
   FeedTerminatedError
 } AudioFeedState;
 
-typedef struct _audioFeed {
-  AudioFeedState   state;	
-  char            *uri;
-  char            *type;
-  AudioFormat      format;
-  pthread_t        thread;
-  
-  // Private to feeder thread  
-  CURL            *curlHandle;
-  CodecInstance   *codecInstance;
-} AudioFeed;
+typedef enum {
+  FeedIcy            = 0x0001,
+  FeedIgnoreHeader   = 0x0002,
+  FeedNoGapless      = 0x0004,
+  FeedHeaderComplete = 0x8000
+} AudioFeedFlag;
+
+struct _audioFeed;
+typedef struct _audioFeed AudioFeed;
 
 
 /*=========================================================================*\
        Prototypes 
 \*=========================================================================*/
-AudioFeed  *audioFeedCreate( const char *uri, const char *type, AudioFormat *format );
-int         audioFeedDelete( AudioFeed *feed, bool wait );
-int         audioFeedStart(  AudioFeed *feed, CodecInstance *instance );
+AudioFeed   *audioFeedCreate( const char *uri, const char *type, AudioFormat *format, int flags );
+int          audioFeedDelete( AudioFeed *feed, bool wait );
+int          audioFeedStart( AudioFeed *feed, CodecInstance *instance );
+const char  *audioFeedGetURI( AudioFeed *feed );
+AudioFormat *audioFeedGetFormat(  AudioFeed *feed );
+const char  *audioFeedGetResponseHeader( AudioFeed *feed );
+char        *audioFeedGetResponseHeaderField( AudioFeed *feed, const char *fieldName );
+
 
 #endif  /* __FEED_H */
 
