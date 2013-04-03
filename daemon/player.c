@@ -1183,8 +1183,8 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec )
 /*------------------------------------------------------------------------*\
     Get flags for feed
 \*------------------------------------------------------------------------*/
-  //feedFlags = playlistItemGetType(item)==PlaylistItemStream?FeedIcy:FeedIgnoreHeader;
-  feedFlags = FeedIgnoreHeader;
+  feedFlags = playlistItemGetType(item)==PlaylistItemStream?FeedIcy:FeedIgnoreHeader;
+  //feedFlags = FeedIgnoreHeader;
 
 /*------------------------------------------------------------------------*\
     Get stream hints 

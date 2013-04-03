@@ -80,9 +80,11 @@ Remarks         : -
 
 #ifdef ICK_DEBUG
 #define DBGMSG( args... ) _srvlog( __FILE__, __LINE__, LOG_DEBUG, args )
+#define DBGMEM( title, pointer, size ) _srvdump( __FILE__, __LINE__, LOG_DEBUG, title, pointer, size )
 //#define DBGMSG( args... ) printf( args );
 #else
 #define DBGMSG( args... ) { ;}
+#define DBGMEM( title, pointer, size  ) { ;}
 #endif
 
 #define logerr( args... )     _srvlog( __FILE__, __LINE__, LOG_ERR, args )
@@ -115,6 +117,7 @@ long   rndInteger( long min, long max );
 int    json_object_merge( json_t *target, json_t *source );
 
 void   _srvlog( const char *file, int line, int prio, const char *fmt, ... );
+void   _srvdump( const char *file, int line, int prio, const char *title, const void *ptr, size_t size );
 void  *_smalloc( const char *file, int line, size_t s );
 void  *_scalloc( const char *file, int line, size_t n, size_t s );
 void  *_srealloc( const char *file, int line, void *p, size_t s );

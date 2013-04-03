@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-// #undef ICK_DEBUG
+#undef ICK_DEBUG
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -236,7 +236,7 @@ CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format )
         fixme: this should be merged with the constructor and
                called at the appropriate place in the audio chain setup
 \*=========================================================================*/
-int codecStartInstanceOutput( CodecInstance *instance, long icyInterval )
+int codecStartInstance( CodecInstance *instance, int fd, long icyInterval )
 {
   DBGMSG( "Starting instance of codec %s", instance->codec->name );
 
@@ -249,8 +249,9 @@ int codecStartInstanceOutput( CodecInstance *instance, long icyInterval )
   }
 
 /*------------------------------------------------------------------------*\
-    Set icy interval
+    Set file handle and icy interval
 \*------------------------------------------------------------------------*/
+  instance->fdIn        = fd;
   instance->icyInterval = icyInterval;
 
 /*------------------------------------------------------------------------*\
@@ -312,23 +313,6 @@ int codecDeleteInstance( CodecInstance *instance, bool wait )
     That's it  
 \*------------------------------------------------------------------------*/
   return 0;	
-}
-
-
-/*=========================================================================*\
-      Feed input to a codec instance
-\*=========================================================================*/
-int codecFeedInput( CodecInstance *instance, void *data, size_t size, size_t *accepted )
-{
-  Codec *codec = instance->codec;
-  
-  DBGMSG( "codec %s input: %ld bytes", codec->name, (long)size );
-
-  // reset eoi flag
-  instance->endOfInput = 0;
-  
-  // Call codec function
-  return codec->acceptInput( instance, data, size, accepted );
 }
 
 

@@ -91,7 +91,7 @@ Remarks         : -
 	Private symbols
 \*=========================================================================*/
 static volatile int stop_signal;
-static void         sig_handler( int sig );
+static void sigHandler( int sig, siginfo_t *siginfo, void *context );
 
 
 /*========================================================================*\
@@ -321,7 +321,7 @@ int main( int argc, char *argv[] )
 /*------------------------------------------------------------------------*\
     Init HMI
 \*------------------------------------------------------------------------*/
-  if( hmiInit() )
+  if( !daemon_flag && hmiInit() )
     return -1;
 
 /*------------------------------------------------------------------------*\
@@ -353,21 +353,24 @@ int main( int argc, char *argv[] )
   } /* end of: if( daemon_flag )*/
 
 /*------------------------------------------------------------------------*\
+    OK, from here on we catch some terminating signals and ignore others
+\*------------------------------------------------------------------------*/  
+  struct sigaction act;
+  memset( &act, 0, sizeof(act) );
+  act.sa_sigaction = &sigHandler;
+  act.sa_flags     = SA_SIGINFO;
+  sigaction( SIGINT, &act, NULL );
+  sigaction( SIGTERM, &act, NULL );
+
+/*------------------------------------------------------------------------*\
     Setup PID file, ignore errors...
 \*------------------------------------------------------------------------*/
-  fp = fopen( pid_fname, "w" );	  
+  fp = fopen( pid_fname, "w" );
   if( fp ) {
     fprintf( fp, "%d\n", getpid() );
     fclose( fp );
   }
-	
-/*------------------------------------------------------------------------*\
-    OK, from here on we catch some terminating signals and ignore others
-\*------------------------------------------------------------------------*/  
-  signal( SIGINT,  sig_handler );
-  signal( SIGTERM, sig_handler );
-  signal( SIGPIPE, SIG_IGN );
-  
+
 /*------------------------------------------------------------------------*\
     Initalize ickstream environment...
 \*------------------------------------------------------------------------*/
@@ -427,7 +430,7 @@ int main( int argc, char *argv[] )
 /*=========================================================================*\
         Handle signals
 \*=========================================================================*/
-static void  sig_handler( int sig )
+static void sigHandler( int sig, siginfo_t *siginfo, void *context )
 {
 
 /*------------------------------------------------------------------------*\
@@ -441,8 +444,13 @@ static void  sig_handler( int sig )
     case SIGINT:
     case SIGTERM:
       stop_signal = sig;
-    break;
+      break;
 
+/*------------------------------------------------------------------------*\
+    Ignore broken pipes
+\*------------------------------------------------------------------------*/
+    case SIGPIPE:
+      break;
   }
   
 /*------------------------------------------------------------------------*\

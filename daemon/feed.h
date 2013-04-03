@@ -97,6 +97,7 @@ int          audioFeedDelete( AudioFeed *feed, bool wait );
 int          audioFeedStart( AudioFeed *feed, CodecInstance *instance );
 const char  *audioFeedGetURI( AudioFeed *feed );
 AudioFormat *audioFeedGetFormat(  AudioFeed *feed );
+int          audioFeedGetFd( AudioFeed *feed );
 const char  *audioFeedGetResponseHeader( AudioFeed *feed );
 char        *audioFeedGetResponseHeaderField( AudioFeed *feed, const char *fieldName );
 

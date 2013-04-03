@@ -55,6 +55,7 @@ Remarks         : -
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include <errno.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <jansson.h>
@@ -90,7 +91,6 @@ static int    _codecShutdown( Codec *codec, bool force );
 static bool   _codecCheckType(const char *type, const AudioFormat *format );
 static int    _codecNewInstance( CodecInstance *instance ); 
 static int    _codecDeleteInstance( CodecInstance *instance ); 
-static int    _codecAcceptInput( CodecInstance *instance, void *data, size_t length, size_t *accepted );  
 static int    _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxLength, size_t *realSize );
 static int    _codecSetVolume( CodecInstance *instance, double volume, bool muted );
 static int    _codecGetSeekTime( CodecInstance *instance, double *pos );  
@@ -117,7 +117,6 @@ Codec *mpg123Descriptor( void )
   codec.checkType      = &_codecCheckType;
   codec.newInstance    = &_codecNewInstance; 
   codec.deleteInstance = &_codecDeleteInstance;
-  codec.acceptInput    = &_codecAcceptInput;
   codec.deliverOutput  = &_codecDeliverOutput;
   codec.setVolume      = &_codecSetVolume;
   codec.getSeekTime    = &_codecGetSeekTime;
@@ -280,9 +279,10 @@ static int _codecNewInstance( CodecInstance *instance )
 /*------------------------------------------------------------------------*\
     Start decoder 
 \*------------------------------------------------------------------------*/
-  rc = mpg123_open_feed( mh );
+  rc = mpg123_open_fd( mh, instance->fdIn );
   if( rc!=MPG123_OK ) {
-    logerr( "mpg123: could not open feed: %d, %s", rc, MPG123ERRSTR(rc,mh) );
+    logerr( "mpg123: could not open file handle %d: %d, %s",
+            instance->fdIn, rc, MPG123ERRSTR(rc,mh) );
     mpg123_delete( mh );
     return -1;
   }
@@ -301,7 +301,7 @@ static int _codecNewInstance( CodecInstance *instance )
 static int _codecDeleteInstance( CodecInstance *instance )
 {
   mpg123_handle *mh = (mpg123_handle *)instance->instanceData;    
-  int            rc;
+  int            rc = 0;
   
 /*------------------------------------------------------------------------*\
     No library handle?
@@ -311,11 +311,12 @@ static int _codecDeleteInstance( CodecInstance *instance )
   instance->instanceData = NULL;
       
 /*------------------------------------------------------------------------*\
-    Close data source
+    Close data source (reading pipe end)
 \*------------------------------------------------------------------------*/
-  rc = mpg123_close( mh );
-  if( rc!=MPG123_OK ) {
-    logerr( "mpg123: could not close handle: %s", MPG123ERRSTR(rc,mh) );
+  if( close(instance->fdIn)<0 ) {
+    logerr( "mpg123: could not close file handle %d: %s", instance->fdIn,
+            strerror(errno) );
+    rc = -1;
   }
 
 /*------------------------------------------------------------------------*\
@@ -327,61 +328,6 @@ static int _codecDeleteInstance( CodecInstance *instance )
     That's all
 \*------------------------------------------------------------------------*/  
   return rc;
-}
-
-
-/*=========================================================================*\
-      Feed input to codec 
-        This can block until new data can be processed (input buffer full)
-\*=========================================================================*/
-static int _codecAcceptInput( CodecInstance *instance, void *data, size_t length, size_t *accepted )
-{
-  mpg123_handle *mh = (mpg123_handle*)instance->instanceData;    
-  int            rc;
-  
-/*------------------------------------------------------------------------*\
-   No data accepted yet
-\*------------------------------------------------------------------------*/  
-  *accepted = 0;
-  
-/*------------------------------------------------------------------------*\
-   Loop until done or error 
-\*------------------------------------------------------------------------*/  
-  do {
-    pthread_mutex_lock( &instance->mutex );
-    rc = mpg123_feed( mh, data, length );
-    pthread_mutex_unlock( &instance->mutex );
-    DBGMSG( "mpg123 (%p): accepted data (%ld bytes): %s",
-            instance, (long)length, MPG123ERRSTR(rc,mh)  );
-
-/*------------------------------------------------------------------------*\
-    Interpret result
-\*------------------------------------------------------------------------*/  
-    switch( rc ) {
-  
-      // Everything fine
-      case MPG123_OK:          
-        *accepted = length;
-        break;
-      
-      // Not enough space - block and wait ...
-      case MPG123_NO_SPACE:
-        sleep( 1 );
-        rc = MPG123_OK;
-        break;	
-  
-      // Report real error 
-      default:
-        logerr( "mpg123: could not accept data (%ld bytes): %s",
-                (long)length, MPG123ERRSTR(rc,mh) );
-        return -1;
-    }
-  } while (rc!=MPG123_OK);
-  
-/*------------------------------------------------------------------------*\
-    That's all
-\*------------------------------------------------------------------------*/  
-  return 0;
 }
 
 
@@ -413,29 +359,29 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
   DBGMSG( "mpg123 (%p): delivered data (%ld/%ld bytes), meta=%d: %s",
           instance, (long)*realSize, (long)maxLength, metaVector, MPG123ERRSTR(rc,mh) );
 
-  /*------------------------------------------------------------------------*\
-      New meta data?
-  \*------------------------------------------------------------------------*/
-    if( metaVector ) {
+/*------------------------------------------------------------------------*\
+    New meta data?
+\*------------------------------------------------------------------------*/
+  if( metaVector&(MPG123_NEW_ID3|MPG123_NEW_ICY) ) {
 
-      // Decode ID3 data
-      if( metaVector&MPG123_NEW_ID3 ) {
-        mpg123_id3v1 *id3V1;
-        mpg123_id3v2 *id3V2;
-        mpg123_id3( mh, &id3V1, &id3V2 );
-        DBGMSG( "New ID3 data: "  );
-      }
-
-      // Decode ICY data
-      if( metaVector&MPG123_NEW_ICY ) {
-        char *icyString;
-        mpg123_icy( mh, &icyString );
-        DBGMSG( "New ICY data: \"%s\"", icyString );
-      }
-
-      // Reset Data in stream
-      mpg123_meta_free( mh );
+    // Decode ID3 data
+    if( metaVector&MPG123_NEW_ID3 ) {
+      mpg123_id3v1 *id3V1;
+      mpg123_id3v2 *id3V2;
+      mpg123_id3( mh, &id3V1, &id3V2 );
+      DBGMSG( "New ID3 data: "  );
     }
+
+    // Decode ICY data
+    if( metaVector&MPG123_NEW_ICY ) {
+      char *icyString;
+      mpg123_icy( mh, &icyString );
+      DBGMSG( "New ICY data: \"%s\"", icyString );
+    }
+
+    // Reset Data in stream
+    mpg123_meta_free( mh );
+  }
 
 /*------------------------------------------------------------------------*\
     Interpret result
@@ -448,7 +394,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
 
     // Waiting for more data
     // Ignore if not at end of input, else treat like MPG123_DONE
-    case MPG123_NEED_MORE:    
+    case MPG123_NEED_MORE:
      if( !instance->endOfInput )
         break;
 

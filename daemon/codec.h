@@ -87,7 +87,6 @@ typedef int    (*CodecShutdown)( Codec *codec, bool force );
 typedef bool   (*CodecCheckType)(const char *type, const AudioFormat *format );
 typedef int    (*CodecInstanceNew)( CodecInstance *instance ); 
 typedef int    (*CodecInstanceDelete)( CodecInstance *instance ); 
-typedef int    (*CodecInput)( CodecInstance *instance, void *data, size_t length, size_t *accepted );  
 typedef int    (*CodecOutput)( CodecInstance *instance, void *data, size_t maxLength, size_t *realSize );  
 typedef int    (*CodecVolume)( CodecInstance *instance, double volume, bool muted );  
 typedef int    (*CodecGetSeekTime)( CodecInstance *instance, double *pos );  
@@ -104,6 +103,7 @@ struct _codecInstance {
   CodecInstanceState      state;
   Codec                  *codec;            // weak
   void                   *instanceData;     // handled by individual codec
+  int                     fdIn;
   Fifo                   *fifoOut;          // weak
   int                     endOfInput;
   CodecMetaCallback       metaCallback;
@@ -125,7 +125,6 @@ struct _codec {
   CodecCheckType       checkType;
   CodecInstanceNew     newInstance; 
   CodecInstanceDelete  deleteInstance;
-  CodecInput           acceptInput;
   CodecOutput          deliverOutput;
   CodecVolume          setVolume;
   CodecGetSeekTime     getSeekTime;
@@ -141,8 +140,7 @@ Codec *codecFind( const char *type, AudioFormat *format, Codec *codec );
 
 CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format );
 int            codecDeleteInstance(CodecInstance *instance, bool wait );
-int            codecStartInstanceOutput( CodecInstance *instance, long icyINterval );
-int            codecFeedInput( CodecInstance *instance, void *content, size_t size, size_t *accepted );
+int            codecStartInstance( CodecInstance *instance, int fd, long icyInterval );
 void           codecSetEndOfInput( CodecInstance *instance );
 int            codecWaitForEnd( CodecInstance *instance, int timeout );
 int            codecSetVolume( CodecInstance *instance, double volume, bool muted );
