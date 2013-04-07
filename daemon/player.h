@@ -86,6 +86,8 @@ typedef enum {
 int                playerInit( void );
 void               playerShutdown( void );
 int                playerAddDefaultAudioFormat( const AudioFormat *format );
+const char        *playerRepeatModeToStr( PlayerRepeatMode );
+PlayerRepeatMode   playerRepeatModeFromStr( const char *str );
 Playlist          *playerGetQueue( void );
 void               playerResetQueue( void );
 PlayerState        playerGetState( void );
@@ -101,7 +103,6 @@ const char        *playerGetToken( void );
 double             playerGetVolume( void ); 
 bool               playerGetMuting( void );
 double             playerGetSeekPos( void );
-
 void               playerSetUUID( const char *name );
 void               playerSetInterface( const char *name );
 void               playerSetAudioDevice( const char *name );
@@ -112,8 +113,6 @@ double             playerSetVolume( double volume, bool muted, bool broadcast );
 int                playerSetRepeatMode( PlayerRepeatMode state, bool broadcast );
 int                playerSetState( PlayerState state, bool broadcast );
 
-const char        *playerRepeatModeToStr( PlayerRepeatMode );
-PlayerRepeatMode   playerRepeatModeFromStr( const char *str );
 
 
 

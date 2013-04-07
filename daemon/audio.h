@@ -136,18 +136,18 @@ struct _audioBackend {
 };
 
 struct _audioIf {
-  AudioIfState        state;
-  const AudioBackend *backend;          // weak
-  char               *devName;          // strong
-  Fifo               *fifoIn;           // strong
-  AudioFormat         format;
-  bool                canPause;
-  bool                hasVolume;
-  double              volume;
-  bool                muted;
-  int                 framesize;
-  pthread_t           thread;
-  void               *ifData;           // handled by individual backend
+  volatile AudioIfState  state;
+  const AudioBackend    *backend;          // weak
+  char                  *devName;          // strong
+  Fifo                  *fifoIn;           // strong
+  AudioFormat            format;
+  bool                   canPause;
+  bool                   hasVolume;
+  double                 volume;
+  bool                   muted;
+  int                    framesize;
+  pthread_t              thread;
+  void                  *ifData;           // handled by individual backend
 };
 
 
@@ -178,9 +178,9 @@ int                 audioFormatComplete( AudioFormat *destFormat, const AudioFor
 int                 audioAddAudioFormat( AudioFormatList *list, const AudioFormat *format );
 void                audioFreeAudioFormatList( AudioFormatList *list );
 
-AudioIf            *audioIfNew( const AudioBackend *backend, const char *device );
+AudioIf            *audioIfNew( const AudioBackend *backend, const char *device, size_t fifoSize );
 int                 audioIfDelete( AudioIf *aif, AudioTermMode mode );
-Fifo               *audioIfPlay( AudioIf *aif, AudioFormat *format );
+int                 audioIfPlay( AudioIf *aif, AudioFormat *format, AudioTermMode mode );
 int                 audioIfStop( AudioIf *aif, AudioTermMode mode );
 #define             audioIfSupportsPause( aif ) ((aif)->canPause)
 int                 audioIfSetPause( AudioIf *aif, bool pause );

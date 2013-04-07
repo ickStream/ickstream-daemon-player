@@ -687,8 +687,10 @@ static void *_ifThread( void *arg )
 {
   AudioIf  *aif    = (AudioIf*)arg; 
   AlsaData *ifData = (AlsaData*)aif->ifData;
-  DBGMSG( "Alsa thread: starting." ); 
-  
+
+  DBGMSG( "Alsa thread (%s): starting.", aif->devName );
+  PTHREADSETNAME( aif->backend->name );
+
 /*------------------------------------------------------------------------*\
     Thread main loop  
 \*------------------------------------------------------------------------*/
@@ -736,7 +738,7 @@ static void *_ifThread( void *arg )
 
     // Do transfer the data
     DBGMSG( "Alsa thread: writing %ld frames", (long)frames );
-    rc = snd_pcm_writei( ifData->pcm, aif->fifoIn->readp, frames );		
+    rc = snd_pcm_writei( ifData->pcm, fifoGetReadPtr(aif->fifoIn), frames );
     if( rc==-EPIPE || rc==-ESTRPIPE ){
       rc = snd_pcm_recover( ifData->pcm, rc, 0 ); 
       if( rc ) {

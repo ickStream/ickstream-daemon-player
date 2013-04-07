@@ -232,7 +232,7 @@ double srvtime( void )
 {
   struct timeval tv;
   gettimeofday( &tv, NULL );
-  return tv.tv_sec+10e-6*tv.tv_usec;
+  return tv.tv_sec+tv.tv_usec*1E-6;
 }
 
 

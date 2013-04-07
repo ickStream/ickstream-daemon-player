@@ -370,6 +370,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
       mpg123_id3v2 *id3V2;
       mpg123_id3( mh, &id3V1, &id3V2 );
       DBGMSG( "New ID3 data: "  );
+      // Fixme.
     }
 
     // Decode ICY data
@@ -377,6 +378,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
       char *icyString;
       mpg123_icy( mh, &icyString );
       DBGMSG( "New ICY data: \"%s\"", icyString );
+      // Fixme.
     }
 
     // Reset Data in stream
@@ -395,7 +397,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
     // Waiting for more data
     // Ignore if not at end of input, else treat like MPG123_DONE
     case MPG123_NEED_MORE:
-     if( !instance->endOfInput )
+//     if( !instance->endOfInput )
         break;
 
     // End of track: set status and call player callback
@@ -413,15 +415,8 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
         logwarn( "mpg123: encoding %d not supported (ignored)", encoding );
       DBGMSG( "mpg123 (%p): New mpg format: \"%s\"",
               instance, audioFormatStr(NULL,&format) );
-
-      if( instance->metaCallback ) {
-        json_t      *jMeta = NULL;
-        // Collect data
-        // Fixme...
-
-        // and deliver...
-        instance->metaCallback( instance, &format, jMeta );
-      }
+      if( instance->formatCallback )
+        instance->formatCallback( instance, &format, instance->formatCallbackUserData );
       break;
 
     // Report real error 

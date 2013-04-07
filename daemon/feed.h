@@ -70,36 +70,52 @@ Remarks         : -
        Macro and type definitions 
 \*=========================================================================*/
 
-typedef enum {
-  FeedInitialized,
-  FeedRunning,
-  FeedTerminating,
-  FeedTerminatedOk,
-  FeedTerminatedError
-} AudioFeedState;
-
-typedef enum {
-  FeedIcy            = 0x0001,
-  FeedIgnoreHeader   = 0x0002,
-  FeedNoGapless      = 0x0004,
-  FeedHeaderComplete = 0x8000
-} AudioFeedFlag;
-
+// A feeder instance
 struct _audioFeed;
 typedef struct _audioFeed AudioFeed;
+
+// State of a feed (evaluate in callback!)
+typedef enum {
+  FeedInitialized,
+  FeedConnecting,       // Includes reading header
+  FeedConnected,        // Fd will now deliver data
+  FeedTerminating,
+  FeedTerminatedOk,     // Includes EOF or audioFeedDelete()
+  FeedTerminatedError   // Includes broken connection
+} AudioFeedState;
+
+// Flags for a feed
+typedef enum {
+  FeedIcy            = 0x0001
+} AudioFeedFlag;
+
+/*------------------------------------------------------------------------*\
+    Macros
+\*------------------------------------------------------------------------*/
+#define AUDIOFEEDISDONE(feed) (audioFeedGetState(feed)>FeedTerminating)
+
+/*------------------------------------------------------------------------*\
+    Signatures for function pointers
+\*------------------------------------------------------------------------*/
+typedef int (*AudioFeedCallback)( AudioFeed *feed, void *usrData );
 
 
 /*=========================================================================*\
        Prototypes 
 \*=========================================================================*/
-AudioFeed   *audioFeedCreate( const char *uri, const char *type, AudioFormat *format, int flags );
-int          audioFeedDelete( AudioFeed *feed, bool wait );
-int          audioFeedStart( AudioFeed *feed, CodecInstance *instance );
-const char  *audioFeedGetURI( AudioFeed *feed );
-AudioFormat *audioFeedGetFormat(  AudioFeed *feed );
-int          audioFeedGetFd( AudioFeed *feed );
-const char  *audioFeedGetResponseHeader( AudioFeed *feed );
-char        *audioFeedGetResponseHeaderField( AudioFeed *feed, const char *fieldName );
+AudioFeed      *audioFeedCreate( const char *uri, int flags, AudioFeedCallback callback, void *usrData );
+int             audioFeedDelete( AudioFeed *feed, bool wait );
+void            audioFeedLock( AudioFeed *feed );
+void            audioFeedUnlock( AudioFeed *feed );
+int             audioFeedWaitForConnection( AudioFeed *feed, int timeout );
+const char     *audioFeedGetURI( AudioFeed *feed );
+int             audioFeedGetFlags( AudioFeed *feed );
+AudioFeedState  audioFeedGetState( AudioFeed *feed );
+int             audioFeedGetFd( AudioFeed *feed );
+const char     *audioFeedGetType( AudioFeed *feed );
+long            audioFeedGetIcyInterval( AudioFeed *feed );
+const char     *audioFeedGetResponseHeader( AudioFeed *feed );
+char           *audioFeedGetResponseHeaderField( AudioFeed *feed, const char *fieldName );
 
 
 #endif  /* __FEED_H */

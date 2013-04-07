@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef ICK_DEBUG
+// #undef ICK_DEBUG
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -88,19 +88,19 @@ static void *_codecThread( void *arg );
 \*=========================================================================*/
 int codecRegister( Codec *codec )
 {
-  loginfo( "Registering codec %s", codec->name );
-  
+
   // Call optional init method
   if( codec->init && codec->init(codec) ) {
-    loginfo( "Could not init codec %s", codec->name );
+    loginfo( "codecRegister (%s): Could not init codec.", codec->name );
     return -1;
   }
-  
+
   // Link to list
   codec->next = codecList;
   codecList   = codec;	
-  
+
   // That's all
+  loginfo( "codecRegister (%s): Ok.", codec->name );
   return 0;
 }
 
@@ -111,7 +111,7 @@ int codecRegister( Codec *codec )
 void codecShutdown( bool force )
 {
   Codec *codec; 
-  DBGMSG( "Shuting down codecs" );
+  DBGMSG( "codecShutdown: %s.", force?"force":"wait" );
 
 /*------------------------------------------------------------------------*\
     Loop over all codecs 
@@ -126,7 +126,7 @@ void codecShutdown( bool force )
     if( codec->shutdown )
       codec->shutdown( codec, force );
   }
-  
+
 /*------------------------------------------------------------------------*\
     That's all 
 \*------------------------------------------------------------------------*/
@@ -134,15 +134,17 @@ void codecShutdown( bool force )
 
 
 /*=========================================================================*\
-      Find a codec for type an parameters
+      Find a codec for type and format
         for initial call codec shall be NULL
         supply codec with previous result to get next match
-        Returns a matching codec or NULL if none
-        An incomplete format will be completed by using the default audio format list
+      Returns a matching codec (format will be completed)
+        or NULL if none was found
+      An incomplete format that is not accepted by the backend will be
+      completed and retried by using the default audio format list elements
 \*=========================================================================*/
 Codec *codecFind( const char *type, AudioFormat *format, Codec *codec )
 {
-  DBGMSG( "Search codec for type %s, %s.", type, audioFormatStr(NULL,format) );
+  DBGMSG( "codecFind: %s, %s.", type, audioFormatStr(NULL,format) );
 
 /*------------------------------------------------------------------------*\
     First call? 
@@ -158,6 +160,8 @@ Codec *codecFind( const char *type, AudioFormat *format, Codec *codec )
 /*------------------------------------------------------------------------*\
     Direct check (format might be incomplete here!)
 \*------------------------------------------------------------------------*/
+    DBGMSG( "codecFind: Checking codec %s for type %s, format %s.",
+            codec->name, type, audioFormatStr(NULL,format) );
     if( codec->checkType(type,format) )
       break;
 
@@ -170,8 +174,8 @@ Codec *codecFind( const char *type, AudioFormat *format, Codec *codec )
       while( element ) {
         memcpy( &tryFormat, format, sizeof(AudioFormat) );
         audioFormatComplete( &tryFormat, &element->format );
-        DBGMSG( "Checking codec %s for type %s, format %s: ", 
-                     codec->name, type, audioFormatStr(NULL,&tryFormat) );
+        DBGMSG( "codecFind: Checking codec %s for type %s, format %s.",
+                codec->name, type, audioFormatStr(NULL,&tryFormat) );
         if( codec->checkType(type,&tryFormat) )
           break;
       }
@@ -187,33 +191,44 @@ Codec *codecFind( const char *type, AudioFormat *format, Codec *codec )
 /*------------------------------------------------------------------------*\
     Return result 
 \*------------------------------------------------------------------------*/
-  DBGMSG( "Using codec for type %s: %s (%s)", type, 
-                     codec?codec->name:"<none found>", audioFormatStr(NULL,format) );
+  DBGMSG( "codecFind (%s,%s): using %s",
+           type, audioFormatStr(NULL,format), codec?codec->name:"<none found>" );
   return codec;
 }
 
 
 /*=========================================================================*\
-      Create a new instance of codec
+    Create a new instance of a codec
+       fifo        - the output link to the audio backend (PCM format)
+       format      - the prfered output format
+       fd          - file descriptor for input data (close on EOF!)
+       icyInterval - if >0 ICY data is expected
+    Returns NULL on error
 \*=========================================================================*/
-CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format )
+CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, int fd, Fifo *fifo, long icyInterval )
 {
   CodecInstance       *instance;
   pthread_mutexattr_t  attr;
 
-  DBGMSG( "Creating new instance of codec %s", codec->name );
+  DBGMSG( "codecNewInstance (%s): creating new instance.", codec->name );
 
 /*------------------------------------------------------------------------*\
     Create header 
 \*------------------------------------------------------------------------*/
   instance = calloc( 1, sizeof(CodecInstance) );
   if( !instance ) {
-    logerr( "codecNewInstance: out of memeory!" );
+    logerr( "codecNewInstance (%s): Out of memory!", codec->name );
     return NULL;
   }
-  instance->state   = CodecInitialized;
-  instance->codec   = codec;
-  instance->fifoOut = fifo;
+
+/*------------------------------------------------------------------------*\
+    INitialize with parameters
+\*------------------------------------------------------------------------*/
+  instance->state       = CodecInitialized;
+  instance->codec       = codec;
+  instance->fifoOut     = fifo;
+  instance->fdIn        = fd;
+  instance->icyInterval = icyInterval;
   memcpy( &instance->format, format, sizeof(AudioFormat) );
 
 /*------------------------------------------------------------------------*\
@@ -225,42 +240,12 @@ CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format )
   pthread_cond_init( &instance->condEndOfTrack, NULL );
 
 /*------------------------------------------------------------------------*\
-    That's all 
-\*------------------------------------------------------------------------*/
-  return instance;
-}
-
-
-/*=========================================================================*\
-      Start output thread for instance of codec
-        fixme: this should be merged with the constructor and
-               called at the appropriate place in the audio chain setup
-\*=========================================================================*/
-int codecStartInstance( CodecInstance *instance, int fd, long icyInterval )
-{
-  DBGMSG( "Starting instance of codec %s", instance->codec->name );
-
-/*------------------------------------------------------------------------*\
-    Check state
-\*------------------------------------------------------------------------*/
-  if( instance->state!=CodecInitialized ) {
-    logerr( "codecStartInstanceOutput: State past init: %d", instance->state );
-    return -1;
-  }
-
-/*------------------------------------------------------------------------*\
-    Set file handle and icy interval
-\*------------------------------------------------------------------------*/
-  instance->fdIn        = fd;
-  instance->icyInterval = icyInterval;
-
-/*------------------------------------------------------------------------*\
     Call Codec instance initializer
 \*------------------------------------------------------------------------*/
-  if( instance->codec->newInstance(instance) ) {
-    logerr( "codecStartInstanceOutput: could not init instance of codec %s",
-                     instance->codec->name );
-    return -1;
+  if( codec->newInstance(instance) ) {
+    logerr( "codecNewInstance (%s): Could not init instance.", codec->name );
+    Sfree( instance );
+    return NULL;
   }
 
 /*------------------------------------------------------------------------*\
@@ -270,14 +255,17 @@ int codecStartInstance( CodecInstance *instance, int fd, long icyInterval )
   int rc = pthread_create( &instance->thread, NULL, _codecThread, instance );
   if( rc ) {
     instance->state = CodecTerminatedError;
-    logerr( "codecNewInstance: Unable to start thread: %s", strerror(rc) );
-    return -1;
+    logerr( "codecNewInstance (%s): Unable to start thread (%s).",
+            codec->name, strerror(rc) );
+    codec->deleteInstance( instance );
+    Sfree( instance );
+    return NULL;
   }
 
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/
-  return 0;
+  return instance;
 }
 
 
@@ -286,10 +274,8 @@ int codecStartInstance( CodecInstance *instance, int fd, long icyInterval )
 \*=========================================================================*/
 int codecDeleteInstance( CodecInstance *instance, bool wait )
 {
-#ifdef ICK_DEBUG
-  Codec *codec = instance->codec;
-#endif
-  DBGMSG( "Deleting codec instance \"%s\"", codec->name );	
+  DBGMSG( "codecDeleteInstance (%s,%p): Deleting codec instance.",
+          instance->codec->name, instance );
 
 /*------------------------------------------------------------------------*\
     Stop thread and optionally wait for termination   
@@ -317,17 +303,28 @@ int codecDeleteInstance( CodecInstance *instance, bool wait )
 
 
 /*=========================================================================*\
-      Set end of input flag
+      Set callback for format detection / changes
 \*=========================================================================*/
-void codecSetEndOfInput( CodecInstance *instance )
+void codecSetFormatCallback( CodecInstance *instance, CodecFormatCallback callback, void *userData )
 {
-#ifdef ICK_DEBUG
-  Codec *codec = instance->codec;
-  DBGMSG( "codec %s: end of input", codec->name );
-#endif  
-  
-  // Set eoi flag
-  instance->endOfInput = 1;
+  DBGMSG( "codecSetFormatCallback (%s,%p): %p, userData %p.",
+          instance->codec->name, instance, callback, userData );
+
+  instance->formatCallback = callback;
+  instance->formatCallbackUserData = userData;
+}
+
+
+/*=========================================================================*\
+      Set callback for meta data detection
+\*=========================================================================*/
+void codecSetMetaCallback( CodecInstance *instance, CodecMetaCallback callback, void *userData )
+{
+  DBGMSG( "codecSetMetaCallback (%s,%p): %p, userData %p.",
+          instance->codec->name, instance, callback, userData );
+
+  instance->metaCallback = callback;
+  instance->metaCallbackUserData = userData;
 }
 
 
@@ -343,8 +340,8 @@ int codecWaitForEnd( CodecInstance *instance, int timeout )
   struct timespec abstime;
   int             err = 0;
 
-  DBGMSG( "codec %p (%s): waiting for end: timeout %dms", 
-          instance, instance->codec->name, timeout ); 
+  DBGMSG( "codecWaitForEnd (%s,%p): Waiting for end (timeout %dms).",
+          instance->codec->name, instance, timeout );
 
 /*------------------------------------------------------------------------*\
     Lock mutex
@@ -365,7 +362,7 @@ int codecWaitForEnd( CodecInstance *instance, int timeout )
   }
 
 /*------------------------------------------------------------------------*\
-    Loop while condtion is not met (cope with "spurious  wakeups")
+    Loop while condition is not met (cope with "spurious  wakeups")
 \*------------------------------------------------------------------------*/
   while( instance->state!=CodecTerminatedOk && instance->state!=CodecTerminatedError ) {
 
@@ -381,10 +378,11 @@ int codecWaitForEnd( CodecInstance *instance, int timeout )
 /*------------------------------------------------------------------------*\
     Unlock mutex
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &instance->mutex );
+  if( !err)
+    pthread_mutex_unlock( &instance->mutex );
 
-  DBGMSG( "codec %p (%s): waiting for end: %s", 
-          instance, instance->codec->name, strerror(err) ); 
+  DBGMSG( "codecWaitForEnd (%s,%p): Waited for end (%s)",
+          instance->codec->name, instance, strerror(err) );
 
 /*------------------------------------------------------------------------*\
     That's it
@@ -398,18 +396,17 @@ int codecWaitForEnd( CodecInstance *instance, int timeout )
 \*=========================================================================*/
 int codecSetVolume( CodecInstance *instance, double volume, bool muted )
 {
-  Codec *codec = instance->codec;
-  
-  DBGMSG( "codec %s set volume: %f %s", 
-           codec->name, volume, muted?"(muted)":"(unmuted)" );
-  
+  const Codec *codec = instance->codec;
+
+  DBGMSG( "codecSetVolume (%s,%p): Set volume to %f (%s).",
+           codec->name, instance, volume, muted?"muted":"unmuted" );
+
   // Not supported?
   if( !codec->setVolume ) {
-  	logwarn( "Codec %s: volume setting not supported.",
-                         codec->name );
-  	return -1;
-  } 	
-    
+    logwarn( "codecSetVolume (%s): Volume setting not supported.", codec->name );
+    return -1;
+  }
+
   // Call codec function
   return codec->setVolume( instance, volume, muted );
 }
@@ -420,18 +417,17 @@ int codecSetVolume( CodecInstance *instance, double volume, bool muted )
 \*=========================================================================*/
 int codecGetSeekTime( CodecInstance *instance, double *pos )
 {
-  Codec *codec = instance->codec;
-  
+  const Codec *codec = instance->codec;
+
   // Not supported?
   if( !codec->getSeekTime ) {
-  	logwarn( "Codec %s: seek position not supported.",
-                         codec->name );
-  	return -1;
-  } 	
-    
+    logwarn( "codecGetSeekTime (%s): Seek position not supported.", codec->name );
+    return -1;
+  }
+
   // Call codec function
   int rc = codec->getSeekTime( instance, pos );
-  DBGMSG( "codec %s seek: %.2lf s", codec->name, *pos );
+  DBGMSG( "codecGetSeekTime (%s,%p): %.2lfs", codec->name, instance, *pos );
   return rc;
 }
 
@@ -442,7 +438,10 @@ int codecGetSeekTime( CodecInstance *instance, double *pos )
 static void *_codecThread( void *arg )
 {
   CodecInstance *instance = (CodecInstance*)arg; 
-  Codec         *codec    = instance->codec;
+  const Codec   *codec    = instance->codec;
+
+  DBGMSG( "Codec thread (%s): starting.", codec->name );
+  PTHREADSETNAME( codec->name );
 
 /*------------------------------------------------------------------------*\
     Thread main loop  
@@ -457,25 +456,26 @@ static void *_codecThread( void *arg )
       continue;
     }   
     if( rc ) {
-      logerr( "Codec thread: wait error, terminating: %s", strerror(rc) );
+      logerr( "Codec thread (%s): Error while waiting for fifo (%s), terminating.",
+               codec->name, strerror(rc) );
       instance->state = CodecTerminatedError;
       break;
     }
     
     // Transfer data from codec to fifo
     size_t space = fifoGetSize( instance->fifoOut, FifoNextWritable );
-    rc = codec->deliverOutput( instance, instance->fifoOut->writep, space, &size );
+    rc = codec->deliverOutput( instance, fifoGetWritePtr(instance->fifoOut), space, &size );
 
     // Unlock fifo
     fifoUnlockAfterWrite( instance->fifoOut, size );
     
     // Be verbose
-    DBGMSG( "Codec thread: %ld bytes written to output (space=%ld, rc=%d)",
-                        (long)size, (long)space, rc );
+    DBGMSG( "Codec thread (%s,%p): %ld bytes written to output (space=%ld, rc=%d)",
+            codec->name, instance, (long)size, (long)space, rc );
     
     // Error while providing data?
     if( rc<0 ) {
-      logerr( "Codec thread: output error, terminating" );
+      logerr( "Codec thread (%s): Output error, terminating.", codec->name );
       instance->state = CodecTerminatedError;
       break;
     }
@@ -486,14 +486,13 @@ static void *_codecThread( void *arg )
     Terminate decoder  
 \*------------------------------------------------------------------------*/
   if( codec->deleteInstance(instance) ) {
-  	logerr( "Codec thread: could not delete instance of codec %s", 
-  	                 codec->name );
-  	instance->state = CodecTerminatedError;
-  	return NULL;
+    logerr( "Codec thread (%s): Could not delete instance.", codec->name );
+    instance->state = CodecTerminatedError;
+    return NULL;
   }
+  DBGMSG( "Codec thread (%s,%p): Terminated due to state %d.",
+          codec->name, instance, instance->state );
 
-  DBGMSG( "Codec thread: terminated due to state %d", instance->state );
-  
 /*------------------------------------------------------------------------*\
     Fulfilled external termination request without error?  
 \*------------------------------------------------------------------------*/

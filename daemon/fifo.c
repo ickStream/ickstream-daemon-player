@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef ICK_DEBUG
+// #undef ICK_DEBUG
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,10 +68,33 @@ Remarks         : -
 \*=========================================================================*/
 // none
 
+
 /*=========================================================================*\
 	Private symbols
 \*=========================================================================*/
-// none
+struct _fifo {
+  char            *name;
+
+  // Actual buffer
+  size_t           size;
+  char            *buffer;
+  volatile char   *readp;          // pointer to next read
+  volatile char   *writep;         // pointer to next write
+  volatile bool    isFull;         // if readp==writep buffer is either empty or full
+  volatile bool    isDraining;
+
+  // Access arbitration
+  size_t           lowWatermark;   // freeSize<lowWatermark  -> isWritable
+  size_t           highWatermark;  // freeSize>highWatermark -> isReadable
+  pthread_mutex_t  mutex;
+  pthread_cond_t   condIsWritable;
+  pthread_cond_t   condIsDrained;
+  pthread_cond_t   condIsReadable;
+};
+
+#define FifoIsEmpty(fifo) ((fifo)->readp==(fifo)->writep)
+#define FifoIsWritable(fifo) (fifoGetSize((fifo),FifoTotalUsed)<(fifo)->lowWatermark)
+#define FifoIsReadable(fifo) (fifoGetSize((fifo),FifoTotalUsed)>(fifo)->highWatermark)
 
 
 /*=========================================================================*\
@@ -119,12 +142,13 @@ Fifo *fifoCreate( const char *name, size_t size )
   fifo->isFull = false;
 
 /*------------------------------------------------------------------------*\
-    init mutex and conditions 
+    Init mutex and conditions
 \*------------------------------------------------------------------------*/
   pthread_mutexattr_init( &attr );
   pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
   pthread_mutex_init( &fifo->mutex, &attr );
   pthread_cond_init( &fifo->condIsWritable, NULL );
+  pthread_cond_init( &fifo->condIsDrained, NULL );
   pthread_cond_init( &fifo->condIsReadable, NULL );
 
 /*------------------------------------------------------------------------*\
@@ -149,6 +173,7 @@ void fifoDelete( Fifo *fifo )
 \*------------------------------------------------------------------------*/
   pthread_mutex_destroy( &fifo->mutex );
   pthread_cond_destroy( &fifo->condIsWritable );
+  pthread_cond_destroy( &fifo->condIsDrained );
   pthread_cond_destroy( &fifo->condIsReadable );
 
 /*------------------------------------------------------------------------*\
@@ -192,9 +217,8 @@ void fifoReset( Fifo *fifo )
 \*=========================================================================*/
 void fifoLock( Fifo *fifo )
 {
-  pthread_mutex_lock( &fifo->mutex );	
-  DBGMSG( "Fifo %p (%s): locked.", 
-                      fifo, fifo->name?fifo->name:"<unknown>" ); 
+  DBGMSG( "Fifo (%p,%s): lock.", fifo, fifo->name?fifo->name:"<unknown>" );
+  pthread_mutex_lock( &fifo->mutex );
 }
 
 
@@ -210,7 +234,7 @@ int fifoLockWaitWritable( Fifo *fifo, int timeout )
   struct timespec abstime;
   int             err = 0;
 
-  DBGMSG( "Fifo %p (%s): waiting for writable: used=%ld <? low mark=%ld, timeout %dms", 
+  DBGMSG( "Fifo (%p,%s): waiting for writable: used=%ld <? low mark=%ld, timeout %dms",
           fifo, fifo->name?fifo->name:"<unknown>",
           (long)fifoGetSize(fifo,FifoTotalUsed), (long)fifo->lowWatermark, timeout ); 
 
@@ -258,7 +282,79 @@ int fifoLockWaitWritable( Fifo *fifo, int timeout )
 /*------------------------------------------------------------------------*\
     That's it
 \*------------------------------------------------------------------------*/
-  DBGMSG( "Fifo %p (%s): waiting for writable: %s",
+  DBGMSG( "Fifo (%p,%s): waiting for writable: %s",
+          fifo, fifo->name?fifo->name:"<unknown>", err?strerror(err):"Locked" );
+  return err;
+}
+
+
+/*=========================================================================*\
+      Lock fifo and wait for empty condition
+        timeout is in ms, 0 or a negative values are treated as infinity
+        returns 0 and locks fifo, if condition is met
+                std. errode (ETIMEDOUT in case of timeout) and no locking otherwise
+\*=========================================================================*/
+int fifoLockWaitDrained( Fifo *fifo, int timeout )
+{
+  struct timeval  now;
+  struct timespec abstime;
+  int             err = 0;
+
+  DBGMSG( "Fifo (%p,%s): waiting for drained: used=%ld, timeout %dms",
+          fifo, fifo->name?fifo->name:"<unknown>",
+          (long)fifoGetSize(fifo,FifoTotalUsed), timeout );
+
+/*------------------------------------------------------------------------*\
+    We're draining
+\*------------------------------------------------------------------------*/
+  fifo->isDraining = true;
+
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+   pthread_mutex_lock( &fifo->mutex );
+
+/*------------------------------------------------------------------------*\
+    Get absolute timestamp for timeout
+\*------------------------------------------------------------------------*/
+  if( timeout>0 ) {
+    gettimeofday( &now, NULL );
+    abstime.tv_sec  = now.tv_sec + timeout/1000;
+    abstime.tv_nsec = now.tv_usec*1000UL +(timeout%1000)*1000UL*1000UL;
+    if( abstime.tv_nsec>1000UL*1000UL*1000UL ) {
+      abstime.tv_nsec -= 1000UL*1000UL*1000UL;
+      abstime.tv_sec++;
+    }
+  }
+
+/*------------------------------------------------------------------------*\
+    Loop while condition is not met (cope with "spurious  wakeups")
+\*------------------------------------------------------------------------*/
+  while( !FifoIsEmpty(fifo) ) {
+
+    // wait for condition
+    err = timeout>0 ? pthread_cond_timedwait( &fifo->condIsDrained, &fifo->mutex, &abstime )
+                    : pthread_cond_wait( &fifo->condIsDrained, &fifo->mutex );
+
+    // Break on errors
+    if( err )
+      break;
+  }
+
+/*------------------------------------------------------------------------*\
+    In case of error: unlock mutex
+\*------------------------------------------------------------------------*/
+  if( err ) {
+    pthread_mutex_unlock( &fifo->mutex );
+    if( FifoIsReadable(fifo) )
+      pthread_cond_signal( &fifo->condIsReadable );
+  }
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  fifo->isDraining = false;
+  DBGMSG( "Fifo (%p,%s): waiting for draining: %s",
           fifo, fifo->name?fifo->name:"<unknown>", err?strerror(err):"Locked" );
   return err;
 }
@@ -276,7 +372,7 @@ int fifoLockWaitReadable( Fifo *fifo, int timeout )
   struct timespec abstime;
   int             err = 0;
 
-  DBGMSG( "Fifo %p (%s): waiting for readable: used=%ld >? high mark=%ld, timeout %dms", 
+  DBGMSG( "Fifo (%p,%s): waiting for readable: used=%ld >? high mark=%ld, timeout %dms",
           fifo, fifo->name?fifo->name:"<unknown>",
           (long)fifoGetSize(fifo,FifoTotalUsed), (long)fifo->highWatermark, timeout ); 
 
@@ -317,11 +413,15 @@ int fifoLockWaitReadable( Fifo *fifo, int timeout )
 \*------------------------------------------------------------------------*/
   if( err ) {
     pthread_mutex_unlock( &fifo->mutex );
-    if( FifoIsWritable(fifo) )
-      pthread_cond_signal( &fifo->condIsWritable );		
+    if( fifo->isDraining ) {
+      if( FifoIsEmpty(fifo) )
+        pthread_cond_signal( &fifo->condIsDrained );
+    }
+    else if( FifoIsWritable(fifo) )
+      pthread_cond_signal( &fifo->condIsWritable );
   }
 
-  DBGMSG( "Fifo %p (%s): waiting for readable: %s", 
+  DBGMSG( "Fifo (%p,%s): waiting for readable: %s",
           fifo, fifo->name?fifo->name:"<unknown>", err?strerror(err):"Locked" ); 
 
 /*------------------------------------------------------------------------*\
@@ -332,11 +432,21 @@ int fifoLockWaitReadable( Fifo *fifo, int timeout )
 
 
 /*=========================================================================*\
+      Unlock fifo to avoid concurrent modifications
+\*=========================================================================*/
+void fifoUnlock( Fifo *fifo )
+{
+  DBGMSG( "Fifo (%p,%s): unlock.", fifo, fifo->name?fifo->name:"<unknown>" );
+  pthread_mutex_unlock( &fifo->mutex );
+}
+
+
+/*=========================================================================*\
       Unlock after data was consumed
 \*=========================================================================*/
 void fifoUnlockAfterRead( Fifo *fifo, size_t size )
 {
-  DBGMSG( "Fifo %p (%s): unlocked after read of %ld byte: %s %s (used=%ld)", 
+  DBGMSG( "Fifo (%p,%s): unlocked after read of %ld byte: %s %s (used=%ld)",
                       fifo, fifo->name?fifo->name:"<unknown>", (long) size,
                       FifoIsWritable(fifo) ? "isWritable" : "", 
                       FifoIsReadable(fifo) ? "isReadable" : "",
@@ -353,12 +463,16 @@ void fifoUnlockAfterRead( Fifo *fifo, size_t size )
   pthread_mutex_unlock( &fifo->mutex );
 
 /*------------------------------------------------------------------------*\
-    Check for conditions: write first
+    Check for conditions: write/draining first
 \*------------------------------------------------------------------------*/
-  if( FifoIsWritable(fifo) )
-    pthread_cond_signal( &fifo->condIsWritable );		
+  if( fifo->isDraining ) {
+    if( FifoIsEmpty(fifo) )
+      pthread_cond_signal( &fifo->condIsDrained );
+  }
+  else if( FifoIsWritable(fifo) )
+    pthread_cond_signal( &fifo->condIsWritable );
   if( FifoIsReadable(fifo) )
-    pthread_cond_signal( &fifo->condIsReadable );		
+    pthread_cond_signal( &fifo->condIsReadable );
 }
 
 
@@ -367,11 +481,18 @@ void fifoUnlockAfterRead( Fifo *fifo, size_t size )
 \*=========================================================================*/
 void fifoUnlockAfterWrite( Fifo *fifo, size_t size )
 {
-  DBGMSG( "Fifo %p (%s): unlocked after write of %ld bytes: %s %s (used=%ld)", 
+  DBGMSG( "Fifo (%p,%s): unlocked after write of %ld bytes: %s %s (used=%ld)",
                       fifo, fifo->name?fifo->name:"<unknown>", (long) size,
                       FifoIsWritable(fifo) ? "isWritable" : "", 
                       FifoIsReadable(fifo) ? "isReadable" : "",
                       (long)fifoGetSize(fifo,FifoTotalUsed) ); 
+
+/*------------------------------------------------------------------------*\
+    This is an error!
+\*------------------------------------------------------------------------*/
+  if( fifo->isDraining )
+    logerr( "Fifo (%s): wrote %ld bytes in draining mode.",
+        fifo, fifo->name?fifo->name:"<unknown>", (long) size );
 
 /*------------------------------------------------------------------------*\
     Adjust pointers
@@ -387,10 +508,16 @@ void fifoUnlockAfterWrite( Fifo *fifo, size_t size )
     Check for conditions: read first
 \*------------------------------------------------------------------------*/
   if( FifoIsReadable(fifo) )
-    pthread_cond_signal( &fifo->condIsReadable );		
-  if( FifoIsWritable(fifo) )
-    pthread_cond_signal( &fifo->condIsWritable );		
+    pthread_cond_signal( &fifo->condIsReadable );
+  if( fifo->isDraining ) {
+    if( FifoIsEmpty(fifo) )
+      pthread_cond_signal( &fifo->condIsDrained );
+  }
+  else if( FifoIsWritable(fifo) )
+    pthread_cond_signal( &fifo->condIsWritable );
 }
+
+
 
 
 /*=========================================================================*\
@@ -445,26 +572,46 @@ size_t fifoGetSize( Fifo *fifo, FifoSizeMode mode )
 /*------------------------------------------------------------------------*\
     Unknown mode 
 \*------------------------------------------------------------------------*/
-  logerr( "fifoGetSize(%p): unknown mode %d", fifo, mode );
+  logerr( "Fifo (%s): unknown getSize mode %d",
+           fifo->name?fifo->name:"<unknown>", mode );
   return -1;
 }
 
 
 /*=========================================================================*\
-      New data was written, adjust wrtite pointer
+    Get pointer to read position
+\*=========================================================================*/
+const char *fifoGetReadPtr( Fifo *fifo )
+{
+  return (const char *) fifo->readp;
+}
+
+/*=========================================================================*\
+    Get pointer to write position
+\*=========================================================================*/
+char *fifoGetWritePtr( Fifo *fifo )
+{
+  return (char *) fifo->writep;
+}
+
+/*=========================================================================*\
+      New data was written, adjust write pointer
         fifo should be locked
         return 0 on success, -1 on error (boundary check)
 \*=========================================================================*/
 int fifoDataWritten( Fifo *fifo, size_t size )
 {
+  volatile char *eptr;
+  DBGMSG( "Fifo (%p,%s): %ld bytes written.",
+          fifo, fifo->name?fifo->name:"<unknown>", (long)size );
 
 /*------------------------------------------------------------------------*\
     Check for boundary violation
 \*------------------------------------------------------------------------*/
-  char *eptr = (fifo->writep>=fifo->readp) ? fifo->buffer+fifo->size : fifo->readp;
+  eptr = (fifo->writep>=fifo->readp) ? fifo->buffer+fifo->size : fifo->readp;
   if( fifo->writep+size>eptr ) {
-    logerr( "fifo %p (%s): data written beyond boundary (by %ld bytes)", 
-                     fifo, fifo->name?fifo->name:"<unknown>",
+    logerr( "Fifo (%s): data written beyond boundary (by %ld bytes)",
+                     fifo->name?fifo->name:"<unknown>",
                      (long) (fifo->writep-eptr+size) );
     return -1;
   }
@@ -496,14 +643,17 @@ int fifoDataWritten( Fifo *fifo, size_t size )
 \*=========================================================================*/
 int fifoDataConsumed( Fifo *fifo, size_t size )
 {
+  volatile char *eptr;
+  DBGMSG( "Fifo (%p,%s): %ld bytes consumed.",
+          fifo, fifo->name?fifo->name:"<unknown>", (long)size );
 
 /*------------------------------------------------------------------------*\
     Check for boundary violation
 \*------------------------------------------------------------------------*/
-  char *eptr = (fifo->readp>=fifo->writep) ? fifo->buffer+fifo->size : fifo->writep;
+  eptr = (fifo->readp>=fifo->writep) ? fifo->buffer+fifo->size : fifo->writep;
   if( fifo->readp+size>eptr ) {
-    logerr( "fifo %p (%s): data consumed beyond boundary (%ld bytes)", 
-                     fifo, fifo->name?fifo->name:"<unknown>", 
+    logerr( "Fifo (%s): data consumed beyond boundary (%ld bytes)",
+                     fifo->name?fifo->name:"<unknown>",
                      (long) (fifo->readp+size-eptr) );
     return -1;
   }
@@ -525,29 +675,7 @@ int fifoDataConsumed( Fifo *fifo, size_t size )
     That's all 
 \*------------------------------------------------------------------------*/  
   return 0;
-}    
-
-
-/*=========================================================================*\
-      Insert new data (atomic opertion)
-\*=========================================================================*/
-size_t fifoInsert( Fifo *fifo, char *source, size_t len )
-{
-  // Fixme
-  return 0;
 }
-
-
-/*=========================================================================*\
-      Consume data (atomic operation)
-\*=========================================================================*/
-size_t fifoConsume( Fifo *fifo, char *target, size_t len )
-{
-  // Fixme
-  return 0;
-}
-
-
 
 
 /*=========================================================================*\

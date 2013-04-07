@@ -58,7 +58,7 @@ Remarks         : -
 #include "fifo.h"
 
 /*========================================================================*\
-   Some definitions
+       Macro and type definitions
 \*========================================================================*/
 
 // A codec
@@ -79,6 +79,13 @@ typedef enum {
   CodecTerminatedError
 } CodecInstanceState;
 
+// Types of meta data
+typedef enum {
+  CodecMetaID3V2,
+  CodecMetaID3V3,
+  CodecMetaICY
+} CodecMetaType;
+
 /*------------------------------------------------------------------------*\
     Signatures for function pointers
 \*------------------------------------------------------------------------*/
@@ -91,7 +98,8 @@ typedef int    (*CodecOutput)( CodecInstance *instance, void *data, size_t maxLe
 typedef int    (*CodecVolume)( CodecInstance *instance, double volume, bool muted );  
 typedef int    (*CodecGetSeekTime)( CodecInstance *instance, double *pos );  
 
-typedef int    (*CodecMetaCallback)( CodecInstance *instance, AudioFormat *format, json_t *meta );
+typedef int    (*CodecFormatCallback)( CodecInstance *instance, const AudioFormat *format, void *userData );
+typedef int    (*CodecMetaCallback)( CodecInstance *instance, CodecMetaType mType, json_t *jMeta, void *userData );
 
 
 /*------------------------------------------------------------------------*\
@@ -99,19 +107,21 @@ typedef int    (*CodecMetaCallback)( CodecInstance *instance, AudioFormat *forma
     seems to be more convenient
 \*------------------------------------------------------------------------*/
 struct _codecInstance {
-  CodecInstance          *next;
-  CodecInstanceState      state;
-  Codec                  *codec;            // weak
-  void                   *instanceData;     // handled by individual codec
-  int                     fdIn;
-  Fifo                   *fifoOut;          // weak
-  int                     endOfInput;
-  CodecMetaCallback       metaCallback;
-  AudioFormat             format;
-  long                    icyInterval;
-  pthread_t               thread;
-  pthread_mutex_t         mutex;
-  pthread_cond_t          condEndOfTrack;
+  CodecInstance               *next;
+  volatile CodecInstanceState  state;
+  const Codec                 *codec;                  // weak
+  void                        *instanceData;           // handled by individual codec
+  int                          fdIn;
+  Fifo                        *fifoOut;                // weak
+  CodecFormatCallback          formatCallback;
+  void                        *formatCallbackUserData; // weak
+  CodecMetaCallback            metaCallback;
+  void                        *metaCallbackUserData;   // weak
+  AudioFormat                  format;
+  long                         icyInterval;
+  pthread_t                    thread;
+  pthread_mutex_t              mutex;
+  pthread_cond_t               condEndOfTrack;
 };
  
 
@@ -138,10 +148,11 @@ int    codecRegister( Codec *codec );
 void   codecShutdown( bool force );
 Codec *codecFind( const char *type, AudioFormat *format, Codec *codec );
 
-CodecInstance *codecNewInstance( Codec *codec, Fifo *fifo, AudioFormat *format );
+CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, int fd, Fifo *fifo, long icyInterval );
 int            codecDeleteInstance(CodecInstance *instance, bool wait );
+void           codecSetFormatCallback( CodecInstance *instance, CodecFormatCallback callback, void *userData );
+void           codecSetMetaCallback( CodecInstance *instance, CodecMetaCallback callback, void *userData );
 int            codecStartInstance( CodecInstance *instance, int fd, long icyInterval );
-void           codecSetEndOfInput( CodecInstance *instance );
 int            codecWaitForEnd( CodecInstance *instance, int timeout );
 int            codecSetVolume( CodecInstance *instance, double volume, bool muted );
 int            codecGetSeekTime( CodecInstance *instance, double *pos );

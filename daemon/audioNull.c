@@ -225,8 +225,9 @@ static void *_ifThread( void *arg )
 {
   AudioIf *aif     = (AudioIf*)arg; 
 
-  DBGMSG( "Audio Null thread: starting." ); 
-  
+  DBGMSG( "Pulse NUll thread (%s): starting.", aif->devName );
+  PTHREADSETNAME( aif->backend->name );
+
 /*------------------------------------------------------------------------*\
     Thread main loop  
 \*------------------------------------------------------------------------*/

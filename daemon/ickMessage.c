@@ -931,7 +931,7 @@ void ickMessageNotifyPlaylist( const char *szDeviceId )
   json_t     *jMsg;
   const char *str;
 
-  DBGMSG( "ickMessageNotifyPlaylist" );    
+  DBGMSG( "ickMessageNotifyPlaylist: %s.", szDeviceId?szDeviceId:"ALL" );
 
 /*------------------------------------------------------------------------*\
     Set up parameters
@@ -973,7 +973,7 @@ void ickMessageNotifyPlayerState( const char *szDeviceId )
 {
   json_t *jMsg;
   
-  DBGMSG( "ickMessageNotifyPlayerState" );    
+  DBGMSG( "ickMessageNotifyPlayerState: %s.", szDeviceId?szDeviceId:"ALL" );
   
 /*------------------------------------------------------------------------*\
     Get player state
@@ -1004,9 +1004,11 @@ json_t *_jPlayerStatus( void )
   Playlist     *plst     = playerGetQueue();
   int           cursorPos;
   double        pChange, aChange;
-  json_t       *jResult; 	
-  PlaylistItem *pItem;	
+  json_t       *jResult;
+  PlaylistItem *pItem;
   playlistLock( plst );
+
+  DBGMSG( "_PLayerStatus." );
 
 /*------------------------------------------------------------------------*\
     Create status message
@@ -1015,7 +1017,7 @@ json_t *_jPlayerStatus( void )
   pChange   = playlistGetLastChange( plst );
   aChange   = playerGetLastChange( );
   jResult   = json_pack( "{sbsfsisfsbsssf}",
-  	                       "playing",     playerGetState()==PlayerStatePlay,
+                           "playing",     playerGetState()==PlayerStatePlay,
                            "seekPos",     playerGetSeekPos(),
                            "playlistPos", cursorPos,
                            "volumeLevel", playerGetVolume(), 
@@ -1039,6 +1041,7 @@ json_t *_jPlayerStatus( void )
   playlistUnlock( plst );
   return jResult;   
 }
+
 
 /*=========================================================================*\
 	Wrapper for Sending an ickstream JSON message 

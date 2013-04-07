@@ -80,11 +80,19 @@ Remarks         : -
 
 #ifdef ICK_DEBUG
 #define DBGMSG( args... ) _srvlog( __FILE__, __LINE__, LOG_DEBUG, args )
-#define DBGMEM( title, pointer, size ) _srvdump( __FILE__, __LINE__, LOG_DEBUG, title, pointer, size )
 //#define DBGMSG( args... ) printf( args );
+#define DBGMEM( title, pointer, size ) _srvdump( __FILE__, __LINE__, LOG_DEBUG, title, pointer, size )
+#ifdef __linux__
+#include <sys/prctl.h>
+#define PTHREADSETNAME( name )  prctl( PR_SET_NAME, (name) )
+#endif
 #else
 #define DBGMSG( args... ) { ;}
 #define DBGMEM( title, pointer, size  ) { ;}
+#endif
+
+#ifndef PTHREADSETNAME
+#define PTHREADSETNAME( name )  { ;}
 #endif
 
 #define logerr( args... )     _srvlog( __FILE__, __LINE__, LOG_ERR, args )

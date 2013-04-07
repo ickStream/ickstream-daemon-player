@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef ICK_DEBUG
+// #undef ICK_DEBUG
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,61 +67,58 @@ Remarks         : -
 #include "feed.h"
 
 /*=========================================================================*\
-	Global symbols
+    Global symbols
 \*=========================================================================*/
 // none
 
+
 /*=========================================================================*\
-	Private symbols
+    Private symbols
 \*=========================================================================*/
 struct _audioFeed {
-  AudioFeedState     state;
-  char              *uri;
-  char              *type;
-  int                flags;
-  AudioFormat        format;
-  int                pipefd[2];
-  struct curl_slist *addedHeaderFields;
-  char              *header;
-  size_t             headerLen;
-  long               icyInterval;
-  pthread_t          thread;
-
-  // Private to feeder thread
-  CURL            *curlHandle;
-  CodecInstance   *codecInstance;
+  volatile AudioFeedState  state;
+  int                      flags;
+  char                    *uri;
+  AudioFeedCallback        callback;
+  void                    *usrData;
+  char                    *type;
+  AudioFormat              format;
+  int                      icyInterval;
+  int                      pipefd[2];
+  struct curl_slist       *addedHeaderFields;
+  char                    *header;
+  size_t                   headerLen;
+  CURL                    *curlHandle;
+  pthread_t                thread;
+  pthread_mutex_t          mutex;
+  pthread_cond_t           condIsConnected;
 };
 
 
 /*=========================================================================*\
-	Private prototypes
+    Private prototypes
 \*=========================================================================*/
 static void *_feederThread( void *arg );
 static size_t _curlWriteCallback( void *contents, size_t size, size_t nmemb, void *userp );
 
 
 /*=========================================================================*\
-      Create and prepare an audio feed 
+    Create and start an audio data feed
+      We use curl so we basically can use all sorts of sources and auth schemes
+      uri      - is the source locator
+      flags    - controls the behavior (see header)
+      callback - is a function that signals state changes
+      Use the file descriptor obtained by audioFeedGetFd() to access data
+      Return NULL on error.
 \*=========================================================================*/
-AudioFeed *audioFeedCreate( const char *uri, const char *type, AudioFormat *format, int flags )
+AudioFeed *audioFeedCreate( const char *uri, int flags, AudioFeedCallback callback, void *usrData )
 {
-  Codec      *codec;
-  AudioFeed  *feed;
-  int         rc;
-  
-  DBGMSG( "Trying to create feed for \"%s\" (%s) with %s, flags=%d",
-                      uri, type, audioFormatStr(NULL,format), flags );
+  AudioFeed           *feed;
+  pthread_mutexattr_t  attr;
+  int                  rc;
 
-/*------------------------------------------------------------------------*\
-    Get first codec matching type and mode 
-\*------------------------------------------------------------------------*/
-  codec = codecFind( type, format, NULL );
-  if( !codec ) {
-    DBGMSG( "No codec found for (%s) with %s",
-                        type, audioFormatStr(NULL,format) );
-    return NULL;
-  }
-  
+  DBGMSG( "audioFeedCreate: \"%s\", flags=%d, callback=%p", uri, flags, callback );
+
 /*------------------------------------------------------------------------*\
     Create header 
 \*------------------------------------------------------------------------*/
@@ -133,6 +130,7 @@ AudioFeed *audioFeedCreate( const char *uri, const char *type, AudioFormat *form
   feed->state             = FeedInitialized;
   feed->addedHeaderFields = NULL;
   feed->header            = NULL;
+  memset( &feed->format, 0, sizeof(AudioFormat) );
 
 /*------------------------------------------------------------------------*\
     Setup output pipe
@@ -145,19 +143,27 @@ AudioFeed *audioFeedCreate( const char *uri, const char *type, AudioFormat *form
   }
 
 /*------------------------------------------------------------------------*\
+    Init mutex and conditions
+\*------------------------------------------------------------------------*/
+  pthread_mutexattr_init( &attr );
+  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
+  pthread_mutex_init( &feed->mutex, &attr );
+  pthread_cond_init( &feed->condIsConnected, NULL );
+
+/*------------------------------------------------------------------------*\
     Copy parameters
 \*------------------------------------------------------------------------*/
-  feed->flags      = flags;
-  feed->uri        = strdup( uri );
-  feed->type       = strdup( type );
-  memcpy( &feed->format, format, sizeof(AudioFormat) );
+  feed->flags    = flags;
+  feed->uri      = strdup( uri );
+  feed->callback = callback;
+  feed->usrData  = usrData;
 
 /*------------------------------------------------------------------------*\
     Setup cURL  
 \*------------------------------------------------------------------------*/
   feed->curlHandle = curl_easy_init();
   if( !feed->curlHandle ) {
-    logerr( "audioFeedCreate: unable to init cURL." );
+    logerr( "audioFeedCreate (%s): unable to init cURL.", uri );
     audioFeedDelete( feed, true );
     return NULL;
   }
@@ -165,52 +171,41 @@ AudioFeed *audioFeedCreate( const char *uri, const char *type, AudioFormat *form
   // Set URI
   rc = curl_easy_setopt( feed->curlHandle, CURLOPT_URL, uri );
   if( rc ) {
-    logerr( "audioFeedCreate (%s): unable to set URI", uri );
+    logerr( "audioFeedCreate (%s): unable to set URI.", uri );
     audioFeedDelete( feed, true );
     return NULL;
   }
 
   // ICY protocol enabled?
   if( flags&FeedIcy ) {
+
+    // Add header ICY header field
     feed->addedHeaderFields = curl_slist_append( feed->addedHeaderFields , "Icy-MetaData:1");
     rc = curl_easy_setopt( feed->curlHandle, CURLOPT_HTTPHEADER, feed->addedHeaderFields );
     if( rc ) {
-      logerr( "audioFeedCreate (%s): unable to set ICY mode.", uri );
+      logerr( "audioFeedCreate (%s): Unable to add ICY HTTP header.", uri );
       audioFeedDelete( feed, true );
       return NULL;
     }
   }
 
-  // Are we interested in the connect header?
-  if( !(feed->flags&FeedIgnoreHeader) ) {
-    rc = curl_easy_setopt( feed->curlHandle, CURLOPT_HEADER, 1 );
-    if( rc ) {
-      logerr( "audioFeedCreate (%s): unable to set ICY mode.", uri );
-      audioFeedDelete( feed, true );
-      return NULL;
-    }
-  }
-
-  // Set buffer size (if suggested)
-  size_t chunkSize = codec->feedChunkSize;
-  if( chunkSize ) {
-    rc = curl_easy_setopt( feed->curlHandle, CURLOPT_BUFFERSIZE, chunkSize );
-    if( rc ) {
-      logerr( "audioFeedCreate (%s): unable to set buffer size to %ld.", uri, (long)chunkSize );
-      audioFeedDelete( feed, true );
-      return NULL;
-    }
+  // We interested in the connection header?
+  rc = curl_easy_setopt( feed->curlHandle, CURLOPT_HEADER, 1 );
+  if( rc ) {
+    logerr( "audioFeedCreate (%s): Unable to set header mode.", uri );
+    audioFeedDelete( feed, true );
+    return NULL;
   }
 
   // Set our identity
-  rc = curl_easy_setopt(feed->curlHandle, CURLOPT_USERAGENT, FeederAgentString );
+  rc = curl_easy_setopt( feed->curlHandle, CURLOPT_USERAGENT, FeederAgentString );
   if( rc ) {
     logerr( "audioFeedCreate (%s): unable to set user agent to \"%s\"", uri, FeederAgentString );
     audioFeedDelete( feed, true );
     return NULL;
   }
 
-  // Follow redirects
+  // Enable HHTP redirects
   rc = curl_easy_setopt(feed->curlHandle, CURLOPT_FOLLOWLOCATION, 1L );
   if( rc ) {
     logerr( "audioFeedCreate (%s): unable to enable redirects", uri );
@@ -223,42 +218,24 @@ AudioFeed *audioFeedCreate( const char *uri, const char *type, AudioFormat *form
   curl_easy_setopt( feed->curlHandle, CURLOPT_WRITEFUNCTION, _curlWriteCallback );
 
 /*------------------------------------------------------------------------*\
-    That's all 
+    Create feeder thread
+\*------------------------------------------------------------------------*/
+  rc = pthread_create( &feed->thread, NULL, _feederThread, feed );
+  if( rc ) {
+    logerr( "audioFeedCreate (%s): Unable to start feeder thread: %s", strerror(rc) );
+    audioFeedDelete( feed, false );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    That's all
 \*------------------------------------------------------------------------*/
   return feed;
 }
 
 
 /*=========================================================================*\
-      Start feeding to codec instance
-\*=========================================================================*/
-int audioFeedStart(  AudioFeed *feed, CodecInstance *instance )
-{
-
-/*------------------------------------------------------------------------*\
-    Set codec instance
-\*------------------------------------------------------------------------*/
-  feed->codecInstance = instance;
-   
-/*------------------------------------------------------------------------*\
-    Create feeder thread
-\*------------------------------------------------------------------------*/
-  int rc = pthread_create( &feed->thread, NULL, _feederThread, feed );
-  if( rc ) {
-    logerr( "Unable to start feeder thread: %s", strerror(rc) );
-    audioFeedDelete( feed, false );
-    return -1;
-  }
-
-/*------------------------------------------------------------------------*\
-    That's all
-\*------------------------------------------------------------------------*/
-  return 0;
-}
-
-
-/*=========================================================================*\
-      Delete an audio feed 
+    Delete an audio feed
 \*=========================================================================*/
 int audioFeedDelete( AudioFeed *feed, bool wait )
 {
@@ -267,6 +244,7 @@ int audioFeedDelete( AudioFeed *feed, bool wait )
 /*------------------------------------------------------------------------*\
     Stop thread and optionally wait for termination   
 \*------------------------------------------------------------------------*/
+  feed->state = FeedTerminating;
   if( feed->state!=FeedInitialized && wait )
      pthread_join( feed->thread, NULL ); 
 
@@ -282,6 +260,12 @@ int audioFeedDelete( AudioFeed *feed, bool wait )
   close( feed->pipefd[1] );
 
 /*------------------------------------------------------------------------*\
+    Delete mutex and conditions
+\*------------------------------------------------------------------------*/
+  pthread_mutex_destroy( &feed->mutex );
+  pthread_cond_destroy( &feed->condIsConnected );
+
+/*------------------------------------------------------------------------*\
     Free buffers and header
 \*------------------------------------------------------------------------*/
   if( feed->addedHeaderFields )
@@ -294,25 +278,94 @@ int audioFeedDelete( AudioFeed *feed, bool wait )
 /*------------------------------------------------------------------------*\
     That's all  
 \*------------------------------------------------------------------------*/
-  return 0;	
+  return 0;
 }
 
 
 /*=========================================================================*\
-       Get reference to output fifo 
-         might be null, if not (yet) available
+      Lock feed to avoid concurrent modifications
 \*=========================================================================*/
-Fifo *audioFeedFifo( AudioFeed *feed )
+void audioFeedLock( AudioFeed *feed )
 {
-  CodecInstance *instance = feed->codecInstance;
-  if( !instance ) 
-    return NULL;
-  return instance->fifoOut;
+  DBGMSG( "Audiofeed (%p,%s): lock.", feed, feed->uri );
+  pthread_mutex_lock( &feed->mutex );
 }
 
 
 /*=========================================================================*\
-       Get URI of feed
+      Unlock feed after modifications or waits
+\*=========================================================================*/
+void audioFeedUnlock( AudioFeed *feed )
+{
+  DBGMSG( "Audiofeed (%p,%s): unlock.", feed, feed->uri );
+  pthread_mutex_unlock( &feed->mutex );
+}
+
+
+/*=========================================================================*\
+    Lock feed and wait for connection
+      timeout is in ms, 0 or a negative values are treated as infinity
+      returns 0 and locks feed, if condition is met
+        std. errode (ETIMEDOUT in case of timeout) and no locking otherwise
+\*=========================================================================*/
+int audioFeedWaitForConnection( AudioFeed *feed, int timeout )
+{
+  struct timeval  now;
+  struct timespec abstime;
+  int             err = 0;
+
+  DBGMSG( "Audiofeed (%p,%s): waiting for connection (timeout %dms)",
+          feed, feed->uri, timeout );
+
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+   pthread_mutex_lock( &feed->mutex );
+
+/*------------------------------------------------------------------------*\
+    Get absolute timestamp for timeout
+\*------------------------------------------------------------------------*/
+  if( timeout>0 ) {
+    gettimeofday( &now, NULL );
+    abstime.tv_sec  = now.tv_sec + timeout/1000;
+    abstime.tv_nsec = now.tv_usec*1000UL +(timeout%1000)*1000UL*1000UL;
+    if( abstime.tv_nsec>1000UL*1000UL*1000UL ) {
+      abstime.tv_nsec -= 1000UL*1000UL*1000UL;
+      abstime.tv_sec++;
+    }
+  }
+
+/*------------------------------------------------------------------------*\
+    Loop while condition is not met (cope with "spurious  wakeups")
+\*------------------------------------------------------------------------*/
+  while( feed->state<FeedConnected ) {
+
+    // wait for condition
+    err = timeout>0 ? pthread_cond_timedwait( &feed->condIsConnected, &feed->mutex, &abstime )
+                    : pthread_cond_wait( &feed->condIsConnected, &feed->mutex );
+
+    // Break on errors
+    if( err )
+      break;
+  }
+
+/*------------------------------------------------------------------------*\
+    In case of error: unlock mutex
+\*------------------------------------------------------------------------*/
+  if( err )
+    pthread_mutex_unlock( &feed->mutex );
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  DBGMSG( "Audiofeed (%p,%s): waiting for connection: %s",
+          feed, feed->uri, err?strerror(err):"Locked" );
+  return err;
+}
+
+
+/*=========================================================================*\
+    Get URI of feed
 \*=========================================================================*/
 const char  *audioFeedGetURI( AudioFeed *feed )
 {
@@ -321,16 +374,25 @@ const char  *audioFeedGetURI( AudioFeed *feed )
 
 
 /*=========================================================================*\
-       Get feed format
+    Get feed flags
 \*=========================================================================*/
-AudioFormat *audioFeedGetFormat( AudioFeed *feed )
+int audioFeedGetFlags( AudioFeed *feed )
 {
-  return &feed->format;
+  return feed->flags;
 }
 
 
 /*=========================================================================*\
-       Get output file handle
+    Get feed state
+\*=========================================================================*/
+AudioFeedState audioFeedGetState( AudioFeed *feed )
+{
+  return feed->state;
+}
+
+
+/*=========================================================================*\
+    Get output file handle
 \*=========================================================================*/
 int audioFeedGetFd( AudioFeed *feed )
 {
@@ -339,7 +401,34 @@ int audioFeedGetFd( AudioFeed *feed )
 
 
 /*=========================================================================*\
-       Get Response Header
+    Get audio format (might only be set when headers are enabled)
+\*=========================================================================*/
+AudioFormat *audioFeedGetFormat( AudioFeed *feed )
+{
+  return &feed->format;
+}
+
+
+/*=========================================================================*\
+    Get type (might only be set when headers are enabled)
+\*=========================================================================*/
+const char *audioFeedGetType( AudioFeed *feed )
+{
+  return feed->type;
+}
+
+
+/*=========================================================================*\
+    Get ICY interval (might only be set when headers are enabled)
+\*=========================================================================*/
+long audioFeedGetIcyInterval( AudioFeed *feed )
+{
+  return feed->icyInterval;
+}
+
+
+/*=========================================================================*\
+    Get Response Header
 \*=========================================================================*/
 const char *audioFeedGetResponseHeader( AudioFeed *feed )
 {
@@ -348,47 +437,47 @@ const char *audioFeedGetResponseHeader( AudioFeed *feed )
 
 
 /*=========================================================================*\
-       Get Response Header field
-         result is allocated and must be freed!
+     Get Response Header field
+       if a field is contained more than once the _last_ instance is used
+       the result is allocated and must be freed!
+       return NULL if not found
 \*=========================================================================*/
 char *audioFeedGetResponseHeaderField( AudioFeed *feed, const char *fieldName )
 {
-  const char *ptr = feed->header;
-  size_t      len = strlen(fieldName );
+  const char *ptr     = feed->header;
+  char       *retval  = NULL;
+  size_t      nameLen = strlen( fieldName );
 
   DBGMSG( "audioFeedGetResponseHeader(%s): \"%s\":",
            feed->uri, fieldName );
 
-  // No headers available
-  if( !ptr )
-    return NULL;
-
   // Loop over all lines
-  while( *ptr ) {
+  while( ptr && *ptr ) {
+    size_t len;
 
     // Check for field name
-    if( !strncasecmp(ptr,fieldName,len) && ptr[len]==':' ) {
+    if( !strncasecmp(ptr,fieldName,nameLen) && ptr[nameLen]==':' ) {
 
       // Skip to value, ignore leading spaces
-      ptr += len+1;
+      ptr += nameLen+1;
       while( *ptr==' ' || *ptr=='\t' )
         ptr++;
 
       // Get end of line
       char *endptr = strpbrk( ptr, "\n\r" );
       if( !endptr )
-        len = strlen(ptr);
+        len = strlen( ptr );
       else
         len = endptr - ptr;
 
       // Copy value
-      endptr = calloc( len+1, 1 );
-      strncpy( endptr, ptr, len );
+      Sfree( retval );
+      retval = strndup( ptr, len );
       DBGMSG( "audioFeedGetResponseHeader(%s): found field \"%s\": \"%s\"",
                feed->uri, fieldName, endptr );
 
-      // That's it
-      return endptr;
+      // That's it (in case we're looking for the first instance
+      // return retval;
     }
 
     // Skip content of non-matching line
@@ -401,8 +490,8 @@ char *audioFeedGetResponseHeaderField( AudioFeed *feed, const char *fieldName )
       ptr++;
   }
 
-  // Not found
-  return NULL;
+  // Return result
+  return retval;
 }
 
 
@@ -415,8 +504,9 @@ static void *_feederThread( void *arg )
   int        rc;
 
 /*------------------------------------------------------------------------*\
-    Block broken pipe signals from this thread
+    Set name and block broken pipe signals from this thread
 \*------------------------------------------------------------------------*/
+  PTHREADSETNAME( "feed" );
   sigset_t sigSet;
   sigemptyset( &sigSet );
   sigaddset( &sigSet, SIGPIPE );
@@ -425,23 +515,33 @@ static void *_feederThread( void *arg )
 /*------------------------------------------------------------------------*\
     Collect data, this represents the thread main loop  
 \*------------------------------------------------------------------------*/
-  feed->state = FeedRunning;
+  feed->state = FeedConnecting;
   rc = curl_easy_perform( feed->curlHandle );
-  if( rc!=CURLE_OK) {
-    logerr( "Feeder thread error (%s): %s", feed->uri, curl_easy_strerror(rc) );
+  if( rc==CURLE_OK || feed->state==FeedTerminating )
+    feed->state = FeedTerminatedOk;
+  else {
+    logerr( "Feeder thread (%p,%s): %s", feed, feed->uri, curl_easy_strerror(rc) );
     feed->state = FeedTerminatedError;
   }
-  
-/*------------------------------------------------------------------------*\
-    Signal end of input to codec
-\*------------------------------------------------------------------------*/
-  if( feed->codecInstance )
-    codecSetEndOfInput( feed->codecInstance );
 
 /*------------------------------------------------------------------------*\
-    That's it ...  
+    Execute callback
 \*------------------------------------------------------------------------*/
-  feed->state = FeedTerminatedOk;
+  if( feed->callback ) {
+    rc = feed->callback( feed, feed->usrData );
+    if( rc )
+      logerr( "Feeder thread (%s): callback returned error %d.",
+              feed->uri, rc );
+  }
+
+/*------------------------------------------------------------------------*\
+    Close pipe
+\*------------------------------------------------------------------------*/
+  close( feed->pipefd[1]);
+
+/*------------------------------------------------------------------------*\
+    That's all ...
+\*------------------------------------------------------------------------*/
   return NULL;
 }
 
@@ -457,20 +557,19 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
   AudioFeed *feed   = userp;
   void      *newbuf = NULL;
 
-  DBGMSG( "Feeder thread(%s): receiving %ld bytes",
-           feed->uri, (long)size );
+  DBGMSG( "Feeder thread(%s): receiving %ld bytes", feed->uri, (long)size );
   // DBGMEM( "Raw feed", buffer, size );
 
 /*------------------------------------------------------------------------*\
-    Terminate feed? 
+    Feed termination requested?
 \*------------------------------------------------------------------------*/
-  if( feed->state!=FeedRunning )
+  if( feed->state>FeedConnected )
     return errVal;
 
 /*------------------------------------------------------------------------*\
     Process header
 \*------------------------------------------------------------------------*/
-  if( !(feed->flags&FeedIgnoreHeader) && !(feed->flags&FeedHeaderComplete) ) {
+  if( feed->state==FeedConnecting ) {
     long headerSize = 0;
 
     // Get header size up to now
@@ -489,7 +588,6 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
     // Complete? (we can only detect this one call late ;-()
     else if( headerSize<feed->headerLen ) {
       size_t diff = feed->headerLen - headerSize;
-      feed->flags |= FeedHeaderComplete;
 
       // Copy Binary part to buffer
       newbuf = malloc( diff+size );
@@ -498,25 +596,41 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
       buffer = newbuf;
       size  += diff;
 
-      // Terminate and shrink string
+      // Terminate and shrink header string
       feed->header[headerSize] = 0;
       feed->header = realloc( feed->header, headerSize+1 );
-      DBGMSG( "Feeder thread(%s): header complete: \"%s\"",
+      DBGMSG( "Feeder thread (%s): header complete: \"%s\"",
               feed->uri, feed->header );
 
       // Process icy headers
       if( feed->flags&FeedIcy ) {
         char *str = audioFeedGetResponseHeaderField( feed, "icy-metaint" );
         if( !str ) {
-          logerr( "Feeder thread(%s): header field \"icy-metaint\" not found.",
+          logerr( "Feeder thread (%s): header field \"icy-metaint\" not found.",
                                 feed->uri );
           Sfree( newbuf );
-          return retVal;
+          return errVal;
         }
         feed->icyInterval = atol( str );
         Sfree( str );
-        DBGMSG( "Feeder thread(%s): icy interval is %d",
+        DBGMSG( "Feeder thread (%s): icy interval is %d",
               feed->uri, feed->icyInterval );
+      }
+
+      // Get content type
+      feed->type = audioFeedGetResponseHeaderField( feed, "Content-Type" );
+
+      // Set new state and inform delegates
+      feed->state = FeedConnected;
+      pthread_cond_signal( &feed->condIsConnected );
+      if( feed->callback ) {
+        int rc = feed->callback( feed, feed->usrData );
+        if( rc ) {
+          logerr( "Feeder thread (%s): callback returned error % - terminating.",
+              feed->uri, rc );
+          Sfree( newbuf );
+          return errVal;
+        }
       }
     }
 
@@ -540,16 +654,13 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
   while( size ) {
     ssize_t bytes;
 
-    // Start codec output
-    if( feed->codecInstance->state==CodecInitialized &&
-        codecStartInstance(feed->codecInstance,feed->pipefd[0],feed->icyInterval) ) {
-      logerr( "Feeder thread (%s): could not start codec output thread.",
-                      feed->uri );
+    // Terminate feed?
+    if( feed->state>FeedConnected ) {
       retVal = errVal;
       break;
     }
 
-    // Forward data to codec (blockng mode)
+    // Forward data to pipe (blocking mode)
     bytes = write( feed->pipefd[1], buffer, size );
     if( bytes<0 ) {
       DBGMSG( "Feeder thread(%s): could not write to pipe: %s",
@@ -568,7 +679,7 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
     size   -= bytes;
 
     // Terminate feed? 
-    if( feed->state!=FeedRunning ) {
+    if( feed->state>FeedConnected ) {
       retVal = errVal;
       break;
     }
@@ -576,8 +687,8 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
     // sleep
     if( size ) {
       loginfo( "Feeder thread(%s): could not process whole chunk (%ld of %ld), sleeping...", 
-                         feed->uri, (long)bytes, (long)(size+bytes) );
-      sleep( 1 );
+               feed->uri, (long)bytes, (long)(size+bytes) );
+      sleep( 1 );  // Fixme.
     }
   }
 

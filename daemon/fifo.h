@@ -61,24 +61,12 @@ Remarks         : -
 /*=========================================================================*\
        Macro and type definitions 
 \*=========================================================================*/
-typedef struct _fifo {
-  char            *name;
-  
-  // Actual buffer
-  size_t           size;
-  char            *buffer;
-  char            *readp;          // pointer to next read
-  char            *writep;         // pointer to next write
-  bool             isFull;         // if readp==writep buffer is either empty or full   
-  
-  // Access arbitration
-  size_t           lowWatermark;   // freeSize<lowWatermark  -> isWritable 
-  size_t           highWatermark;  // freeSize>highWatermark -> isReadable
-  pthread_mutex_t  mutex;
-  pthread_cond_t   condIsWritable;
-  pthread_cond_t   condIsReadable;
-} Fifo;
 
+// A fifo instance
+struct _fifo;
+typedef struct _fifo Fifo;
+
+// Modes for inquiring speces
 typedef enum {
   FifoTotal,
   FifoTotalUsed,
@@ -86,10 +74,6 @@ typedef enum {
   FifoNextReadable,
   FifoNextWritable
 } FifoSizeMode;
-
-#define FifoIsEmpty(fifo) ((fifo)->readp==(fifo)->writep)
-#define FifoIsWritable(fifo) (fifoGetSize((fifo),FifoTotalUsed)<(fifo)->lowWatermark)
-#define FifoIsReadable(fifo) (fifoGetSize((fifo),FifoTotalUsed)>(fifo)->highWatermark)
 
 
 /*=========================================================================*\
@@ -100,21 +84,21 @@ typedef enum {
 /*========================================================================*\
    Prototypes
 \*========================================================================*/
-Fifo  *fifoCreate( const char *name, size_t size );
-void   fifoDelete( Fifo *fifo );
-void   fifoReset( Fifo *fifo );
-void   fifoLock( Fifo *fifo );
-int    fifoLockWaitReadable( Fifo *fifo, int timeout );
-int    fifoLockWaitWritable( Fifo *fifo, int timeout );
-void   fifoUnlock( Fifo *fifo );
-void   fifoUnlockAfterRead( Fifo *fifo, size_t size ); 
-void   fifoUnlockAfterWrite( Fifo *fifo, size_t size ); 
-size_t fifoGetSize( Fifo *fifo, FifoSizeMode mode );
-int    fifoDataWritten( Fifo *fifo, size_t size );
-int    fifoDataConsumed( Fifo *fifo, size_t size );
-
-size_t fifoInsert( Fifo *fifo, char *source, size_t len );
-size_t fifoConsume( Fifo *fifo, char *target, size_t len );
+Fifo       *fifoCreate( const char *name, size_t size );
+void        fifoDelete( Fifo *fifo );
+const char *fifoGetReadPtr( Fifo *fifo );
+char       *fifoGetWritePtr( Fifo *fifo );
+void        fifoReset( Fifo *fifo );
+void        fifoLock( Fifo *fifo );
+int         fifoLockWaitReadable( Fifo *fifo, int timeout );
+int         fifoLockWaitWritable( Fifo *fifo, int timeout );
+int         fifoLockWaitDrained( Fifo *fifo, int timeout );
+void        fifoUnlock( Fifo *fifo );
+void        fifoUnlockAfterRead( Fifo *fifo, size_t size );
+void        fifoUnlockAfterWrite( Fifo *fifo, size_t size );
+size_t      fifoGetSize( Fifo *fifo, FifoSizeMode mode );
+int         fifoDataWritten( Fifo *fifo, size_t size );
+int         fifoDataConsumed( Fifo *fifo, size_t size );
 
 #endif  /* __FIFO_H */
 
