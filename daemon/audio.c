@@ -263,7 +263,7 @@ int audioStrFormat( AudioFormat *format, const char *str )
 \*------------------------------------------------------------------------*/
   n = sscanf( str, "%dx%dx%d%c", &ch, &sr, &bw, &enc ); 
   if( n<3 ) {
-    logwarn( "syntax error in audio format: \"%s\" (to few fields)", str );
+    logwarn( "Syntax error in audio format: \"%s\" (to few fields)", str );
     return -1;
   }
 
@@ -272,7 +272,7 @@ int audioStrFormat( AudioFormat *format, const char *str )
 \*------------------------------------------------------------------------*/
   if( bw>0 ) {
     if( !strchr("sSuUfF",enc) ) {
-      logwarn( "syntax error in audio format: \"%s\" (missing S|U|F)", str );
+      logwarn( "Syntax error in audio format: \"%s\" (missing S|U|F)", str );
       return -1;
     }
     switch( toupper(enc) ) {

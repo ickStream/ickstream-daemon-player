@@ -572,7 +572,7 @@ PlaylistItem *playlistGetItem( Playlist *plst, int pos )
 /*------------------------------------------------------------------------*\
     Return
 \*------------------------------------------------------------------------*/
-  DBGMSG( "playlistGetItem (%p): pos=%d -> %p", plst, posbuf, item );
+  DBGMSG( "playlistGetItem (%p): pos=%d -> %p (%s)", plst, posbuf, item, item->text );
   return item;         
 }
 

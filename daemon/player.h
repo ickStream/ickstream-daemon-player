@@ -61,13 +61,13 @@ Remarks         : -
        Macro and type definitions 
 \*=========================================================================*/
 typedef enum {
-  PlayerStateStop,	
+  PlayerStateStop,
   PlayerStatePlay,
   PlayerStatePause
 } PlayerState;
 
 typedef enum {
-  PlayerRepeatOff,	
+  PlayerRepeatOff,
   PlayerRepeatItem,
   PlayerRepeatQueue,
   PlayerRepeatShuffle
@@ -85,7 +85,6 @@ typedef enum {
 
 int                playerInit( void );
 void               playerShutdown( void );
-int                playerAddDefaultAudioFormat( const AudioFormat *format );
 const char        *playerRepeatModeToStr( PlayerRepeatMode );
 PlayerRepeatMode   playerRepeatModeFromStr( const char *str );
 Playlist          *playerGetQueue( void );
@@ -93,6 +92,7 @@ void               playerResetQueue( void );
 PlayerState        playerGetState( void );
 PlayerRepeatMode   playerGetRepeatMode( void );
 double             playerGetLastChange( void );
+const AudioFormat *playerGetDefaultAudioFormat( void );
 const char        *playerGetHWID( void );
 const char        *playerGetUUID( void );
 const char        *playerGetName( void );
@@ -103,6 +103,7 @@ const char        *playerGetToken( void );
 double             playerGetVolume( void ); 
 bool               playerGetMuting( void );
 double             playerGetSeekPos( void );
+int                playerSetDefaultAudioFormat( const char *format );
 void               playerSetUUID( const char *name );
 void               playerSetInterface( const char *name );
 void               playerSetAudioDevice( const char *name );

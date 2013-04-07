@@ -350,12 +350,6 @@ int audioFeedWaitForConnection( AudioFeed *feed, int timeout )
   }
 
 /*------------------------------------------------------------------------*\
-    In case of error: unlock mutex
-\*------------------------------------------------------------------------*/
-  if( err )
-    pthread_mutex_unlock( &feed->mutex );
-
-/*------------------------------------------------------------------------*\
     That's it
 \*------------------------------------------------------------------------*/
   DBGMSG( "Audiofeed (%p,%s): waiting for connection: %s",
@@ -473,8 +467,8 @@ char *audioFeedGetResponseHeaderField( AudioFeed *feed, const char *fieldName )
       // Copy value
       Sfree( retval );
       retval = strndup( ptr, len );
-      DBGMSG( "audioFeedGetResponseHeader(%s): found field \"%s\": \"%s\"",
-               feed->uri, fieldName, endptr );
+      DBGMSG( "audioFeedGetResponseHeader(%s): Found field \"%s\": \"%s\"",
+               feed->uri, fieldName, retval );
 
       // That's it (in case we're looking for the first instance
       // return retval;
@@ -503,10 +497,12 @@ static void *_feederThread( void *arg )
   AudioFeed *feed = (AudioFeed*)arg;
   int        rc;
 
-/*------------------------------------------------------------------------*\
-    Set name and block broken pipe signals from this thread
-\*------------------------------------------------------------------------*/
+  DBGMSG( "Feeder thread (%p,%s): starting.", feed, feed->uri );
   PTHREADSETNAME( "feed" );
+
+/*------------------------------------------------------------------------*\
+    Block broken pipe signals from this thread
+\*------------------------------------------------------------------------*/
   sigset_t sigSet;
   sigemptyset( &sigSet );
   sigaddset( &sigSet, SIGPIPE );
@@ -523,6 +519,8 @@ static void *_feederThread( void *arg )
     logerr( "Feeder thread (%p,%s): %s", feed, feed->uri, curl_easy_strerror(rc) );
     feed->state = FeedTerminatedError;
   }
+  DBGMSG( "Feeder thread (%p,%s): terminating with curl state %s.",
+          feed, feed->uri, curl_easy_strerror(rc) );
 
 /*------------------------------------------------------------------------*\
     Execute callback
@@ -530,8 +528,8 @@ static void *_feederThread( void *arg )
   if( feed->callback ) {
     rc = feed->callback( feed, feed->usrData );
     if( rc )
-      logerr( "Feeder thread (%s): callback returned error %d.",
-              feed->uri, rc );
+      logerr( "Feeder thread (%p,%s): callback returned error %d.",
+              feed, feed->uri, rc );
   }
 
 /*------------------------------------------------------------------------*\
@@ -542,6 +540,7 @@ static void *_feederThread( void *arg )
 /*------------------------------------------------------------------------*\
     That's all ...
 \*------------------------------------------------------------------------*/
+  DBGMSG( "Feeder thread (%p,%s): terminated.", feed, feed->uri );
   return NULL;
 }
 
@@ -557,8 +556,8 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
   AudioFeed *feed   = userp;
   void      *newbuf = NULL;
 
-  DBGMSG( "Feeder thread(%s): receiving %ld bytes", feed->uri, (long)size );
-  // DBGMEM( "Raw feed", buffer, size );
+  DBGMSG( "Feeder thread (%s): receiving %ld bytes", feed->uri, (long)size );
+  //DBGMEM( "Raw feed", buffer, size );
 
 /*------------------------------------------------------------------------*\
     Feed termination requested?
@@ -650,7 +649,7 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
 /*------------------------------------------------------------------------*\
     Write data to pipe
 \*------------------------------------------------------------------------*/
-  // DBGMEM( "Binary feed", buffer, size );
+  //DBGMEM( "Binary feed", buffer, size );
   while( size ) {
     ssize_t bytes;
 

@@ -99,18 +99,19 @@ static void sigHandler( int sig, siginfo_t *siginfo, void *context );
 \*========================================================================*/
 int main( int argc, char *argv[] )
 {
-  int         help_flag    = 0;
-  int         daemon_flag  = 0;
-  const char *cfg_fname    = NULL;
-  const char *pers_fname   = ".ickpd_persist";
-  const char *pid_fname    = "/var/run/ickpd.pid";
-  const char *player_uuid  = NULL;
-  const char *player_name  = NULL;
-  const char *if_name      = NULL;
-  const char *verb_arg     = "4";
-  const char *vers_flag    = NULL;
-  const char *adev_name    = NULL;
-  const char *adev_flag    = NULL;
+  int         help_flag      = 0;
+  int         daemon_flag    = 0;
+  const char *cfg_fname      = NULL;
+  const char *pers_fname     = ".ickpd_persist";
+  const char *pid_fname      = "/var/run/ickpd.pid";
+  const char *player_uuid    = NULL;
+  const char *player_name    = NULL;
+  const char *if_name        = NULL;
+  const char *verb_arg       = "4";
+  const char *vers_flag      = NULL;
+  const char *adev_name      = NULL;
+  const char *adev_flag      = NULL;
+  const char *default_format = NULL;
   char       *eptr;
   int         cpid;
   int         fd;
@@ -306,17 +307,33 @@ int main( int argc, char *argv[] )
   loginfo( "Using audio dev: \"%s\"", adev_name );
 
 /*------------------------------------------------------------------------*\
+    Dafault audio format changed or unavailable ?
+\*------------------------------------------------------------------------*/
+  if( default_format && playerSetDefaultAudioFormat(default_format) ) {
+    fprintf( stderr, "Bad default audio format: '%s'\n", default_format );
+    return 1;
+  }
+  const AudioFormat *format = playerGetDefaultAudioFormat();
+  if( !format ) {
+    default_format = ICKPD_DEFAULTAUDIOFORMAT;
+    logwarn( "Need default audio format, using \"%s\" as default...",
+              default_format );
+    playerSetDefaultAudioFormat(default_format);
+  }
+  loginfo( "Using audio def: %s", audioFormatStr(NULL,playerGetDefaultAudioFormat()) );
+
+  /*------------------------------------------------------------------------*\
+      Add default audio format (fixme: this should part of the player state)
+  \*------------------------------------------------------------------------*/
+    playerSetDefaultAudioFormat( "2x44100x16S" );
+
+
+/*------------------------------------------------------------------------*\
     Init audio module: check for interface
 \*------------------------------------------------------------------------*/
   if( audioInit(adev_name) )
     return -1;
 
-/*------------------------------------------------------------------------*\
-    Add default audio format (fixme: this should part of the player state)
-\*------------------------------------------------------------------------*/
-  AudioFormat format;
-  audioStrFormat( &format, "2x44100x16S" );
-  playerAddDefaultAudioFormat( &format );
 
 /*------------------------------------------------------------------------*\
     Init HMI

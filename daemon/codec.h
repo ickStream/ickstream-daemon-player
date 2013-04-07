@@ -129,7 +129,6 @@ struct _codec {
   Codec               *next;
   char                *name;
   size_t               feedChunkSize;       // optional
-  AudioFormatList      defaultAudioFormats; // optional, strong
   CodecInit            init;                // optional
   CodecShutdown        shutdown;            // optional
   CodecCheckType       checkType;
@@ -148,11 +147,12 @@ int    codecRegister( Codec *codec );
 void   codecShutdown( bool force );
 Codec *codecFind( const char *type, AudioFormat *format, Codec *codec );
 
-CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, int fd, Fifo *fifo, long icyInterval );
-int            codecDeleteInstance(CodecInstance *instance, bool wait );
+CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, int fd, Fifo *fifo );
 void           codecSetFormatCallback( CodecInstance *instance, CodecFormatCallback callback, void *userData );
+void           codecSetIcyInterval( CodecInstance *instance, long icyInterval );
 void           codecSetMetaCallback( CodecInstance *instance, CodecMetaCallback callback, void *userData );
-int            codecStartInstance( CodecInstance *instance, int fd, long icyInterval );
+int            codecStartInstance( CodecInstance *instance );
+int            codecDeleteInstance(CodecInstance *instance, bool wait );
 int            codecWaitForEnd( CodecInstance *instance, int timeout );
 int            codecSetVolume( CodecInstance *instance, double volume, bool muted );
 int            codecGetSeekTime( CodecInstance *instance, double *pos );

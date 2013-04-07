@@ -195,6 +195,9 @@ void hmiNewPosition( double seekPos )
 
   DBGMSG( "new seek position: %.2lf", seekPos );
 
+  if( seekPos<0 )
+    seekPos = -seekPos;
+
   h = (int)seekPos/3600;
   seekPos -= h*3600;
   m = (int)seekPos/60;

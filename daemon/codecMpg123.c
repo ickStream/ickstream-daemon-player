@@ -67,21 +67,17 @@ Remarks         : -
 #include "codecMpg123.h"
 
 
-
 /*=========================================================================*\
 	Global symbols
 \*=========================================================================*/
 // none
 
+
 /*=========================================================================*\
 	Private symbols
 \*=========================================================================*/
-const char *defaultFormatStr[] = {
-  "2x44100x16S",
-  NULL
-};
-
 #define MPG123ERRSTR(rc,mh) (((rc)==MPG123_ERR&&(mh))?mpg123_strerror(mh):mpg123_plain_strerror(rc))
+
 
 /*=========================================================================*\
 	Private prototypes
@@ -124,7 +120,7 @@ Codec *mpg123Descriptor( void )
 /*------------------------------------------------------------------------*\
     That's it
 \*------------------------------------------------------------------------*/
-  return &codec;	
+  return &codec;
 }
 
 /*=========================================================================*\
@@ -133,7 +129,7 @@ Codec *mpg123Descriptor( void )
 \*=========================================================================*/
 static int _codecInit( Codec *codec )
 {
-  int i, rc;
+  int rc;
   
 /*------------------------------------------------------------------------*\
     Try to init lib 
@@ -141,16 +137,7 @@ static int _codecInit( Codec *codec )
   rc = mpg123_init();
   if( rc!=MPG123_OK ) {
     logerr( "mpg123: could not init lib: %s", mpg123_plain_strerror(rc) );
-    return -1;	
-  }
-
-/*------------------------------------------------------------------------*\
-    Add default audio formats
-\*------------------------------------------------------------------------*/
-  for( i=0; defaultFormatStr[i]; i++ ) {
-    AudioFormat format;
-    audioStrFormat( &format ,defaultFormatStr[i] );
-    audioAddAudioFormat( &codec->defaultAudioFormats, &format );
+    return -1;
   }
   
 /*------------------------------------------------------------------------*\
@@ -172,11 +159,6 @@ static int _codecShutdown( Codec *codec, bool force )
   mpg123_exit();
 
 /*------------------------------------------------------------------------*\
-    Delete list of default audio formats
-\*------------------------------------------------------------------------*/
-  audioFreeAudioFormatList( &codec->defaultAudioFormats );
-
-/*------------------------------------------------------------------------*\
     That#s all
 \*------------------------------------------------------------------------*/
   return 0;
@@ -184,37 +166,45 @@ static int _codecShutdown( Codec *codec, bool force )
 
 
 /*=========================================================================*\
-      Check if codec supports audio type and format 
+      Check if codec supports audio type and format
+        Only check valid components of format
 \*=========================================================================*/
 static bool _codecCheckType(const char *type, const AudioFormat *format )
 {
-  enum mpg123_enc_enum  mpg123Format;
-  const long           *rateList;
-  const int            *encList;
-  size_t                listLen, i;
 
   // type not supported?
   if( strcmp(type,"mp3") && strcmp(type,"audio/mpeg") )
-    return false;    
+    return false;
 
   // Check number of channels (only mono and stereo)
-  if( format->channels!=1 && format->channels!=2 )
-    return false; 
+  if( format->channels>0 && format->channels!=1 && format->channels!=2 )
+    return false;
 
   // Check sample rate
-  mpg123_rates( &rateList, &listLen );
-  for( i=0; i<listLen && rateList[i]!=format->sampleRate; i++ )
-    ;
-  if( i==listLen )
-    return false;   
+  if( format->sampleRate>0 ) {
+    const long *rateList;
+    size_t      listLen, i;
+
+    mpg123_rates( &rateList, &listLen );
+    for( i=0; i<listLen && rateList[i]!=format->sampleRate; i++ )
+      ;
+    if( i==listLen )
+      return false;
+  }
 
   // Check encoding
-  mpg123Format = _getMpg123Format( format );
-  mpg123_encodings( &encList, &listLen );
-  for( i=0; i<listLen && encList[i]!=mpg123Format; i++ )
-    ;
-  if( i==listLen )
-    return false;
+  if( format->bitWidth>0 ) {
+    enum mpg123_enc_enum  mpg123Format;
+    const int            *encList;
+    size_t                listLen, i;
+
+    mpg123Format = _getMpg123Format( format );
+    mpg123_encodings( &encList, &listLen );
+    for( i=0; i<listLen && encList[i]!=mpg123Format; i++ )
+      ;
+    if( i==listLen )
+      return false;
+  }
 
   // type and format is supported
   return true;    

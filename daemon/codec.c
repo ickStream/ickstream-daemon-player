@@ -137,10 +137,9 @@ void codecShutdown( bool force )
       Find a codec for type and format
         for initial call codec shall be NULL
         supply codec with previous result to get next match
-      Returns a matching codec (format will be completed)
+      Returns a matching codec
         or NULL if none was found
-      An incomplete format that is not accepted by the backend will be
-      completed and retried by using the default audio format list elements
+      For an incomplete format only the defined components are checked.
 \*=========================================================================*/
 Codec *codecFind( const char *type, AudioFormat *format, Codec *codec )
 {
@@ -157,34 +156,11 @@ Codec *codecFind( const char *type, AudioFormat *format, Codec *codec )
 \*------------------------------------------------------------------------*/
   for( ; codec; codec = codec->next ) {
 
-/*------------------------------------------------------------------------*\
-    Direct check (format might be incomplete here!)
-\*------------------------------------------------------------------------*/
+    // Check codec (format might be incomplete here!)
     DBGMSG( "codecFind: Checking codec %s for type %s, format %s.",
             codec->name, type, audioFormatStr(NULL,format) );
     if( codec->checkType(type,format) )
       break;
-
-/*------------------------------------------------------------------------*\
-    If format is incomplete, loop over all defaults 
-\*------------------------------------------------------------------------*/
-    if( !audioFormatIsComplete(format) ) {
-      AudioFormat         tryFormat;
-      AudioFormatElement *element = codec->defaultAudioFormats;
-      while( element ) {
-        memcpy( &tryFormat, format, sizeof(AudioFormat) );
-        audioFormatComplete( &tryFormat, &element->format );
-        DBGMSG( "codecFind: Checking codec %s for type %s, format %s.",
-                codec->name, type, audioFormatStr(NULL,&tryFormat) );
-        if( codec->checkType(type,&tryFormat) )
-          break;
-      }
-      // found a matching format: copy to argument
-      if( element ) {
-        memcpy( format, &tryFormat, sizeof(AudioFormat) );
-        break;
-      }
-    }
 
   } // for( ; codec; codec = codec->next )
 
@@ -202,10 +178,9 @@ Codec *codecFind( const char *type, AudioFormat *format, Codec *codec )
        fifo        - the output link to the audio backend (PCM format)
        format      - the prfered output format
        fd          - file descriptor for input data (close on EOF!)
-       icyInterval - if >0 ICY data is expected
     Returns NULL on error
 \*=========================================================================*/
-CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, int fd, Fifo *fifo, long icyInterval )
+CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, int fd, Fifo *fifo )
 {
   CodecInstance       *instance;
   pthread_mutexattr_t  attr;
@@ -228,7 +203,6 @@ CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, 
   instance->codec       = codec;
   instance->fifoOut     = fifo;
   instance->fdIn        = fd;
-  instance->icyInterval = icyInterval;
   memcpy( &instance->format, format, sizeof(AudioFormat) );
 
 /*------------------------------------------------------------------------*\
@@ -240,12 +214,37 @@ CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, 
   pthread_cond_init( &instance->condEndOfTrack, NULL );
 
 /*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+  return instance;
+}
+
+
+/*=========================================================================*\
+    Start the execution of a codec instance
+    Returns -1 on error
+\*=========================================================================*/
+int codecStartInstance( CodecInstance *instance )
+{
+  DBGMSG( "codecStartInstance (%p,%s): starting instance.",
+          instance, instance->codec->name );
+
+/*------------------------------------------------------------------------*\
+    Check state
+\*------------------------------------------------------------------------*/
+  if( instance->state!=CodecInitialized ) {
+    logerr( "codecStartInstance (%p,%s): Instance was already started.",
+        instance, instance->codec->name );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
     Call Codec instance initializer
 \*------------------------------------------------------------------------*/
-  if( codec->newInstance(instance) ) {
-    logerr( "codecNewInstance (%s): Could not init instance.", codec->name );
-    Sfree( instance );
-    return NULL;
+  if( instance->codec->newInstance(instance) ) {
+    logerr( "codecStartInstance (%p,%s): Could not init instance.",
+            instance, instance->codec->name );
+    return -1;
   }
 
 /*------------------------------------------------------------------------*\
@@ -255,18 +254,17 @@ CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, 
   int rc = pthread_create( &instance->thread, NULL, _codecThread, instance );
   if( rc ) {
     instance->state = CodecTerminatedError;
-    logerr( "codecNewInstance (%s): Unable to start thread (%s).",
-            codec->name, strerror(rc) );
-    codec->deleteInstance( instance );
-    Sfree( instance );
-    return NULL;
+    logerr( "codecStartInstance (%p,%s): Unable to start thread (%s).",
+            instance, instance->codec->name, strerror(rc) );
+    return -1;
   }
 
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/
-  return instance;
+  return 0;
 }
+
 
 
 /*=========================================================================*\
@@ -300,6 +298,19 @@ int codecDeleteInstance( CodecInstance *instance, bool wait )
 \*------------------------------------------------------------------------*/
   return 0;	
 }
+
+
+/*=========================================================================*\
+      Set icy interval (0 is disabled)
+\*=========================================================================*/
+void codecSetIcyInterval( CodecInstance *instance, long icyInterval )
+{
+  DBGMSG( "codecSetIcyInterval (%s,%p): %ld.",
+          instance->codec->name, instance, icyInterval );
+
+  instance->icyInterval = icyInterval;
+}
+
 
 
 /*=========================================================================*\

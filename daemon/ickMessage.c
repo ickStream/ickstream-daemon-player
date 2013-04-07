@@ -1008,7 +1008,7 @@ json_t *_jPlayerStatus( void )
   PlaylistItem *pItem;
   playlistLock( plst );
 
-  DBGMSG( "_PLayerStatus." );
+  DBGMSG( "_PlayerStatus." );
 
 /*------------------------------------------------------------------------*\
     Create status message
