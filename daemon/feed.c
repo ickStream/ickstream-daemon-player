@@ -159,66 +159,7 @@ AudioFeed *audioFeedCreate( const char *uri, int flags, AudioFeedCallback callba
   feed->usrData  = usrData;
 
 /*------------------------------------------------------------------------*\
-    Setup cURL  
-\*------------------------------------------------------------------------*/
-  feed->curlHandle = curl_easy_init();
-  if( !feed->curlHandle ) {
-    logerr( "audioFeedCreate (%s): unable to init cURL.", uri );
-    audioFeedDelete( feed, true );
-    return NULL;
-  }
-
-  // Set URI
-  rc = curl_easy_setopt( feed->curlHandle, CURLOPT_URL, uri );
-  if( rc ) {
-    logerr( "audioFeedCreate (%s): unable to set URI.", uri );
-    audioFeedDelete( feed, true );
-    return NULL;
-  }
-
-  // ICY protocol enabled?
-  if( flags&FeedIcy ) {
-
-    // Add header ICY header field
-    feed->addedHeaderFields = curl_slist_append( feed->addedHeaderFields , "Icy-MetaData:1");
-    rc = curl_easy_setopt( feed->curlHandle, CURLOPT_HTTPHEADER, feed->addedHeaderFields );
-    if( rc ) {
-      logerr( "audioFeedCreate (%s): Unable to add ICY HTTP header.", uri );
-      audioFeedDelete( feed, true );
-      return NULL;
-    }
-  }
-
-  // We interested in the connection header?
-  rc = curl_easy_setopt( feed->curlHandle, CURLOPT_HEADER, 1 );
-  if( rc ) {
-    logerr( "audioFeedCreate (%s): Unable to set header mode.", uri );
-    audioFeedDelete( feed, true );
-    return NULL;
-  }
-
-  // Set our identity
-  rc = curl_easy_setopt( feed->curlHandle, CURLOPT_USERAGENT, FeederAgentString );
-  if( rc ) {
-    logerr( "audioFeedCreate (%s): unable to set user agent to \"%s\"", uri, FeederAgentString );
-    audioFeedDelete( feed, true );
-    return NULL;
-  }
-
-  // Enable HHTP redirects
-  rc = curl_easy_setopt(feed->curlHandle, CURLOPT_FOLLOWLOCATION, 1L );
-  if( rc ) {
-    logerr( "audioFeedCreate (%s): unable to enable redirects", uri );
-    audioFeedDelete( feed, true );
-    return NULL;
-  }
-
-  // Set receiver callback
-  curl_easy_setopt( feed->curlHandle, CURLOPT_WRITEDATA, (void*)feed );
-  curl_easy_setopt( feed->curlHandle, CURLOPT_WRITEFUNCTION, _curlWriteCallback );
-
-/*------------------------------------------------------------------------*\
-    Create feeder thread
+    Create feeder thread, this encapsulates all curl actions
 \*------------------------------------------------------------------------*/
   rc = pthread_create( &feed->thread, NULL, _feederThread, feed );
   if( rc ) {
@@ -247,12 +188,6 @@ int audioFeedDelete( AudioFeed *feed, bool wait )
   feed->state = FeedTerminating;
   if( feed->state!=FeedInitialized && wait )
      pthread_join( feed->thread, NULL ); 
-
-/*------------------------------------------------------------------------*\
-    Clean up curl
-\*------------------------------------------------------------------------*/
-  if( feed->curlHandle )
-    curl_easy_cleanup( feed->curlHandle );
 
 /*------------------------------------------------------------------------*\
     Close writing end of pipe
@@ -308,7 +243,7 @@ void audioFeedUnlock( AudioFeed *feed )
       returns 0 and locks feed, if condition is met
         std. errode (ETIMEDOUT in case of timeout) and no locking otherwise
 \*=========================================================================*/
-int audioFeedWaitForConnection( AudioFeed *feed, int timeout )
+int audioFeedLockWaitForConnection( AudioFeed *feed, int timeout )
 {
   struct timeval  now;
   struct timespec abstime;
@@ -509,6 +444,75 @@ static void *_feederThread( void *arg )
   pthread_sigmask( SIG_BLOCK, NULL, &sigSet );
 
 /*------------------------------------------------------------------------*\
+    Setup cURL
+\*------------------------------------------------------------------------*/
+  feed->curlHandle = curl_easy_init();
+  if( !feed->curlHandle ) {
+    logerr( "audioFeedCreate (%s): unable to init cURL.", feed->uri );
+    audioFeedDelete( feed, true );
+    return NULL;
+  }
+
+  // Set URI
+  rc = curl_easy_setopt( feed->curlHandle, CURLOPT_URL, feed->uri );
+  if( rc ) {
+    logerr( "audioFeedCreate (%s): unable to set URI.", feed->uri );
+    audioFeedDelete( feed, true );
+    return NULL;
+  }
+
+  // ICY protocol enabled?
+  if( feed->flags&FeedIcy ) {
+
+    // Add header ICY header field
+    feed->addedHeaderFields = curl_slist_append( feed->addedHeaderFields , "Icy-MetaData:1");
+    rc = curl_easy_setopt( feed->curlHandle, CURLOPT_HTTPHEADER, feed->addedHeaderFields );
+    if( rc ) {
+      logerr( "audioFeedCreate (%s): Unable to add ICY HTTP header.", feed->uri );
+      audioFeedDelete( feed, true );
+      return NULL;
+    }
+  }
+
+  // We interested in the connection header?
+  rc = curl_easy_setopt( feed->curlHandle, CURLOPT_HEADER, 1 );
+  if( rc ) {
+    logerr( "audioFeedCreate (%s): Unable to set header mode.", feed->uri );
+    audioFeedDelete( feed, true );
+    return NULL;
+  }
+
+  // Set our identity
+  rc = curl_easy_setopt( feed->curlHandle, CURLOPT_USERAGENT, FeederAgentString );
+  if( rc ) {
+    logerr( "audioFeedCreate (%s): unable to set user agent to \"%s\"", feed->uri, FeederAgentString );
+    audioFeedDelete( feed, true );
+    return NULL;
+  }
+
+  // Enable HTTP redirects
+  rc = curl_easy_setopt(feed->curlHandle, CURLOPT_FOLLOWLOCATION, 1L );
+  if( rc ) {
+    logerr( "audioFeedCreate (%s): unable to enable redirects", feed->uri );
+    audioFeedDelete( feed, true );
+    return NULL;
+  }
+
+  // Set receiver callback
+  rc = curl_easy_setopt( feed->curlHandle, CURLOPT_WRITEDATA, (void*)feed );
+  if( rc ) {
+    logerr( "audioFeedCreate (%s): Unable set callback mode.", feed->uri );
+    audioFeedDelete( feed, true );
+    return NULL;
+  }
+  rc = curl_easy_setopt( feed->curlHandle, CURLOPT_WRITEFUNCTION, _curlWriteCallback );
+  if( rc ) {
+    logerr( "audioFeedCreate (%s): Unable set callback function.", feed->uri );
+    audioFeedDelete( feed, true );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
     Collect data, this represents the thread main loop  
 \*------------------------------------------------------------------------*/
   feed->state = FeedConnecting;
@@ -519,7 +523,7 @@ static void *_feederThread( void *arg )
     logerr( "Feeder thread (%p,%s): %s", feed, feed->uri, curl_easy_strerror(rc) );
     feed->state = FeedTerminatedError;
   }
-  DBGMSG( "Feeder thread (%p,%s): terminating with curl state %s.",
+  DBGMSG( "Feeder thread (%p,%s): terminating with curl state \"%s\".",
           feed, feed->uri, curl_easy_strerror(rc) );
 
 /*------------------------------------------------------------------------*\
@@ -536,6 +540,12 @@ static void *_feederThread( void *arg )
     Close pipe
 \*------------------------------------------------------------------------*/
   close( feed->pipefd[1]);
+
+/*------------------------------------------------------------------------*\
+    Clean up curl
+\*------------------------------------------------------------------------*/
+  curl_easy_cleanup( feed->curlHandle );
+  feed->curlHandle = NULL;
 
 /*------------------------------------------------------------------------*\
     That's all ...

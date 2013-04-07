@@ -419,7 +419,8 @@ PlaylistItem *playlistGetCursorItem( Playlist *plst )
 /*------------------------------------------------------------------------*\
     Return item at cursor
 \*------------------------------------------------------------------------*/
-  DBGMSG( "playlistGetCursorItem %p:  %p", plst, plst->_cursorItem );
+  DBGMSG( "playlistGetCursorItem %p: %p (%s)", plst, plst->_cursorItem,
+          plst->_cursorItem?plst->_cursorItem->text:"null" );
   return plst->_cursorItem;
 }
 
@@ -449,7 +450,8 @@ PlaylistItem *playlistSetCursorPos( Playlist *plst, int pos )
 /*------------------------------------------------------------------------*\
    That's all
 \*------------------------------------------------------------------------*/
-  DBGMSG( "playlistSetCursor %p: pos=%d -> %p", plst, pos, item );            
+  DBGMSG( "playlistSetCursor %p: pos=%d -> %p (%s)",
+          plst, pos, item, item->text );
   return item;
 }
 
@@ -462,7 +464,8 @@ PlaylistItem *playlistIncrCursorItem( Playlist *plst )
 {
   PlaylistItem *item = playlistGetCursorItem( plst );
 
-  DBGMSG( "playlistIncrCursorPos %p: items %p->%p", plst, item, item?item->next:NULL );  
+  DBGMSG( "playlistIncrCursorPos %p: items %p->%p",
+           plst, item, item?item->next:NULL );
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
@@ -596,7 +599,7 @@ PlaylistItem *playlistGetItemById( Playlist *plst, const char *id )
  /*------------------------------------------------------------------------*\
      Return
  \*------------------------------------------------------------------------*/
-   DBGMSG( "playlistGetItemById(%p): id=\"%s\" -> %p", plst, id, item );
+   DBGMSG( "playlistGetItemById(%p): id=\"%s\" -> %p (%s)", plst, id, item, item->text );
    return item;
 }
 

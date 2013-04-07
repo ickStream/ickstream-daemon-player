@@ -1357,7 +1357,7 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, Audi
     uri = ickServiceResolveURI( json_string_value(jObj), "content" );
     if( !uri ) {
       playlistItemLock( item );
-      logwarn( "_feedFromPlayListItem (%s,%s), StraemRef #%d: cannot resolve URL \"%s\"!",
+      logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: cannot resolve URL \"%s\"!",
                playlistItemGetText(item), playlistItemGetId(item), i,
                json_string_value(jObj) );
       playlistItemUnlock( item );
@@ -1385,7 +1385,7 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, Audi
     // Get first codec matching type and format
     *codec = codecFind( type, &refFormat, NULL );
     if( !*codec ) {
-      logwarn( "_feedFromPlayListItem (%s,%s), StraemRef #%d: No codec found for %s, %s.",
+      logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: No codec found for %s, %s.",
                playlistItemGetText(item), playlistItemGetId(item), i,
                type, audioFormatStr(NULL,&refFormat) );
       Sfree( uri );
@@ -1395,16 +1395,18 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, Audi
     // Try to open feed
     feed = audioFeedCreate( uri, feedFlags, &_audioFeedCallback, item );
     if( !feed ) {
-      logwarn( "_feedFromPlayListItem (%s,%s), StraemRef #%d: Could not open feed for \"%s\".",
+      logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: Could not open feed for \"%s\".",
                playlistItemGetText(item), playlistItemGetId(item), i, uri );
       Sfree( uri );
       continue;
     }
     Sfree( uri );
 
+//    sleep( 1 ); //??
+
     // Wait for connection
-    if( audioFeedWaitForConnection(feed,timeout) ) {
-      logwarn( "_feedFromPlayListItem (%s,%s), StraemRef #%d: Connection error for \"%s\" (%s).",
+    if( audioFeedLockWaitForConnection(feed,timeout) ) {
+      logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: Connection error for \"%s\" (%s).",
                playlistItemGetText(item), playlistItemGetId(item), i, audioFeedGetURI(feed), strerror(errno) );
       audioFeedDelete( feed, true );
       feed = NULL;

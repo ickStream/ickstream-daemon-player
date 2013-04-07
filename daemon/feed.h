@@ -107,7 +107,7 @@ AudioFeed      *audioFeedCreate( const char *uri, int flags, AudioFeedCallback c
 int             audioFeedDelete( AudioFeed *feed, bool wait );
 void            audioFeedLock( AudioFeed *feed );
 void            audioFeedUnlock( AudioFeed *feed );
-int             audioFeedWaitForConnection( AudioFeed *feed, int timeout );
+int             audioFeedLockWaitForConnection( AudioFeed *feed, int timeout );
 const char     *audioFeedGetURI( AudioFeed *feed );
 int             audioFeedGetFlags( AudioFeed *feed );
 AudioFeedState  audioFeedGetState( AudioFeed *feed );
