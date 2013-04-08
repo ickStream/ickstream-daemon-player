@@ -1402,8 +1402,6 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, Audi
     }
     Sfree( uri );
 
-//    sleep( 1 ); //??
-
     // Wait for connection
     if( audioFeedLockWaitForConnection(feed,timeout) ) {
       logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: Connection error for \"%s\" (%s).",
@@ -1472,19 +1470,27 @@ static int _audioFeedCallback( AudioFeed *feed, void *usrData )
 \*=========================================================================*/
 static int _codecFormatCallback( CodecInstance *instance, const AudioFormat *format, void *userData )
 {
-  AudioFormat *outFormat = userData;
+  AudioFormat *backendFormat = userData;
   DBGMSG( "_codecFormatCallback (%p,%s): %s.",
           instance, instance->codec->name, audioFormatStr(NULL,format) );
 
   // Format should be complete now, or something is wrong
   if( !audioFormatIsComplete(format) ) {
-    logerr( "_codecFormatCallback (%p,%s): format is incomplete (%s).",
+    logerr( "_codecFormatCallback (%p,%s): Format is incomplete (%s).",
              instance, instance->codec->name, audioFormatStr(NULL,format) );
     return -1;
   }
 
+  // Did format change?
+  if( audioFormatIsComplete(backendFormat) && audioFormatCompare(backendFormat,format) ) {
+    char buffer[30];
+    DBGMSG( "_codecFormatCallback (%p,%s): Format changed from %s to %s.",
+            instance, instance->codec->name, audioFormatStr(buffer,backendFormat), audioFormatStr(NULL,format) );
+    // Fixme.
+  }
+
   // Copy to local format
-  memcpy( outFormat, format, sizeof(AudioFormat) );
+  memcpy( backendFormat, format, sizeof(AudioFormat) );
 
   // That's all
   return 0;

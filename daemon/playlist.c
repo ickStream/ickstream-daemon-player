@@ -109,6 +109,7 @@ static int _playlistCheckList( const char *file, int line, Playlist *plst );
 #else
 #define CHKLIST( p ) {}
 #endif
+#define GETITEMTXT(item) ((item)?(item)->text:"none")
 
 
 /*=========================================================================*\
@@ -420,7 +421,7 @@ PlaylistItem *playlistGetCursorItem( Playlist *plst )
     Return item at cursor
 \*------------------------------------------------------------------------*/
   DBGMSG( "playlistGetCursorItem %p: %p (%s)", plst, plst->_cursorItem,
-          plst->_cursorItem?plst->_cursorItem->text:"null" );
+          GETITEMTXT(plst->_cursorItem) );
   return plst->_cursorItem;
 }
 
@@ -451,7 +452,7 @@ PlaylistItem *playlistSetCursorPos( Playlist *plst, int pos )
    That's all
 \*------------------------------------------------------------------------*/
   DBGMSG( "playlistSetCursor %p: pos=%d -> %p (%s)",
-          plst, pos, item, item->text );
+          plst, pos, item, GETITEMTXT(item) );
   return item;
 }
 
@@ -575,7 +576,7 @@ PlaylistItem *playlistGetItem( Playlist *plst, int pos )
 /*------------------------------------------------------------------------*\
     Return
 \*------------------------------------------------------------------------*/
-  DBGMSG( "playlistGetItem (%p): pos=%d -> %p (%s)", plst, posbuf, item, item->text );
+  DBGMSG( "playlistGetItem (%p): pos=%d -> %p (%s)", plst, posbuf, item, GETITEMTXT(item) );
   return item;         
 }
 
@@ -599,7 +600,7 @@ PlaylistItem *playlistGetItemById( Playlist *plst, const char *id )
  /*------------------------------------------------------------------------*\
      Return
  \*------------------------------------------------------------------------*/
-   DBGMSG( "playlistGetItemById(%p): id=\"%s\" -> %p (%s)", plst, id, item, item->text );
+   DBGMSG( "playlistGetItemById(%p): id=\"%s\" -> %p (%s)", plst, id, item, GETITEMTXT(item)  );
    return item;
 }
 
