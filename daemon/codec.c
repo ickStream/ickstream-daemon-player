@@ -444,6 +444,16 @@ int codecGetSeekTime( CodecInstance *instance, double *pos )
 
 
 /*=========================================================================*\
+      Get current audio format
+\*=========================================================================*/
+const AudioFormat *codecGetAudioFormat( CodecInstance *instance )
+{
+  return &instance->format;
+}
+
+
+
+/*=========================================================================*\
        A decoder thread 
 \*=========================================================================*/
 static void *_codecThread( void *arg )

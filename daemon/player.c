@@ -137,7 +137,7 @@ static void      *_playbackThread( void *arg );
 static int        _playItem( PlaylistItem *item, AudioFormat *format );
 static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, AudioFormat *format, int timeout );
 static int        _audioFeedCallback( AudioFeed *feed, void* usrData );
-static int        _codecFormatCallback( CodecInstance *instance, const AudioFormat *format, void *userData );
+static int        _codecNewFormatCallback( CodecInstance *instance, void *userData );
 
 
 /*=========================================================================*\
@@ -1154,7 +1154,7 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
     return -1;
   }
   codecSetIcyInterval( codecInst, audioFeedGetIcyInterval(feed) );
-  codecSetFormatCallback( codecInst, &_codecFormatCallback, format );
+  codecSetFormatCallback( codecInst, &_codecNewFormatCallback, format );
   if( codecStartInstance(codecInst) ) {
     logerr( "_playItem (%s \"%s\"): Could not start codec.",
                 playlistItemGetType(item)==PlaylistItemStream?"Stream":"Track",
@@ -1465,32 +1465,35 @@ static int _audioFeedCallback( AudioFeed *feed, void *usrData )
   return 0;
 }
 
+
 /*=========================================================================*\
     Handle callbacks from codec format detection
 \*=========================================================================*/
-static int _codecFormatCallback( CodecInstance *instance, const AudioFormat *format, void *userData )
+static int _codecNewFormatCallback( CodecInstance *instance, void *userData )
 {
-  AudioFormat *backendFormat = userData;
+  AudioFormat       *backendFormat = userData;
+  const AudioFormat *newFormat     = codecGetAudioFormat( instance );
   DBGMSG( "_codecFormatCallback (%p,%s): %s.",
-          instance, instance->codec->name, audioFormatStr(NULL,format) );
+          instance, instance->codec->name, audioFormatStr(NULL,newFormat) );
 
   // Format should be complete now, or something is wrong
-  if( !audioFormatIsComplete(format) ) {
+  if( !audioFormatIsComplete(newFormat) ) {
     logerr( "_codecFormatCallback (%p,%s): Format is incomplete (%s).",
-             instance, instance->codec->name, audioFormatStr(NULL,format) );
+             instance, instance->codec->name, audioFormatStr(NULL,newFormat) );
     return -1;
   }
 
   // Did format change?
-  if( audioFormatIsComplete(backendFormat) && audioFormatCompare(backendFormat,format) ) {
+  if( audioFormatIsComplete(backendFormat) && audioFormatCompare(backendFormat,newFormat) ) {
     char buffer[30];
     DBGMSG( "_codecFormatCallback (%p,%s): Format changed from %s to %s.",
-            instance, instance->codec->name, audioFormatStr(buffer,backendFormat), audioFormatStr(NULL,format) );
+            instance, instance->codec->name,
+            audioFormatStr(buffer,backendFormat), audioFormatStr(NULL,newFormat) );
     // Fixme.
   }
 
   // Copy to local format
-  memcpy( backendFormat, format, sizeof(AudioFormat) );
+  memcpy( backendFormat, newFormat, sizeof(AudioFormat) );
 
   // That's all
   return 0;

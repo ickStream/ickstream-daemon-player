@@ -98,7 +98,7 @@ typedef int    (*CodecOutput)( CodecInstance *instance, void *data, size_t maxLe
 typedef int    (*CodecVolume)( CodecInstance *instance, double volume, bool muted );  
 typedef int    (*CodecGetSeekTime)( CodecInstance *instance, double *pos );  
 
-typedef int    (*CodecFormatCallback)( CodecInstance *instance, const AudioFormat *format, void *userData );
+typedef int    (*CodecFormatCallback)( CodecInstance *instance, void *userData );
 typedef int    (*CodecMetaCallback)( CodecInstance *instance, CodecMetaType mType, json_t *jMeta, void *userData );
 
 
@@ -147,15 +147,16 @@ int    codecRegister( Codec *codec );
 void   codecShutdown( bool force );
 Codec *codecFind( const char *type, AudioFormat *format, Codec *codec );
 
-CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, int fd, Fifo *fifo );
-void           codecSetFormatCallback( CodecInstance *instance, CodecFormatCallback callback, void *userData );
-void           codecSetIcyInterval( CodecInstance *instance, long icyInterval );
-void           codecSetMetaCallback( CodecInstance *instance, CodecMetaCallback callback, void *userData );
-int            codecStartInstance( CodecInstance *instance );
-int            codecDeleteInstance(CodecInstance *instance, bool wait );
-int            codecWaitForEnd( CodecInstance *instance, int timeout );
-int            codecSetVolume( CodecInstance *instance, double volume, bool muted );
-int            codecGetSeekTime( CodecInstance *instance, double *pos );
+CodecInstance      *codecNewInstance( const Codec *codec, const AudioFormat *format, int fd, Fifo *fifo );
+void                codecSetFormatCallback( CodecInstance *instance, CodecFormatCallback callback, void *userData );
+void                codecSetIcyInterval( CodecInstance *instance, long icyInterval );
+void                codecSetMetaCallback( CodecInstance *instance, CodecMetaCallback callback, void *userData );
+int                 codecStartInstance( CodecInstance *instance );
+int                 codecDeleteInstance(CodecInstance *instance, bool wait );
+int                 codecWaitForEnd( CodecInstance *instance, int timeout );
+int                 codecSetVolume( CodecInstance *instance, double volume, bool muted );
+int                 codecGetSeekTime( CodecInstance *instance, double *pos );
+const AudioFormat  *codecGetAudioFormat( CodecInstance *instance );
 
 #endif  /* __CODEC_H */
 

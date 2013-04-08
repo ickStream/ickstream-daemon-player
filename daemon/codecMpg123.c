@@ -330,7 +330,6 @@ static int _codecDeleteInstance( CodecInstance *instance )
 static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxLength, size_t *realSize )
 {
   mpg123_handle *mh = (mpg123_handle*)instance->instanceData;
-  AudioFormat    format;
   long           rate;
   int            channels, encoding;
   int            metaVector;
@@ -399,14 +398,14 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
     // Format detected or changed: inform player via call back
     case MPG123_NEW_FORMAT:
       mpg123_getformat( mh, &rate, &channels, &encoding );
-      format.sampleRate = rate;
-      format.channels   = channels;
-      if( _translateMpg123Format(encoding,&format) )
+      instance->format.sampleRate = rate;
+      instance->format.channels   = channels;
+      if( _translateMpg123Format(encoding,&instance->format) )
         logwarn( "mpg123: encoding %d not supported (ignored)", encoding );
-      DBGMSG( "mpg123 (%p): New mpg format: \"%s\"",
-              instance, audioFormatStr(NULL,&format) );
+      DBGMSG( "mpg123 (%p): New stream format: \"%s\"",
+              instance, audioFormatStr(NULL,&instance->format) );
       if( instance->formatCallback )
-        instance->formatCallback( instance, &format, instance->formatCallbackUserData );
+        instance->formatCallback( instance, instance->formatCallbackUserData );
       break;
 
     // Report real error 
