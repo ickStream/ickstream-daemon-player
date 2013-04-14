@@ -61,6 +61,8 @@ Remarks         : -
 #include <stdlib.h>
 #include <errno.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <netdb.h>
@@ -72,6 +74,7 @@ Remarks         : -
 #include "utils.h"
 #include "ickService.h"
 #include "ickMessage.h"
+#include "ickCloud.h"
 #include "persist.h"
 #include "playlist.h"
 #include "feed.h"
@@ -197,6 +200,12 @@ int playerInit( void )
   hmiNewVolume( playerVolume, playerMuted );
   hmiNewRepeatMode( playerRepeatMode );
   lastChange = srvtime( );
+
+/*------------------------------------------------------------------------*\
+    If possible tell cloud services about the current address
+\*------------------------------------------------------------------------*/
+  if( playerGetToken() )
+    ickCloudSetDeviceAddress( );
 
 /*------------------------------------------------------------------------*\
     That's all
@@ -423,6 +432,63 @@ const char *playerGetHWID( void )
   DBGMSG(  "playerGetHWID: \"%s\"", hwid );
   playerHWID = strdup( hwid );
   return playerHWID;
+}
+
+
+/*=========================================================================*\
+    Get current IP address
+\*=========================================================================*/
+const char *playerGetIpAddress( void )
+{
+  const char *deviceIf;
+  const char *addrStr = NULL;
+
+/*------------------------------------------------------------------------*\
+    Need an interface
+\*------------------------------------------------------------------------*/
+  deviceIf = playerGetInterface();
+  if( !deviceIf ) {
+    logerr( "playerGetIpAddress: Device interface not yet defined." );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    The interface could be already defined by an address
+\*------------------------------------------------------------------------*/
+  if( inet_addr(deviceIf)!=INADDR_NONE )
+    addrStr = deviceIf;
+
+/*------------------------------------------------------------------------*\
+    Get the address of the interface
+\*------------------------------------------------------------------------*/
+  else {
+    int          fd;
+    struct ifreq req;
+    int          len;
+    memset( &req, 0, sizeof(req) );
+
+    fd = socket( PF_INET, SOCK_DGRAM, 0 );
+    if( fd<0 ) {
+      logerr( "playerGetIpAddress: Could not get socket (%s).", strerror(errno) );
+      return NULL;
+    }
+
+    strncpy( req.ifr_name, deviceIf, IFNAMSIZ );
+    if( ioctl(fd,SIOCGIFADDR,&req,&len)<0 ) {
+      logerr( "playerGetIpAddress: Could not ioctl socket (%s).", strerror(errno) );
+      close( fd );
+      return NULL;
+    }
+
+    addrStr = inet_ntoa( ((struct sockaddr_in *)&req.ifr_addr)->sin_addr );
+    close( fd );
+  }
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  logerr( "playerGetIpAddress (%s): addrStr.", deviceIf, addrStr );
+  return addrStr;
 }
 
 
@@ -841,18 +907,18 @@ int playerSetState( PlayerState state, bool broadcast )
         if( backend )
           audioIf = audioIfNew( backend, device, AudioFifoDefaultSize );
         if( !audioIf ) {
-          logerr( "_playbackStart: Could not open audio device: %s", playerAudioDevice );
+          logerr( "playerSetState (start): Could not open audio device \"%s\".", playerAudioDevice );
           rc = -1;
           break;
         }
         if( _playerSetVolume(playerVolume,playerMuted) )
-          logwarn( "_playerThread: could not set volume to %.2lf%%%s", 
-                   playerVolume*100, playerMuted?" (muted)":"" ); 
+          logwarn( "playerSetState (start): Could not set volume to %.2lf%% (%s).",
+                   playerVolume*100, playerMuted?"muted":"unmuted" );
       }
 
       // Is there a track to play ?
       if( !newTrack ) {
-        lognotice( "_playbackStart: Empty queue or no cursor" );
+        lognotice( "playerSetState (start): Empty queue or no cursor." );
         rc = -1;
        break;
       }
@@ -863,7 +929,7 @@ int playerSetState( PlayerState state, bool broadcast )
 
       if( playerState==PlayerStatePause && currentTrackId && 
            !strcmp(newTrackId,currentTrackId) ) {
-        lognotice( "_playbackStart: Track \"%s\" (%s) unpaused",
+        lognotice( "playerSetState (start): Unpausing item \"%s\" (%s).",
                    playlistItemGetText(newTrack), playlistItemGetId(newTrack) );
         playlistItemUnlock( newTrack );
         playerState = PlayerStatePlay;
@@ -874,13 +940,13 @@ int playerSetState( PlayerState state, bool broadcast )
 
      // Need to stop running track?
       if( playerState==PlayerStatePlay ) {
-        DBGMSG( "Request active playback thread to terminate." );
+        DBGMSG( "playerSetState (start): Request active playback thread to terminate." );
         if( !currentTrackId )
-          logerr( "_playbackStart: internal error: playing but no current track." );
+          logerr( "playerSetState (start): internal error (No current track)." );
         else
-          lognotice( "_playbackStart: stopping current track (%s)", currentTrackId );
+          lognotice( "playerSetState (start): Stopping current track (%s).", currentTrackId );
         if( playbackThreadState!=PlayerThreadRunning )
-          logerr( "_playbackStart: internal error: playing but no running playback thread." );
+          logerr( "playerSetState (start): internal error: playing but no running playback thread." );
         else {
           playbackThreadState = PlayerThreadTerminating;
           pthread_join( playbackThread, NULL ); 
@@ -891,7 +957,7 @@ int playerSetState( PlayerState state, bool broadcast )
       rc = pthread_create( &playbackThread, NULL, _playbackThread, NULL );
       DBGMSG( "Starting new player thread." );
       if( rc ) {
-        logerr( "_playbackStart: Unable to start thread: %s", strerror(rc) );
+        logerr( "playerSetState (start): Unable to start thread (%s).", strerror(rc) );
         rc = -1;
         break;
       }
@@ -907,14 +973,14 @@ int playerSetState( PlayerState state, bool broadcast )
 
      // not yet initialized?
       if( !audioIf ) {
-        logerr( "_playbackPause: audio device not yet initialized." );
+        logerr( "playerSetState (pause): audio device not yet initialized." );
         rc = -1;
         break;
       } 
 
       // Is there a, feed->usrData track to play ?
       if( !newTrack ) {
-        lognotice( "_playbackPause: Empty queue or no cursor" );
+        lognotice( "playerSetState (pause): Empty queue or no cursor" );
         rc = -1;
         break;
       }
@@ -927,12 +993,12 @@ int playerSetState( PlayerState state, bool broadcast )
 
         // Check for right state
         if( playerState==PlayerStateStop )
-          logwarn( "_playbackPause: cannot pause stopped playback" );
+          logwarn( "playerSetState (pause): Cannot pause stopped playback." );
         else if( playerState==PlayerStatePause )
-          logwarn( "_playbackPause: pause already paused layback" );
+          logwarn( "playerSetState (pause): Pause already paused playback." );
         // Pause audio output and set state
         else {
-          lognotice( "_playbackPause: playback paused" );
+          lognotice( "playerSetState (pause): Playback paused." );
           rc = audioIfSetPause( audioIf, true );
           if( !rc )
             playerState = PlayerStatePause;
@@ -940,7 +1006,7 @@ int playerSetState( PlayerState state, bool broadcast )
         break;
       }
       
-      lognotice( "_playbackPause: current track changed, stopping..." );
+      lognotice( "playerSetState (pause): Current track changed, stopping..." );
       // no break here, as we'll change the status to PlayerStateStop in case 
       // we were changing the track in paused state...
 
@@ -952,7 +1018,7 @@ int playerSetState( PlayerState state, bool broadcast )
 
       // not yet initialized?
       if( !audioIf ) {
-        loginfo( "_playbackStop: audio device not yet initialized." );
+        loginfo( "playerSetState (stop): Audio device not yet initialized." );
         rc = -1;
         break;
       }
@@ -977,7 +1043,7 @@ int playerSetState( PlayerState state, bool broadcast )
     Unknown command
 \*------------------------------------------------------------------------*/
     default:
-      logerr( "playerSetState: Unknown target state %d", state );
+      logerr( "playerSetState: Unknown target state %d.", state );
       rc = -1;
       break;
   }
@@ -1061,19 +1127,19 @@ static void *_playbackThread( void *arg )
      }
 
   }  // End of: Thread main loop
-  DBGMSG( "Player thread: end of playback loop (state %d)", playbackThreadState );
+  DBGMSG( "Player thread: End of playback loop (state %d).", playbackThreadState );
 
 /*------------------------------------------------------------------------*\
     Stop audio interface
 \*------------------------------------------------------------------------*/
   if( audioIfStop(audioIf,playbackThreadState==PlayerThreadRunning?AudioDrain:AudioDrop) )
-    logerr( "_playerThread: Could not stop audio interface %s", audioIf->devName );
+    logerr( "Player thread: Could not stop audio interface \"%s\".", audioIf->devName );
 
 /*------------------------------------------------------------------------*\
     Set and broadcast new player state
 \*------------------------------------------------------------------------*/
   if( playbackThreadState==PlayerThreadRunning ) {
-    lognotice( "_playerThread: End of playlist." );
+    lognotice( "_playerThread: End of queue." );
     playerState = PlayerStateStop;
     ickMessageNotifyPlayerState( NULL );
     hmiNewState( playerState );
@@ -1084,7 +1150,7 @@ static void *_playbackThread( void *arg )
     Clean up, that's it ...
 \*------------------------------------------------------------------------*/
   Sfree( currentTrackId );
-  DBGMSG( "Player thread: terminated due to state %d", playbackThreadState );
+  DBGMSG( "Player thread: Terminated due to state %d.", playbackThreadState );
   return NULL;
 }
 

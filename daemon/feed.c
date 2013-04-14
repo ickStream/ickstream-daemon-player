@@ -61,6 +61,7 @@ Remarks         : -
 #include <signal.h>
 #include <curl/curl.h>
 
+#include "ickpd.h"
 #include "utils.h"
 #include "codec.h"
 #include "fifo.h"
@@ -448,29 +449,29 @@ static void *_feederThread( void *arg )
 \*------------------------------------------------------------------------*/
   feed->curlHandle = curl_easy_init();
   if( !feed->curlHandle ) {
-    logerr( "audioFeedCreate (%s): unable to init cURL.", feed->uri );
-    audioFeedDelete( feed, true );
-    return NULL;
+    logerr( "audioFeedCreate (%s): Unable to init cURL.", feed->uri );
+    feed->state = FeedTerminatedError;
+    goto end;
   }
 
   // Set URI
   rc = curl_easy_setopt( feed->curlHandle, CURLOPT_URL, feed->uri );
   if( rc ) {
-    logerr( "audioFeedCreate (%s): unable to set URI.", feed->uri );
-    audioFeedDelete( feed, true );
-    return NULL;
+    logerr( "audioFeedCreate (%s): Unable to set URI.", feed->uri );
+    feed->state = FeedTerminatedError;
+    goto end;
   }
 
   // ICY protocol enabled?
   if( feed->flags&FeedIcy ) {
 
     // Add header ICY header field
-    feed->addedHeaderFields = curl_slist_append( feed->addedHeaderFields , "Icy-MetaData:1");
+    feed->addedHeaderFields = curl_slist_append( feed->addedHeaderFields , "Icy-MetaData: 1" );
     rc = curl_easy_setopt( feed->curlHandle, CURLOPT_HTTPHEADER, feed->addedHeaderFields );
     if( rc ) {
       logerr( "audioFeedCreate (%s): Unable to add ICY HTTP header.", feed->uri );
-      audioFeedDelete( feed, true );
-      return NULL;
+      feed->state = FeedTerminatedError;
+      goto end;
     }
   }
 
@@ -478,38 +479,38 @@ static void *_feederThread( void *arg )
   rc = curl_easy_setopt( feed->curlHandle, CURLOPT_HEADER, 1 );
   if( rc ) {
     logerr( "audioFeedCreate (%s): Unable to set header mode.", feed->uri );
-    audioFeedDelete( feed, true );
-    return NULL;
+    feed->state = FeedTerminatedError;
+    goto end;
   }
 
   // Set our identity
-  rc = curl_easy_setopt( feed->curlHandle, CURLOPT_USERAGENT, FeederAgentString );
+  rc = curl_easy_setopt( feed->curlHandle, CURLOPT_USERAGENT, HttpAgentString );
   if( rc ) {
-    logerr( "audioFeedCreate (%s): unable to set user agent to \"%s\"", feed->uri, FeederAgentString );
-    audioFeedDelete( feed, true );
-    return NULL;
+    logerr( "audioFeedCreate (%s): unable to set user agent to \"%s\"", feed->uri, HttpAgentString );
+    feed->state = FeedTerminatedError;
+    goto end;
   }
 
   // Enable HTTP redirects
   rc = curl_easy_setopt(feed->curlHandle, CURLOPT_FOLLOWLOCATION, 1L );
   if( rc ) {
     logerr( "audioFeedCreate (%s): unable to enable redirects", feed->uri );
-    audioFeedDelete( feed, true );
-    return NULL;
+    feed->state = FeedTerminatedError;
+    goto end;
   }
 
   // Set receiver callback
   rc = curl_easy_setopt( feed->curlHandle, CURLOPT_WRITEDATA, (void*)feed );
   if( rc ) {
     logerr( "audioFeedCreate (%s): Unable set callback mode.", feed->uri );
-    audioFeedDelete( feed, true );
-    return NULL;
+    feed->state = FeedTerminatedError;
+    goto end;
   }
   rc = curl_easy_setopt( feed->curlHandle, CURLOPT_WRITEFUNCTION, _curlWriteCallback );
   if( rc ) {
     logerr( "audioFeedCreate (%s): Unable set callback function.", feed->uri );
-    audioFeedDelete( feed, true );
-    return NULL;
+    feed->state = FeedTerminatedError;
+    goto end;
   }
 
 /*------------------------------------------------------------------------*\
@@ -525,6 +526,8 @@ static void *_feederThread( void *arg )
   }
   DBGMSG( "Feeder thread (%p,%s): terminating with curl state \"%s\".",
           feed, feed->uri, curl_easy_strerror(rc) );
+
+end:
 
 /*------------------------------------------------------------------------*\
     Execute callback
@@ -544,7 +547,8 @@ static void *_feederThread( void *arg )
 /*------------------------------------------------------------------------*\
     Clean up curl
 \*------------------------------------------------------------------------*/
-  curl_easy_cleanup( feed->curlHandle );
+  if(feed->curlHandle )
+    curl_easy_cleanup( feed->curlHandle );
   feed->curlHandle = NULL;
 
 /*------------------------------------------------------------------------*\

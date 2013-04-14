@@ -16,7 +16,7 @@ Error Messages  : -
   
 Date            : 01.03.2013
 
-Updates         : -
+Updates         : 14.04.2013 added support for cloud service     //MAF
                   
 Author          : //MAF 
 
@@ -51,27 +51,32 @@ Remarks         : -
 \************************************************************************/
 
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 #include <strings.h>
 #include <pthread.h>
 #include <jansson.h>
 
 #include "utils.h"
+#include "player.h"
+#include "ickCloud.h"
 #include "ickService.h"
 
 
 /*=========================================================================*\
-	Global symbols
+  Global symbols
 \*=========================================================================*/
 // none
 
+
 /*=========================================================================*\
-	Private definitions and symbols
+  Private definitions and symbols
 \*=========================================================================*/
 
 // A service list item
 typedef struct _serviceListItem {
   struct _serviceListItem *next;
+  ServiceOrigin            origin;
   json_t                  *jItem;
   const char              *id;               // weak
   const char              *name;             // weak
@@ -79,35 +84,37 @@ typedef struct _serviceListItem {
   const char              *url;              // weak, optional
   const char              *serviceUrl;       // weak, optional
 } ServiceListItem;
-ServiceListItem *serviceList;
-pthread_mutex_t  serviceListMutex = PTHREAD_MUTEX_INITIALIZER;
+
+static ServiceListItem *serviceList;
+static pthread_mutex_t  serviceListMutex = PTHREAD_MUTEX_INITIALIZER;
 
 
 /*=========================================================================*\
-	Private prototypes
+  Private prototypes
 \*=========================================================================*/
-static ServiceListItem *_getService( const char *id, const char *type );
+static ServiceListItem *_getService( ServiceListItem *item, const char *id, const char *type, ServiceOrigin origin );
 static void _removeService( ServiceListItem *item ); 
 
 
 /*=========================================================================*\
-        Add a new service
-          jService is the result part of a getServiceInformation answer
+    Add a new service
+      jService is the result part of a getServiceInformation answer
 \*=========================================================================*/
-int ickServiceAdd( json_t *jService )
+int ickServiceAdd( json_t *jService, ServiceOrigin origin )
 {
   ServiceListItem *item;
   json_t          *jObj;
-  
+
 /*------------------------------------------------------------------------*\
     Allocate header
 \*------------------------------------------------------------------------*/
   item = calloc( 1, sizeof(ServiceListItem) );
   if( !item ) {
-    logerr( "ickServiceAdd: out of memeory!" );
+    logerr( "ickServiceAdd: out of memory!" );
     return -1;
   }
-  item->jItem = json_incref( jService );
+  item->origin = origin;
+  item->jItem  = json_incref( jService );
 
 /*------------------------------------------------------------------------*\
     Extract id for quick access (weak ref.)
@@ -119,14 +126,14 @@ int ickServiceAdd( json_t *jService )
     json_decref( jService );
     return -1; 
   }
-  item->id = json_string_value( jObj );   
+  item->id = json_string_value( jObj );
 
 /*------------------------------------------------------------------------*\
     Extract name for quick access (weak ref.)
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( jService, "name" );
   if( !jObj || !json_is_string(jObj) ) {
-    logerr( "ickServiceAdd: Missing field \"name\"!" );
+    logerr( "ickServiceAdd (%s): Missing field \"name\"!", item->id );
     Sfree( item );
     json_decref( jService );
     return -1; 
@@ -138,12 +145,12 @@ int ickServiceAdd( json_t *jService )
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( jService, "type" );
   if( !jObj || !json_is_string(jObj) ) {
-    logerr( "ickServiceAdd: Missing field \"type\"!" );
+    logerr( "ickServiceAdd (%s): Missing field \"type\"!", item->id );
     Sfree( item );
     json_decref( jService );
     return -1; 
   }
-  item->type = json_string_value( jObj );   
+  item->type = json_string_value( jObj );
 
 /*------------------------------------------------------------------------*\
     Extract url for quick access (optional, weak ref.)
@@ -163,25 +170,25 @@ int ickServiceAdd( json_t *jService )
     Insert or replace item
 \*------------------------------------------------------------------------*/
   pthread_mutex_lock( &serviceListMutex );
-  
+
   // Check for duplicates
-  ServiceListItem *oldItem = _getService( item->id, item->type );
+  ServiceListItem *oldItem = _getService( NULL, item->id, item->type, origin );
   if( oldItem ) {
-     logwarn( "ickServiceAdd: Replacing service (%s:%s).", 
-                          item->type, item->id );
-  	_removeService( oldItem );
+     DBGMSG( "ickServiceAdd (%s): Replacing service (%s:%s).",
+                            item->id, item->type, item->name );
+    _removeService( oldItem );
   }
-  
+
   // Insert new item in list
   item->next = serviceList;
   serviceList = item;
   pthread_mutex_unlock( &serviceListMutex );
-  
+
 /*------------------------------------------------------------------------*\
     Be verbose
 \*------------------------------------------------------------------------*/
-  DBGMSG( "Added service \"%s\" of type %s (%s)", 
-                     item->name, item->type, item->id );
+  DBGMSG( "ickServiceAdd (%s): Added (%s:%s), origin %d.",
+                     item->id, item->type, item->name, item->origin );
 
 /*------------------------------------------------------------------------*\
     That's it
@@ -191,21 +198,118 @@ int ickServiceAdd( json_t *jService )
 
 
 /*=========================================================================*\
-        Remove a service by Id and type
-           Type might be NULL, which removes all entries with the id.
+    Get services from cloud
+      type  - only consider services of this type (might be NULL)
+      reset - first delete all cloud services (of type if given)
+      return -1 on error
 \*=========================================================================*/
-void ickServiceRemove( const char *id, const char *type )
+int ickServiceAddFromCloud( const char *type, bool reset )
 {
-  ServiceListItem *item; 	
-  DBGMSG( "ickServiceRemove: \"%s\"", id );
-  
+  const char      *token;
+  ServiceListItem *service;
+  json_t          *jParams;
+  json_t          *jResult;
+  json_t          *jObj;
+  int              i;
+
+  DBGMSG( "ickServiceAddFromCloud: type=\"%s\" reset=%s",
+           type?type:"(no type)", reset?"On":"Off" );
+
+/*------------------------------------------------------------------------*\
+    Need token for cloud access...
+\*------------------------------------------------------------------------*/
+  token = playerGetToken();
+  if( !token ) {
+    logwarn( "ickServiceAddFromCloud: No device token set." );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    Collect parameters
+\*------------------------------------------------------------------------*/
+  jParams = json_object();
+  if( type )
+    json_object_set_new( jParams, "type", json_string(type) );
+
+/*------------------------------------------------------------------------*\
+    Interact with cloud
+\*------------------------------------------------------------------------*/
+  jResult = ickCloudRequestSync( NULL, playerGetToken(), "findServices", jParams );
+  json_decref( jParams );
+  if( !jResult ) {
+    DBGMSG( "ickServiceAddFromCloud: No answer from cloud." );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    Server indicated error?
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( jResult, "error" );
+  if( jObj ) {
+    DBGMSG( "ickServiceAddFromCloud: Error %s.", json_rpcerrstr(jObj) );
+    json_decref( jResult );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    Get result
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( jResult, "result" );
+  if( !jObj ) {
+    DBGMSG( "ickServiceAddFromCloud: No \"result\" object in answer." );
+    json_decref( jResult );
+    return -1;
+  }
+  jObj = json_object_get( jObj, "items" );
+  if( !jObj ) {
+    DBGMSG( "ickServiceAddFromCloud: No \"items\" object in answer." );
+    json_decref( jResult );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    Remove existing services from cloud if requested
+\*------------------------------------------------------------------------*/
+  if( reset ) {
+    pthread_mutex_lock( &serviceListMutex );
+    while( (service=_getService(NULL,NULL,type,ServiceCloud)) != NULL )
+      _removeService( service );
+    pthread_mutex_unlock( &serviceListMutex );
+  }
+
+/*------------------------------------------------------------------------*\
+    Loop over all items and add them to list
+\*------------------------------------------------------------------------*/
+  for( i=0; i<json_array_size(jObj); i++ ) {
+    json_t  *jItem = json_array_get( jObj, i );
+    if( ickServiceAdd(jItem,ServiceCloud) )
+      logerr( "ickServiceAddFromCloud: Could not add service item #%d.", i );
+  }
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  json_decref( jResult );
+  return 0;
+}
+
+
+/*=========================================================================*\
+    Remove a service by Id and type
+      type might be NULL, which removes all entries with the id.
+\*=========================================================================*/
+void ickServiceRemove( const char *id, const char *type, ServiceOrigin origin )
+{
+  ServiceListItem *item;
+  DBGMSG( "ickServiceRemove: id=\"%s\" type=%s origin=%d.", id, type?type:"(no type)", origin );
+
 /*------------------------------------------------------------------------*\
     Lock list and delete all matching entry 
 \*------------------------------------------------------------------------*/
   pthread_mutex_lock( &serviceListMutex );
-  while( (item=_getService(id,type)) != NULL )
+  while( (item=_getService(NULL,id,type,origin)) != NULL )
     _removeService( item );
-  
+
 /*------------------------------------------------------------------------*\
     Unlock list 
 \*------------------------------------------------------------------------*/
@@ -214,22 +318,23 @@ void ickServiceRemove( const char *id, const char *type )
 
 
 /*=========================================================================*\
-        Dereference an item URI using the service hints
+    Dereference an item URI using the service hints
+      returns an allocated string (called needs to free that) or NULL on error
 \*=========================================================================*/
 char *ickServiceResolveURI( const char* uri, const char* type )
 {
   ServiceListItem *service;
   char            *serviceId;
   char            *urlStub;
-  
-  DBGMSG( "ickServiceResolveURI for %s: \"%s\"", type, uri );
-  
+
+  DBGMSG( "ickServiceResolveURI: \"%s\" type=\"%s\".", uri, type?type:"(no type)" );
+
 /*------------------------------------------------------------------------*\
     No service prefix ?
 \*------------------------------------------------------------------------*/
   if( strncasecmp(uri,IckServiceSchemePrefix,strlen(IckServiceSchemePrefix)) )
-    return strdup( uri );    
-    
+    return strdup( uri );
+
 /*------------------------------------------------------------------------*\
     Get service id
 \*------------------------------------------------------------------------*/
@@ -242,52 +347,62 @@ char *ickServiceResolveURI( const char* uri, const char* type )
     Look up service by id and (optionally) type
 \*------------------------------------------------------------------------*/
   pthread_mutex_lock( &serviceListMutex );
-  service = _getService( serviceId, type );
+  service = _getService( NULL, serviceId, type, 0 );
 
 /*------------------------------------------------------------------------*\
     Build result
 \*------------------------------------------------------------------------*/
   char *retval = NULL;
   if( service  && service->serviceUrl ) {
-    retval = malloc( strlen(service->serviceUrl) + +strlen(urlStub) + 2 );
+    retval = malloc( strlen(service->serviceUrl) + strlen(urlStub) + 2 );
     strcpy( retval, service->serviceUrl );
     strcat( retval, "/" );
     strcat( retval, urlStub );
   }
   pthread_mutex_unlock( &serviceListMutex );
-     
+
 /*------------------------------------------------------------------------*\
     That's all: clean up
 \*------------------------------------------------------------------------*/
-  DBGMSG( "ickServiceResolveURI result: \"%s\"", retval );
+  DBGMSG( "ickServiceResolveURI (%s): \"%s\".", uri, retval );
   Sfree( serviceId );
   return retval;
 }
 
 
 /*=========================================================================*\
-        Get service by ID and type
-          Does not lock the list, so caller needs to set mutex!
+    Get service by ID, type and origin
+      item is the first item to check, might be NULL for root of list
+      id or type might be NULL, origin might be 0,
+         in which case all entries match that criteria
+      Does not lock the list, so caller needs to set mutex!
 \*=========================================================================*/
-static ServiceListItem *_getService( const char *id, const char *type )
+static ServiceListItem *_getService( ServiceListItem *item, const char *id, const char *type, ServiceOrigin origin )
 {
-  ServiceListItem *item;
+
+/*------------------------------------------------------------------------*\
+    Where to start?
+\*------------------------------------------------------------------------*/
+  if( !item )
+    item = serviceList;
 
 /*------------------------------------------------------------------------*\
     Loop over all elements
 \*------------------------------------------------------------------------*/
-  for( item=serviceList; item; item=item->next ) {
-    
-    // Check id an type (if requested)
-  	if( strcmp(item->id,id) )
-  	  continue;
+  for( ; item; item=item->next ) {
+
+    // Check all criteria that are defined
+    if( origin && !(item->origin&origin) )
+      continue;
+    if( id && strcmp(item->id,id) )
+      continue;
     if( type && strcmp(item->type,type) )
-  	  continue;
+      continue;
 
     // match !
-  	break;  
-  } 
-	
+    break;
+  }
+
 /*------------------------------------------------------------------------*\
     Return result
 \*------------------------------------------------------------------------*/
@@ -296,22 +411,23 @@ static ServiceListItem *_getService( const char *id, const char *type )
 
 
 /*=========================================================================*\
-        Remove and free a service from list
-          Does not lock the list, so caller needs to set mutex!
+    Remove and free a service from list
+      Does not lock the list, so caller needs to set mutex!
 \*=========================================================================*/
 static void _removeService( ServiceListItem *item ) 
 {
-  
+  DBGMSG( "_removeService (%s): (%s:%s).", item->id, item->type, item->name );
+
 /*------------------------------------------------------------------------*\
     Search for entry 
 \*------------------------------------------------------------------------*/
   ServiceListItem *prevElement = NULL;
   ServiceListItem *element     = serviceList;
   while( element ) {
-  	if( element==item )
-  	  break;
+    if( element==item )
+      break;
     prevElement = element;
-    element = element->next;  	
+    element = element->next;
   }
 
 /*------------------------------------------------------------------------*\
@@ -327,19 +443,15 @@ static void _removeService( ServiceListItem *item )
     serviceList = element->next;
   else
     prevElement->next = element->next;
-      
+
 /*------------------------------------------------------------------------*\
     Free resources 
 \*------------------------------------------------------------------------*/
   json_decref( element->jItem );
-  Sfree( element );  
+  Sfree( element );
 }
-
-
 
 
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
-
-

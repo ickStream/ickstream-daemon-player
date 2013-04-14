@@ -76,7 +76,6 @@ int         persistGetInteger( const char *key );
 double      persistGetReal( const char *key );
 bool        persistGetBool( const char *key );
 
-
 #endif  /* __PERSIST_H */
 
 

@@ -50,21 +50,30 @@ Remarks         : -
 #define __ICKSERVICE_H
 
 /*=========================================================================*\
-	Includes needed by definitions from this file
+ *Includes needed by definitions from this file
 \*=========================================================================*/
+#include <stdbool.h>
 #include <jansson.h> 
 
+
 /*========================================================================n
-   Some definitions
+  Macro and type definitions
 \*========================================================================*/
 #define IckServiceSchemePrefix   "service://"
+
+// Where is a service located
+typedef enum {
+  ServiceDevice = 0x01,
+  ServiceCloud  = 0x02
+} ServiceOrigin;
 
 
 /*=========================================================================*\
        Global symbols 
 \*=========================================================================*/
-int  ickServiceAdd( json_t *jService );
-void ickServiceRemove( const char *id, const char *type );
+int  ickServiceAdd( json_t *jService, ServiceOrigin origin );
+int  ickServiceAddFromCloud( const char *type, bool reset );
+void ickServiceRemove( const char *id, const char *type, ServiceOrigin origin );
 
 char *ickServiceResolveURI( const char* uri, const char* type );
 

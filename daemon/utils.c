@@ -72,7 +72,8 @@ int    sysloglevel = LOG_ALERT;
 /*=========================================================================*\
 	Private symbols
 \*=========================================================================*/
-pthread_mutex_t  loggerMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t  loggerMutex  = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t  counterMutex = PTHREAD_MUTEX_INITIALIZER;
 
 
 /*========================================================================*\
@@ -273,6 +274,52 @@ int json_object_merge( json_t *target, json_t *source )
     That's all (no more elements in source)
 \*------------------------------------------------------------------------*/
   return 0;
+}
+
+
+/*========================================================================*\
+   Get a string description for an JSON-RPC error object
+     This is a not reentrant function for debugging only.
+\*========================================================================*/
+const char *json_rpcerrstr( json_t *jError )
+{
+  static char *str;
+
+  // Free result of last call
+  Sfree( str );
+
+  // Use library function (fixme with formated output)
+  str = json_dumps( jError, JSON_PRESERVE_ORDER | JSON_COMPACT | JSON_ENSURE_ASCII );
+
+  // Return result
+  return str;
+}
+
+
+/*========================================================================*\
+   Get and increment a global counter in an atomic way
+\*========================================================================*/
+long getAndIncrementCounter( void )
+{
+  static long counter = 0;
+  long        retval;
+
+/*------------------------------------------------------------------------*\
+    Init counter with persisted last value
+\*------------------------------------------------------------------------*/
+  // Fixme
+
+/*------------------------------------------------------------------------*\
+    Increment counter
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &counterMutex );
+  retval = ++counter;
+  pthread_mutex_unlock( &counterMutex );
+
+/*------------------------------------------------------------------------*\
+    Return result
+\*------------------------------------------------------------------------*/
+  return retval;
 }
 
 

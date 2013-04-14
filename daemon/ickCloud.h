@@ -2,15 +2,15 @@
 
 Name            : -
 
-Source File     : ickMessage.h
+Source File     : ickCloud.h
 
-Description     : Main include file for ickMessage.c 
+Description     : Main include file for ickCloud.c
 
 Comments        : -
 
-Date            : 20.02.2013 
+Date            : 10.04.2013
 
-Updates         : 03.04.2013 added Json RPC error codes   //MAF
+Updates         : -
 
 Author          : //MAF 
 
@@ -33,60 +33,52 @@ Remarks         : -
  *     may be used to endorse or promote products derived from this software 
  *     without specific prior written permission.
  *
- * this SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
- * WARRANTIES OF MERCHANTABILITY AND FITNESS for A PARTICULAR PURPOSE ARE DISCLAIMED. 
- * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE for ANY DIRECT, 
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, 
  * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
  * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY 
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING 
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF this SOFTWARE, 
- * EVEN if ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, 
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
 
-#ifndef __ICKMESSAGE_H
-#define __ICKMESSAGE_H
+#ifndef __ICKCLOUD_H
+#define __ICKCLOUD_H
 
 /*=========================================================================*\
-	Includes needed by definitions from this file
+  Includes needed by definitions from this file
 \*=========================================================================*/
-#include <ickDiscovery.h> 
+#include <jansson.h> 
 
-
-/*=========================================================================*\
-       Macro and type definitions
-\*=========================================================================*/
-
-// Some Json-RPC error codes
-#define RPC_NO_ERROR              0
-#define RPC_PARSE_ERROR      -32700
-#define RPC_INVALID_REQUEST  -32600
-#define RPC_METHOD_NOT_FOUND -32601
-#define RPC_INVALID_PARAMS   -32602
-#define RPC_INTERNAL_JSONRPC -32603
-#define RPC_GENERIC_ERROR    -32000
-
-
-/*=========================================================================*\
-       Global symbols 
-\*=========================================================================*/
-typedef void (*IckCmdCallback)(const char *szDeviceId, json_t *jCmd, json_t *jResult);  
-
-
-/*========================================================================*\
-   Prototypes
+/*========================================================================n
+  Macro and type definitions
 \*========================================================================*/
-void ickMessage( const char *szDeviceId, const void *message, 
-                 size_t messageLength, enum ickMessage_communicationstate state );
-enum ickMessage_communicationstate  sendIckMessage( const char *szDeviceId, json_t *jMsg );
-enum ickMessage_communicationstate  sendIckCommand( const char *szDeviceId, const char *method, json_t *jParams, int *requestID, IckCmdCallback callBack );
+#define IckCloudCoreURI "http://api.ickstream.com/ickstream-cloud-core/jsonrpc"
 
-void ickMessageNotifyPlaylist( const char *szDeviceId );
-void ickMessageNotifyPlayerState( const char *szDeviceId );
+/*------------------------------------------------------------------------*\
+    Signatures for function pointers
+\*------------------------------------------------------------------------*/
+typedef void (*IckCloudCb)( const char *method, json_t *jParams, json_t *jResult, int rc, void *userData  );
 
-#endif  /* __ICKMESSAGE_H */
+
+/*=========================================================================*\
+  Global symbols
+\*=========================================================================*/
+int     ickCloudSetDeviceAddress( void );
+
+json_t *ickCloudRequestSync( const char *uri, const char *oAuthToken, const char *method, json_t *jParams );
+int     ickCloudNotify( const char *uri, const char *oAuthToken, const char *method, json_t *jParams );
+int     ickCloudRequestAsync( const char *uri, const char *oAuthToken, const char *method,
+                              json_t *jParams, IckCloudCb callback, void *userData );
+int     jsonRpcTransact( const char *uri, const char *oAuthToken, int id,
+                         const char *method, json_t *jParams, json_t **jResult );
+
+
+#endif  /* __ICKCLOUD_H */
 
 
 /*========================================================================*\

@@ -4,7 +4,7 @@ Name            : -
 
 Source File     : utils.h
 
-Description     : Main include file for fifo.c 
+Description     : Main include file for utils.c
 
 Comments        : Posix log levels:
                    LOG_EMERG    0   system is unusable
@@ -120,9 +120,11 @@ extern int  sysloglevel;
 /*========================================================================*\
    Prototypes
 \*========================================================================*/
-double srvtime( void );
-long   rndInteger( long min, long max );
-int    json_object_merge( json_t *target, json_t *source );
+double      srvtime( void );
+long        rndInteger( long min, long max );
+int         json_object_merge( json_t *target, json_t *source );
+const char *json_rpcerrstr( json_t *jError );
+long        getAndIncrementCounter( void );
 
 void   _srvlog( const char *file, int line, int prio, const char *fmt, ... );
 void   _srvdump( const char *file, int line, int prio, const char *title, const void *ptr, size_t size );

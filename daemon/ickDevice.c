@@ -72,7 +72,7 @@ void _handleGetServiceInformation( const char *szDeviceId, json_t *jCmd, json_t 
 
 
 /*=========================================================================*\
-        Handle device annuncements
+        Handle device announcements
 \*=========================================================================*/
 void ickDevice( const char *szDeviceId, enum ickDiscovery_command cmd, 
                  enum ickDevice_servicetype type )
@@ -97,10 +97,25 @@ void ickDevice( const char *szDeviceId, enum ickDiscovery_command cmd,
 
     case ICKDISCOVERY_REMOVE_DEVICE:
       loginfo( "ickDevice %s (type %d) removed", szDeviceId, type );
+
+      // Remove service(s) for this device
+      ickServiceRemove( szDeviceId, NULL, ServiceDevice );
+
       break;
 
     case ICKDISCOVERY_UPDATE_DEVICE:
       loginfo( "ickDevice %s (type %d) updated", szDeviceId, type );
+
+      // Remove service(s) for this device
+      ickServiceRemove( szDeviceId, NULL, ServiceDevice );
+
+      // If (still) server: request service descriptor
+      if( type==ICKDEVICE_SERVER_GENERIC ) {
+        sendIckCommand( szDeviceId, "getServiceInformation", NULL, NULL,
+                                    &_handleGetServiceInformation );
+      }
+
+
       break;
 
     default:
@@ -120,21 +135,29 @@ void ickDevice( const char *szDeviceId, enum ickDiscovery_command cmd,
 void _handleGetServiceInformation( const char *szDeviceId, json_t *jCmd, json_t *jResult)
 { 
   json_t *jObj;
-  
+
 /*------------------------------------------------------------------------*\
-    Get result object
+    Check for error
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( jResult, "error" );
+  if( jObj ) {
+    logwarn( "getServiceInformation from %s: %s.", szDeviceId, json_rpcerrstr(jObj) );
+    return;
+  }
+
+/*------------------------------------------------------------------------*\
+    Get result object conten, which is the service definition
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( jResult, "result" );
   if( !jObj || !json_is_object(jObj) ) {
-    logerr( "getServiceInformation from %s: no result field", 
-                     szDeviceId );
+    logerr( "getServiceInformation from %s: no result field", szDeviceId );
     return;
   } 
 
 /*------------------------------------------------------------------------*\
-    Add new service
+    Add service
 \*------------------------------------------------------------------------*/
-  ickServiceAdd( jObj );
+  ickServiceAdd( jObj, ServiceDevice );
 }
 
 

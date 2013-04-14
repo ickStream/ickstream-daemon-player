@@ -61,24 +61,26 @@ Remarks         : -
 
 #include "utils.h"
 #include "ickMessage.h"
+#include "ickCloud.h"
+#include "ickService.h"
 #include "player.h"
 #include "playlist.h"
 #include "audio.h"
 
 
 /*=========================================================================*\
-	Global symbols
+  Global symbols
 \*=========================================================================*/
 // none
 
 /*=========================================================================*\
-	Private definitions and symbols
+  Private definitions and symbols
 \*=========================================================================*/
 
 // Linked list of open command requests
 typedef struct _openRequest {
   struct _openRequest  *next;
-  int                   id;
+  long                  id;
   char                 *szDeviceId;
   json_t               *jCommand;
   IckCmdCallback        callback;
@@ -89,7 +91,7 @@ pthread_mutex_t openRequestListMutex = PTHREAD_MUTEX_INITIALIZER;
 
 
 /*=========================================================================*\
-	Private prototypes
+  Private prototypes
 \*=========================================================================*/
 void    _unlinkOpenRequest( OpenRequest *request );	
 void    _freeOpenRequest( OpenRequest *request );	
@@ -98,7 +100,7 @@ json_t *_jPlayerStatus( void );
 
 
 /*=========================================================================*\
-       Handle messages for this device 
+  Handle messages for this device
 \*=========================================================================*/
 void ickMessage( const char *szDeviceId, const void *iMessage, 
                  size_t messageLength, enum ickMessage_communicationstate state )
@@ -169,7 +171,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     jObj = json_object_get( jRoot, "error" );
   if( jObj && json_is_object(jObj) ) {
     OpenRequest *request = openRequestList;
-    int id;
+    long id;
     
     // Get integer Id from message
     if( json_is_integer(rpcId) )
@@ -178,7 +180,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 #ifdef ICK_DEBUG
       logwarn( "ickMessage from %s returned id as string: %s", szDeviceId, message );
 #endif
-      id = atoi( json_string_value(rpcId) );
+      id = atol( json_string_value(rpcId) );
     }
     else {
       logwarn( "ickMessage from %s returned id in unknown format: %s", 
@@ -843,6 +845,12 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     playerSetName( name, true );
     playerSetToken( token );
     
+    // Register with the cloud core
+    ickCloudSetDeviceAddress( );
+
+    // Get services using this token
+    ickServiceAddFromCloud( NULL, true );
+
     // report result 
     jResult = json_pack( "{ssss}",
                          "playerName", playerGetName(), 
@@ -871,7 +879,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 \*------------------------------------------------------------------------*/
   else {
     logerr( "ickMessage from %s: ignoring method %s", szDeviceId, method );
-    rpcErrCode = RPC_METHOD_NOT_FUND;
+    rpcErrCode = RPC_METHOD_NOT_FOUND;
     rpcErrMessage = "Method not found";
   }
 
@@ -923,7 +931,7 @@ rpcError:
 
 
 /*=========================================================================*\
-	Send a notification for playlist update
+  Send a notification for playlist update
 \*=========================================================================*/
 void ickMessageNotifyPlaylist( const char *szDeviceId )
 {
@@ -967,7 +975,7 @@ void ickMessageNotifyPlaylist( const char *szDeviceId )
 
 
 /*=========================================================================*\
-	Send a notification for plyer status update
+  Send a notification for plyer status update
 \*=========================================================================*/
 void ickMessageNotifyPlayerState( const char *szDeviceId )
 {
@@ -997,7 +1005,7 @@ void ickMessageNotifyPlayerState( const char *szDeviceId )
 
 
 /*=========================================================================*\
-	Compile player status for getPlayerStatus or playerStatusChanged
+  Compile player status for getPlayerStatus or playerStatusChanged
 \*=========================================================================*/
 json_t *_jPlayerStatus( void )
 {
@@ -1044,7 +1052,7 @@ json_t *_jPlayerStatus( void )
 
 
 /*=========================================================================*\
-	Wrapper for Sending an ickstream JSON message 
+  Wrapper for Sending an ickstream JSON message
 \*=========================================================================*/
 enum ickMessage_communicationstate sendIckMessage( const char *szDeviceId, json_t *jMessage )
 {
@@ -1077,15 +1085,14 @@ enum ickMessage_communicationstate sendIckMessage( const char *szDeviceId, json_
 
 
 /*=========================================================================*\
-	Send a command and register callback.
-	  requestID returns the unique ID (we use an integer here) and might be NULL
+  Send a command and register callback.
+    requestID returns the unique ID (we use an integer here) and might be NULL
 \*=========================================================================*/
 enum ickMessage_communicationstate  
   sendIckCommand( const char *szDeviceId, const char *method, json_t *jParams, 
                   int *requestId, IckCmdCallback callback )
 {
-  static int requestIdCntr = 0;
-  
+
 /*------------------------------------------------------------------------*\
     Create an init list element for callbacks
 \*------------------------------------------------------------------------*/
@@ -1094,7 +1101,7 @@ enum ickMessage_communicationstate
     return -1;
     
   request->szDeviceId = strdup( szDeviceId );  
-  request->id         = ++requestIdCntr;
+  request->id         = getAndIncrementCounter();
   request->callback   = callback;
   request->timestamp  = srvtime(); 
   
@@ -1129,11 +1136,11 @@ enum ickMessage_communicationstate
 
 
 /*=========================================================================*\
-	Unlink an open request from list
+  Unlink an open request from list
 \*=========================================================================*/
 void _unlinkOpenRequest( OpenRequest *request )	
 {
-		  
+
 /*------------------------------------------------------------------------*\
     Lock list and search for entry 
 \*------------------------------------------------------------------------*/
@@ -1141,10 +1148,10 @@ void _unlinkOpenRequest( OpenRequest *request )
   OpenRequest *prevElement = NULL;
   OpenRequest *element     = openRequestList;
   while( element ) {
-  	if( element==request )
-  	  break;
+    if( element==request )
+      break;
     prevElement = element;
-    element = element->next;  	
+    element = element->next;
   }
 
 /*------------------------------------------------------------------------*\
@@ -1161,7 +1168,7 @@ void _unlinkOpenRequest( OpenRequest *request )
     Straying request? 
 \*------------------------------------------------------------------------*/
   else {
-  	char *txt = json_dumps( request->jCommand, JSON_PRESERVE_ORDER | JSON_COMPACT | JSON_ENSURE_ASCII );
+    char *txt = json_dumps( request->jCommand, JSON_PRESERVE_ORDER | JSON_COMPACT | JSON_ENSURE_ASCII );
     logwarn( "Cannot unlink straying open request #%d: %s", request->id, txt );
     Sfree( txt );
   }
@@ -1174,23 +1181,23 @@ void _unlinkOpenRequest( OpenRequest *request )
 
 
 /*=========================================================================*\
-	Free an open request list element
+  Free an open request list element
 \*=========================================================================*/
 void _freeOpenRequest( OpenRequest *request )	
 {
-  Sfree( request->szDeviceId );		
+  Sfree( request->szDeviceId );
   json_decref( request->jCommand );
   Sfree( request );
 }
 
 
 /*=========================================================================*\
-	Check for timedout requests
+  Check for timedout requests
 \*=========================================================================*/
 void _timeoutOpenRequest( int timeout )	
 {
   double timeoutStamp = srvtime() - timeout;
-  		  
+
 /*------------------------------------------------------------------------*\
     Lock list and loop over all entries 
 \*------------------------------------------------------------------------*/
@@ -1198,13 +1205,13 @@ void _timeoutOpenRequest( int timeout )
   OpenRequest *prevElement = NULL;
   OpenRequest *element     = openRequestList;
   while( element ) {
-  	
+
 /*------------------------------------------------------------------------*\
     Not yet timed out
 \*------------------------------------------------------------------------*/
-  	if( element->timestamp>timeoutStamp ) {
-  	  prevElement = element;
-      element = element->next;  		
+    if( element->timestamp>timeoutStamp ) {
+      prevElement = element;
+      element = element->next;
       continue;
     }
 
@@ -1219,24 +1226,24 @@ void _timeoutOpenRequest( int timeout )
     char *txt = json_dumps( element->jCommand, JSON_PRESERVE_ORDER | JSON_COMPACT | JSON_ENSURE_ASCII );  
     logwarn( "ickRequest #%d timed out: %s", element->id, txt );
     Sfree( txt );
-  	
+
 /*------------------------------------------------------------------------*\
     Unlink timedout element
 \*------------------------------------------------------------------------*/
-  	if( !prevElement )    // replace list root
+    if( !prevElement )    // replace list root
       openRequestList = element->next;
     else
       prevElement->next = element->next;
         
 /*------------------------------------------------------------------------*\
-    Free ressources
+    Free resources
 \*------------------------------------------------------------------------*/
     _freeOpenRequest( element );  
     
 /*------------------------------------------------------------------------*\
     Go to next element
 \*------------------------------------------------------------------------*/
-    element = nextElement;  	
+    element = nextElement;
   }
     
 /*------------------------------------------------------------------------*\

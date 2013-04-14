@@ -94,6 +94,7 @@ PlayerRepeatMode   playerGetRepeatMode( void );
 double             playerGetLastChange( void );
 const AudioFormat *playerGetDefaultAudioFormat( void );
 const char        *playerGetHWID( void );
+const char        *playerGetIpAddress( void );
 const char        *playerGetUUID( void );
 const char        *playerGetName( void );
 const char        *playerGetInterface( void );

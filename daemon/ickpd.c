@@ -77,6 +77,7 @@ Remarks         : -
 #include "hmi.h"
 #include "ickDevice.h"
 #include "ickMessage.h"
+#include "ickService.h"
 #include "audio.h"
 #include "player.h"
 
@@ -274,7 +275,7 @@ int main( int argc, char *argv[] )
   loginfo( "Using uuid     : \"%s\"", player_uuid );
   
 /*------------------------------------------------------------------------*\
-    Player name changed or unavailabale ?
+    Player name changed or unavailable ?
 \*------------------------------------------------------------------------*/  
   if( player_name )
     playerSetName( player_name, false );
@@ -398,12 +399,13 @@ int main( int argc, char *argv[] )
   ickDiscoveryAddService( ICKDEVICE_PLAYER );
 
 /*------------------------------------------------------------------------*\
-    Init player and announce state
+    Init player, announce state and get cloud services
 \*------------------------------------------------------------------------*/
   playerInit();
   ickMessageNotifyPlaylist( NULL );
   ickMessageNotifyPlayerState( NULL );
-  
+  ickServiceAddFromCloud( NULL, true );
+
 /*------------------------------------------------------------------------*\
     Mainloop:
 \*------------------------------------------------------------------------*/  
