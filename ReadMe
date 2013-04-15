@@ -39,6 +39,21 @@ Use "./ickpd -?" to find out how to set other parameters.
 
 Send SIGINT (Ctrl-c) to gracefully shut down the player.
 
+*************************************************************************
+Extensions to the ickStream specifications:
+
+Player protocol method "setPlayerConfiguration":
+  parameter "accessToken" is optional
+  resets and requests the list of cloud services
+  (parameter "playerName" is still required)
+  
+Player protocol method "shuffleTracks" accepts optional parameters:
+  playlistStartPos [i] - start of queue range to shuffle
+  playlistEndPos [i]   - end of queue range to shuffle
+
+Player protocol method "setRepeatMode" accepts additional mode:
+  "REPEAT_ITEM" - repeat item under playback queue cursor
+  
 
 *************************************************************************
  * Copyright (c) 2013, //MAF, ickStream GmbH

@@ -271,6 +271,7 @@ static void *_cloudRequestThread( void *arg )
 /*------------------------------------------------------------------------*\
     Clean up
 \*------------------------------------------------------------------------*/
+  DBGMSG( "Cloud Request thread (%p,%s): Done.", request, request->method );
   json_decref( request->jParams );
   if( jResult )
     json_decref( jResult );
@@ -282,7 +283,6 @@ static void *_cloudRequestThread( void *arg )
 /*------------------------------------------------------------------------*\
     That's it
 \*------------------------------------------------------------------------*/
-  DBGMSG( "Cloud Request thread (%p,%s): Done." );
   return NULL;
 }
 

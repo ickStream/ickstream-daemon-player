@@ -819,7 +819,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
       goto rpcError;
     }
 
-    // Get player name 
+    // Get player name (required)
     jObj = json_object_get( jParams, "playerName" );
     if( !jObj || !json_is_string(jObj) ) {
       logerr( "ickMessage from %s: item missing field \"playerName\": %s", 
@@ -828,23 +828,13 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
       rpcErrMessage = "Parameter \"playerName\": missing or of wrong type";
       goto rpcError;
     } 
-    const char *name = json_string_value( jObj );
+    playerSetName( json_string_value(jObj), true );
 
-    // Get access token 
+    // Get access token (optional)
     jObj = json_object_get( jParams, "accessToken" );
-    if( !jObj || !json_is_string(jObj) ) {
-      logerr( "ickMessage from %s: item missing field \"accessToken\": %s", 
-                       szDeviceId, message );
-      rpcErrCode    = RPC_INVALID_PARAMS;
-      rpcErrMessage = "Parameter \"accessToken\": missing or of wrong type";
-      goto rpcError;
-    } 
-    const char *token = json_string_value( jObj );
+    if( jObj && json_is_string(jObj) )
+      playerSetToken( json_string_value(jObj) );
 
-    // Store variables
-    playerSetName( name, true );
-    playerSetToken( token );
-    
     // Register with the cloud core
     ickCloudSetDeviceAddress( );
 

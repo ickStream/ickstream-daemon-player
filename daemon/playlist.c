@@ -1258,6 +1258,52 @@ json_t *playlistItemGetStreamingRefs( PlaylistItem *pItem )
 
 
 /*=========================================================================*\
+       Get a model attribute
+         return NULL if not available
+\*=========================================================================*/
+json_t *playlistItemGetModelAttribute( PlaylistItem *pItem, const char *attribute )
+{
+  json_t *jObj;
+
+  DBGMSG( "playlistItemGetModelAttribute (%p,%s): \"%s\".",
+           pItem, pItem->text, attribute );
+
+  // Get attribute container
+  jObj = json_object_get( pItem->jItem, "itemAttributes" );
+  if( !jObj  ) {
+    logwarn( "playlistItemGetModelAttribute (%p,%s): Field \"itemAttributes\" not found.",
+              pItem, pItem->text );
+    return NULL;
+  }
+
+  // Get an return attribute
+  return json_object_get( jObj, attribute );
+}
+
+
+/*=========================================================================*\
+       Get image URI
+         return NULL if not available
+\*=========================================================================*/
+const char *playlistItemGetImageUri( PlaylistItem *pItem )
+{
+  json_t *jObj;
+
+  DBGMSG( "playlistItemGetImageUri (%p,%s).", pItem, pItem->text );
+
+  jObj = json_object_get( pItem->jItem, "image" );
+  if( jObj && json_is_string(jObj) )
+     return json_string_value( jObj );
+
+  if( jObj )
+    logwarn( "playlistItemGetImageUri (%p,%s): Field \"image\" is not a string.",
+             pItem, pItem->text );
+
+  return NULL;
+}
+
+
+/*=========================================================================*\
        Manipulate meta data of the playlist item
 \*=========================================================================*/
 int playlistItemSetMetaData( PlaylistItem *pItem, json_t *metaObj, bool replace )

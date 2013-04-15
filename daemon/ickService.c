@@ -74,7 +74,7 @@ Remarks         : -
 \*=========================================================================*/
 
 // A service list item
-typedef struct _serviceListItem {
+struct _serviceListItem {
   struct _serviceListItem *next;
   ServiceOrigin            origin;
   json_t                  *jItem;
@@ -83,7 +83,7 @@ typedef struct _serviceListItem {
   const char              *type;             // weak
   const char              *url;              // weak, optional
   const char              *serviceUrl;       // weak, optional
-} ServiceListItem;
+};
 
 static ServiceListItem *serviceList;
 static pthread_mutex_t  serviceListMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -318,6 +318,23 @@ void ickServiceRemove( const char *id, const char *type, ServiceOrigin origin )
 
 
 /*=========================================================================*\
+    Find (next) service for id, type and origin
+      item is the last result, supply NULL for first call
+      id and type might be NULL, origin might be 0 for joker
+      Return (next) service item or NULL if no (next) match
+\*=========================================================================*/
+ServiceListItem *ickServiceFind( ServiceListItem *item, const char *id, const char *type, ServiceOrigin origin )
+{
+
+  pthread_mutex_lock( &serviceListMutex );
+  item = _getService( item, id, type, origin );
+  pthread_mutex_unlock( &serviceListMutex );
+
+  return item;
+}
+
+
+/*=========================================================================*\
     Dereference an item URI using the service hints
       returns an allocated string (called needs to free that) or NULL on error
 \*=========================================================================*/
@@ -371,8 +388,62 @@ char *ickServiceResolveURI( const char* uri, const char* type )
 
 
 /*=========================================================================*\
+    Get JSON object defining a service
+\*=========================================================================*/
+json_t *ickServiceGetJSON( const ServiceListItem *item )
+{
+  return item->jItem;
+}
+
+
+/*=========================================================================*\
+    Get service id (convenience function)
+\*=========================================================================*/
+const char *ickServiceGetId( const ServiceListItem *item )
+{
+  return item->id;
+}
+
+
+/*=========================================================================*\
+    Get service name (convenience function)
+\*=========================================================================*/
+const char *ickServiceGetName( const ServiceListItem *item )
+{
+  return item->name;
+}
+
+
+/*=========================================================================*\
+    Get service type (convenience function)
+\*=========================================================================*/
+const char *ickServiceGetType( const ServiceListItem *item )
+{
+  return item->type;
+}
+
+
+/*=========================================================================*\
+    Get service url (convenience function)
+\*=========================================================================*/
+const char *ickServiceGetURI( const ServiceListItem *item )
+{
+  return item->url;
+}
+
+
+/*=========================================================================*\
+    Get service url (convenience function)
+\*=========================================================================*/
+const char *ickServiceGetServiceURI( const ServiceListItem *item )
+{
+  return item->serviceUrl;
+}
+
+
+/*=========================================================================*\
     Get service by ID, type and origin
-      item is the first item to check, might be NULL for root of list
+      item is the last result, supply NULL for first call
       id or type might be NULL, origin might be 0,
          in which case all entries match that criteria
       Does not lock the list, so caller needs to set mutex!
@@ -383,8 +454,7 @@ static ServiceListItem *_getService( ServiceListItem *item, const char *id, cons
 /*------------------------------------------------------------------------*\
     Where to start?
 \*------------------------------------------------------------------------*/
-  if( !item )
-    item = serviceList;
+  item = item ? item->next : serviceList;
 
 /*------------------------------------------------------------------------*\
     Loop over all elements

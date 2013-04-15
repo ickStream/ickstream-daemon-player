@@ -75,6 +75,7 @@ Remarks         : -
 #include "ickService.h"
 #include "ickMessage.h"
 #include "ickCloud.h"
+#include "ickScrobble.h"
 #include "persist.h"
 #include "playlist.h"
 #include "feed.h"
@@ -260,7 +261,7 @@ const char *playerRepeatModeToStr( PlayerRepeatMode mode )
   // Translate
   switch( mode ) {
     case PlayerRepeatOff:     return "REPEAT_OFF";
-    case PlayerRepeatItem:    break;
+    case PlayerRepeatItem:    return "REPEAT_ITEM";
     case PlayerRepeatQueue:   return "REPEAT_PLAYLIST";
     case PlayerRepeatShuffle: return "REPEAT_PLAYLIST_AND_SHUFFLE";
   }
@@ -281,6 +282,8 @@ PlayerRepeatMode playerRepeatModeFromStr( const char *str )
   // Translate
   if( !strcmp(str,"REPEAT_OFF") )
     return PlayerRepeatOff;
+  if( !strcmp(str,"REPEAT_ITEM") )
+    return PlayerRepeatItem;
   if( !strcmp(str,"REPEAT_PLAYLIST") )
     return PlayerRepeatQueue;
   if( !strcmp(str,"REPEAT_PLAYLIST_AND_SHUFFLE") )
@@ -1169,6 +1172,8 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
   AudioFeed     *feed;
   Codec         *codec;
   CodecInstance *codecInst;   // mirrored to global variable codecInstance
+  double         seekPos = 0;
+  double         pos     = 0;
   int            retval = 0;
 
   playlistItemLock( item );
@@ -1287,10 +1292,14 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
 \*------------------------------------------------------------------------*/
   hmiNewItem( playerQueue, item );
   hmiNewFormat( format );
-#ifndef ICK_NOHMI
-  double seekPos = 0;
   hmiNewPosition( seekPos );
-#endif
+
+/*------------------------------------------------------------------------*\
+  Scrobble streams at start of playing
+\*------------------------------------------------------------------------*/
+if( playlistItemGetType(item)==PlaylistItemStream &&
+    ickScrobbleTrack(item,-1) )
+  logerr( "_playItem (%s): Could not scrobble stream.", playlistItemGetText(item) );
 
 /*------------------------------------------------------------------------*\
     Wait for end of feed or stop condition ...
@@ -1306,41 +1315,49 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
     if( !rc )
       break;
     if( rc!=ETIMEDOUT ) {
-      logerr( "_playItem (%s \"%s\"): cError while waiting for track end (%s).",
+      logerr( "_playItem (%s \"%s\"): Error while waiting for track end (%s).",
               playlistItemGetType(item)==PlaylistItemStream?"stream":"track",
               playlistItemGetText(item), strerror(rc) );
       retval = -1;
       break;
     }
 
-    // Inform HMI about new player position but suppress updates in paused state
-#ifndef ICK_NOHMI
-    double pos;
+    // Get new player position
     if( rc>0 && !codecGetSeekTime(codecInst,&pos) ) {
-      if( pos!=seekPos && playerState==PlayerStatePlay ) {
-        seekPos = pos;
+
+      // Inform HMI on new positions but suppress updates in paused state
+      if( pos>seekPos && playerState==PlayerStatePlay )
         hmiNewPosition( seekPos );
-      }
+
+      // Store new position
+      if( pos>seekPos )
+        seekPos = pos;
     }
-#endif
+
   }
   DBGMSG( "_playItem (%s \"%s\"): Left wait loop with state %d.",
           playlistItemGetType(item)==PlaylistItemStream?"stream":"track",
           playlistItemGetText(item), playbackThreadState );
 
+/*------------------------------------------------------------------------*\
+    Scrobble tracks after playing
+\*------------------------------------------------------------------------*/
+  if( playlistItemGetType(item)==PlaylistItemTrack &&
+      ickScrobbleTrack(item,seekPos) )
+    logerr( "_playItem (%s): Could not scrobble track.", playlistItemGetText(item)  );
 
 /*------------------------------------------------------------------------*\
     Get rid of feed
 \*------------------------------------------------------------------------*/
   if( feed && audioFeedDelete(feed,true) )
-    logerr( "_playItem: Could not delete feeder instance." );
+    logerr( "_playItem (%s): Could not delete feeder instance.", playlistItemGetText(item)  );
 
 /*------------------------------------------------------------------------*\
     Get rid of codec instance
 \*------------------------------------------------------------------------*/
   codecInstance = NULL;
   if( codecDeleteInstance(codecInst,true) )
-    logerr( "_playItem: Could not delete codec instance." );
+    logerr( "_playItem (%s): Could not delete codec instance.", playlistItemGetText(item)  );
 
 /*------------------------------------------------------------------------*\
     That's it

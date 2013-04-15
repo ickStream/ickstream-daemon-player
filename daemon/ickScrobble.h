@@ -2,13 +2,13 @@
 
 Name            : -
 
-Source File     : ickService.h
+Source File     : ickScrobble.h
 
-Description     : Main include file for ickService.c 
+Description     : Main include file for ickScrobble.c
 
 Comments        : -
 
-Date            : 01.03.2013 
+Date            : 12.04.2013
 
 Updates         : -
 
@@ -46,51 +46,28 @@ Remarks         : -
 \************************************************************************/
 
 
-#ifndef __ICKSERVICE_H
-#define __ICKSERVICE_H
+#ifndef __ICKSCROBBLE_H
+#define __ICKSCROBBLE_H
 
 /*=========================================================================*\
- *Includes needed by definitions from this file
+  Includes needed by definitions from this file
 \*=========================================================================*/
-#include <stdbool.h>
-#include <jansson.h> 
+#include "playlist.h"
 
 
 /*========================================================================n
   Macro and type definitions
 \*========================================================================*/
-
-// Where is a service located
-typedef enum {
-  ServiceDevice = 0x01,
-  ServiceCloud  = 0x02
-} ServiceOrigin;
-
-// A service list item
-struct _serviceListItem;
-typedef struct _serviceListItem ServiceListItem;
-
-#define IckServiceSchemePrefix   "service://"
+// none
 
 
 /*=========================================================================*\
-       Global symbols 
+  Global symbols
 \*=========================================================================*/
-int              ickServiceAdd( json_t *jService, ServiceOrigin origin );
-int              ickServiceAddFromCloud( const char *type, bool reset );
-void             ickServiceRemove( const char *id, const char *type, ServiceOrigin origin );
-ServiceListItem *ickServiceFind( ServiceListItem *item, const char *id, const char *type, ServiceOrigin origin );
+int ickScrobbleTrack( PlaylistItem *item, double seekPos );
 
-char            *ickServiceResolveURI( const char* uri, const char* type );
 
-json_t          *ickServiceGetJSON( const ServiceListItem *item );
-const char      *ickServiceGetId( const ServiceListItem *item );
-const char      *ickServiceGetName( const ServiceListItem *item );
-const char      *ickServiceGetType( const ServiceListItem *item );
-const char      *ickServiceGetURI( const ServiceListItem *item );
-const char      *ickServiceGetServiceURI( const ServiceListItem *item );
-
-#endif  /* __ICKSERVICE_H */
+#endif  /* __ICKSCROBBLE_H */
 
 
 /*========================================================================*\
