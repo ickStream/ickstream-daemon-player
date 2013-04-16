@@ -2,12 +2,11 @@
 
 Name            : -
 
-Source File     : hmiGeneric.c
+Source File     : hmiNCurses.c
 
-Description     : Minimal HMI implementation 
+Description     : Minimal HMI based on ncurses
 
-Comments        : usefull for debugging only.
-                  Own implementations hould be named hmiXXXX.c and 
+Comments        : Own implementations should be named hmiXXXX.c and
                   selected by supplying a "hmi=XXXX" option to the configure script
 
 Called by       : ickstream player
@@ -16,7 +15,7 @@ Calls           :
 
 Error Messages  : -
   
-Date            : 17.03.2013
+Date            : 16.04.2013
 
 Updates         : -
                   
@@ -53,6 +52,7 @@ Remarks         : -
 \************************************************************************/
 
 #include <stdio.h>
+#include <ncurses.h>
 #include <jansson.h>
 
 #include "utils.h"
@@ -76,6 +76,9 @@ Remarks         : -
 	Private symbols
 \*=========================================================================*/
 static PlaylistItem *currentItem;
+WINDOW * winTitle;
+WINDOW * winConfig;
+WINDOW * winStatus;
 
 
 /*=========================================================================*\
@@ -90,6 +93,34 @@ static PlaylistItem *currentItem;
 int  hmiInit( void )
 {
   DBGMSG( "Initializing HMI module..." );
+
+/*------------------------------------------------------------------------*\
+    NCurses initialization
+\*------------------------------------------------------------------------*/
+  initscr();
+  cbreak();
+  noecho();
+  curs_set( 0 );
+  clear();
+  refresh();
+
+/*------------------------------------------------------------------------*\
+    Setup windows
+\*------------------------------------------------------------------------*/
+  int rWidth = MIN( 40, COLS/2 );
+  winTitle  = newwin(  1, COLS,   0, 0 );
+  winConfig = newwin( 20, COLS-rWidth, 2, rWidth+1 );
+  winStatus = newwin( 20, rWidth, 2, 0 );
+
+/*------------------------------------------------------------------------*\
+    Hello world
+\*------------------------------------------------------------------------*/
+  wprintw( winTitle, "Initializing...\n" );
+  wrefresh( winTitle );
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
   return 0;
 }
 
@@ -100,7 +131,13 @@ int  hmiInit( void )
 void hmiShutdown( void )
 {
   DBGMSG( "Shutting down HMI module..." );
+
+/*------------------------------------------------------------------------*\
+    Shutdown NCurses
+\*------------------------------------------------------------------------*/
+  endwin();
 }
+
 
 /*=========================================================================*\
       Player configuration (name, cloud access) changed
@@ -112,15 +149,17 @@ void hmiNewConfig( void )
   DBGMSG( "hmiNewConfig: %s, \"%s\", \"%s\".",
       playerGetUUID(),  playerGetName(), playerGetToken()?"Cloud":"No Cloud" );
 
-  printf( "HMI Player id        : %s\n", playerGetUUID() );
-  printf( "HMI Player name      : \"%s\"\n", playerGetName() );
-  printf( "HMI Cloud status     : %s\n", playerGetToken()?"Registered":"Unregistered" );
+  wmove( winConfig, 0, 0 );
+  wprintw( winConfig, "Player id    : %s\n", playerGetUUID() );
+  wprintw( winConfig, "Player name  : \"%s\"\n", playerGetName() );
+  wprintw( winConfig, "Cloud status : %s\n", playerGetToken()?"Registered":"Unregistered" );
 
   for( service=ickServiceFind(NULL,NULL,NULL,0); service;
        service=ickServiceFind(service,NULL,NULL,0) )
-    printf( "HMI Service          : \"%s\" (%s)\n", ickServiceGetName(service),
+    wprintw( winConfig, "Service      : \"%s\" (%s)\n", ickServiceGetName(service),
             ickServiceGetType(service)  );
 
+  wrefresh( winConfig );
 }
 
 
@@ -133,16 +172,26 @@ void hmiNewItem( Playlist *plst, PlaylistItem *item )
   DBGMSG( "hmiNewItem: %p (%s).", item, item?playlistItemGetText(item):"<None>" );
   currentItem = item;
 
+  wclear( winTitle );
+
   playlistLock( plst );
   if( item )
     playlistItemLock( item );
 
-  printf( "HMI Playback track   : (%d/%d) \"%s\"\n", playlistGetCursorPos(plst)+1, 
-           playlistGetLength(plst), item?playlistItemGetText(item):"<None>" );
+  if( item )
+    wprintw( winTitle, "%s: \"%s\"\n",
+      playlistItemGetType(item)==PlaylistItemStream?"Stream":"Track",
+      playlistItemGetText(item) );
 
   playlistUnlock( plst );
   if( item )
     playlistItemUnlock( item );
+
+  wrefresh( winTitle );
+
+  wmove( winStatus, 2, 0 );
+  wprintw( winStatus, "Playback position: %d/%d\n", playlistGetCursorPos(plst)+1, playlistGetLength(plst) );
+  wrefresh( winStatus );
 
 }
 
@@ -161,7 +210,9 @@ void hmiNewState( PlayerState state )
     case PlayerStatePause: stateStr = "Paused"; break;
   }
 
-  printf( "HMI Playback state   : %s\n", stateStr );
+  wmove( winStatus, 3, 0 );
+  wprintw( winStatus, "Playback state   : %s\n", stateStr );
+  wrefresh(winStatus );
 }
 
 
@@ -180,7 +231,9 @@ void hmiNewRepeatMode( PlayerRepeatMode mode )
     case PlayerRepeatShuffle: modeStr = "Shuffle"; break;
   }
 
-  printf( "HMI Repeat mode      : %s\n", modeStr );
+  wmove( winStatus, 5, 0 );
+  wprintw( winStatus, "Repeat mode      : %s\n", modeStr );
+  wrefresh( winStatus );
 }
 
 
@@ -191,7 +244,9 @@ void hmiNewVolume( double volume, bool muted )
 {
   DBGMSG( "hmiNewVolume: %.2lf (muted: %s).", volume, muted?"On":"Off" );
 
-  printf( "HMI Playback volume  : %.2lf (%s)\n", volume, muted?"muted":"not muted" );
+  wmove( winStatus, 4, 0 );
+  wprintw( winStatus, "Playback volume  : %.2lf (%s)\n", volume, muted?"muted":"not muted" );
+  wrefresh( winStatus );
 }
 
 
@@ -204,7 +259,9 @@ void hmiNewFormat( AudioFormat *format )
 
   DBGMSG( "hmiNewFormat: %s.", audioFormatStr(NULL,format) );
 
-  printf( "HMI Playback format  : %s\n", audioFormatStr(buffer,format) );  
+  wmove( winStatus, 1, 0 );
+  wprintw( winStatus, "Playback format  : %s\n", audioFormatStr(buffer,format) );
+  wrefresh( winStatus );
 }
 
 
@@ -233,10 +290,12 @@ void hmiNewPosition( double seekPos )
   seekPos -= m*60;
   s = (int)seekPos;
 
+  wmove( winStatus, 0, 0 );
   if( h )
-    printf( "HMI Playback position: %d:%02d:%02d%s\n", h, m, s, buf );
+    wprintw( winStatus, "Playback position: %d:%02d:%02d%s\n", h, m, s, buf );
   else
-    printf( "HMI Playback position: %d:%02d%s\n", m, s, buf );
+    wprintw( winStatus, "Playback position: %d:%02d%s\n", m, s, buf );
+  wrefresh( winStatus );
 }
 
 

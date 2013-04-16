@@ -53,6 +53,7 @@ while test $# -gt 0; do
       echo "Source file $HMISRC not found!"
       exit 1;
     fi 
+    
 
   # unknown option
   else
@@ -71,7 +72,7 @@ if ${help:-false}; then
   echo "Possible arguments:"
   echo "  help      - this help"
   echo "  debug     - build for debugging"
-  echo "  hmi=X     - Use HMI X (one of Generic)"
+  echo "  hmi=X     - Use HMI X (one of Generic, NCurses)"
   echo "  noalsa    - Don't use alsa audio backend"
   echo "  nopulse   - Don't use pulse audio backend"
   echo
@@ -235,6 +236,16 @@ else
   EXTRASRCS="$EXTRASRCS $HMISRC"
 fi
 
+if test "$HMISRC" = "hmiNCurses.c"; then
+  echo -n 'Check for ncurses               : '
+  if echo "#include <ncurses.h>" | gcc -o /dev/null -E -x c - 2>/dev/null; then
+    EXTRALIBS="$EXTRALIBS -lcurses"
+    echo "found"
+  else
+    echo "please install libcurses and retry..."
+    exit 1
+  fi
+fi
 
 # ----------------------------------------
 INCLUDES="$INCLUDES $ICK_ROOT/include"

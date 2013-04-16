@@ -87,7 +87,6 @@ int ickScrobbleTrack( PlaylistItem *item, double seekPos )
 {
   const char      *token;
   json_t          *jParams;
-  json_t          *jObj;
   double           duration;
   ServiceListItem *service;
 

@@ -1033,7 +1033,7 @@ int playerSetState( PlayerState state, bool broadcast )
       playerState = PlayerStateStop;
 
       // Inform HMI
-      hmiNewPosition( NULL, 0.0 );
+      hmiNewPosition( 0.0 );
       playlistItemLock( newTrack );
       newTrackId = playlistItemGetId( newTrack );
       playlistItemUnlock( newTrack );
@@ -1146,7 +1146,7 @@ static void *_playbackThread( void *arg )
     playerState = PlayerStateStop;
     ickMessageNotifyPlayerState( NULL );
     hmiNewState( playerState );
-    hmiNewPosition( NULL, 0.0 );
+    hmiNewPosition( 0.0 );
   }
 
 /*------------------------------------------------------------------------*\
@@ -1292,7 +1292,7 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
 \*------------------------------------------------------------------------*/
   hmiNewItem( playerQueue, item );
   hmiNewFormat( format );
-  hmiNewPosition( item, seekPos );
+  hmiNewPosition( seekPos );
 
 /*------------------------------------------------------------------------*\
   Scrobble streams at start of playing
@@ -1327,7 +1327,7 @@ if( playlistItemGetType(item)==PlaylistItemStream &&
 
       // Inform HMI on new positions but suppress updates in paused state
       if( pos>seekPos && playerState==PlayerStatePlay )
-        hmiNewPosition( item, seekPos );
+        hmiNewPosition( seekPos );
 
       // Store new position
       if( pos>seekPos )

@@ -82,7 +82,7 @@ void hmiNewState( PlayerState state );
 void hmiNewRepeatMode( PlayerRepeatMode mode );
 void hmiNewVolume( double volume, bool muted );
 void hmiNewFormat( AudioFormat *format );
-void hmiNewPosition( PlaylistItem *item, double seekPos );
+void hmiNewPosition( double seekPos );
 
 /*=========================================================================*\
        Dummies if no HMI is used

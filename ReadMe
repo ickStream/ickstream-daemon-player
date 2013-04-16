@@ -13,6 +13,7 @@ development version (i.e. including headers):
 - libasound (optional, recommended)
 - libpulse  (optional)
 - libmpg123 (optional, recommended)
+- libcurses (optional, for hmi=NCurses)
 
 Configure the package by running configure, e.g.
 ./configure
