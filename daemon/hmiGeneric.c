@@ -58,6 +58,7 @@ Remarks         : -
 #include "utils.h"
 #include "playlist.h"
 #include "player.h"
+#include "ickService.h"
 
 /*=========================================================================*\
 	Global symbols
@@ -101,6 +102,27 @@ void hmiShutdown( void )
   DBGMSG( "Shutting down HMI module..." );
 }
 
+/*=========================================================================*\
+      Player configuration (name, cloud access) changed
+\*=========================================================================*/
+void hmiNewConfig( void )
+{
+  ServiceListItem *service;
+
+  DBGMSG( "hmiNewConfig: %s, \"%s\", \"%s\".",
+      playerGetUUID(),  playerGetName(), playerGetToken()?"Cloud":"No Cloud" );
+
+  printf( "HMI Player id        : %s\n", playerGetUUID() );
+  printf( "HMI Player name      : \"%s\"\n", playerGetName() );
+  printf( "HMI Cloud status     : %s\n", playerGetToken()?"Registered":"Unregistered" );
+
+  for( service=ickServiceFind(NULL,NULL,NULL,0); service;
+       service=ickServiceFind(service,NULL,NULL,0) )
+    printf( "HMI Service          : \"%s\" (%s)\n", ickServiceGetName(service),
+            ickServiceGetType(service)  );
+
+}
+
 
 /*=========================================================================*\
       Queue cursor is pointing to a new item
@@ -108,7 +130,7 @@ void hmiShutdown( void )
 \*=========================================================================*/
 void hmiNewItem( Playlist *plst, PlaylistItem *item )
 {
-  DBGMSG( "new track: %p", item );
+  DBGMSG( "hmiNewItem: %p (%s).", item, item?playlistItemGetText(item):"<None>" );
   currentItem = item;
 
   playlistLock( plst );
@@ -130,7 +152,7 @@ void hmiNewItem( Playlist *plst, PlaylistItem *item )
 \*=========================================================================*/
 void hmiNewState( PlayerState state )
 {
-  DBGMSG( "new playback state: %d", state );
+  DBGMSG( "hmiNewState: %d.", state );
 
   char *stateStr = "Unknown";
   switch( state ) {
@@ -148,13 +170,13 @@ void hmiNewState( PlayerState state )
 \*=========================================================================*/
 void hmiNewRepeatMode( PlayerRepeatMode mode )
 {
-  DBGMSG( "new repat mode: %d", mode );
+  DBGMSG( "hmiNewRepeatMode: %d.", mode );
 
   char *modeStr = "Unknown";
   switch( mode ) {
     case PlayerRepeatOff:     modeStr = "Off"; break;	
     case PlayerRepeatItem:    modeStr = "Track"; break;
-    case PlayerRepeatQueue:     modeStr = "Queue"; break;
+    case PlayerRepeatQueue:   modeStr = "Queue"; break;
     case PlayerRepeatShuffle: modeStr = "Shuffle"; break;
   }
 
@@ -167,7 +189,7 @@ void hmiNewRepeatMode( PlayerRepeatMode mode )
 \*=========================================================================*/
 void hmiNewVolume( double volume, bool muted )
 {
-  DBGMSG( "new volume: %.2lf (muted: %s)", volume, muted?"On":"Off" );
+  DBGMSG( "hmiNewVolume: %.2lf (muted: %s).", volume, muted?"On":"Off" );
 
   printf( "HMI Playback volume  : %.2lf (%s)\n", volume, muted?"muted":"not muted" );
 }
@@ -180,7 +202,7 @@ void hmiNewFormat( AudioFormat *format )
 {
   char buffer[64];
 
-  DBGMSG( "new format: %s", audioFormatStr(NULL,format) );
+  DBGMSG( "hmiNewFormat: %s.", audioFormatStr(NULL,format) );
 
   printf( "HMI Playback format  : %s\n", audioFormatStr(buffer,format) );  
 }
@@ -189,11 +211,22 @@ void hmiNewFormat( AudioFormat *format )
 /*=========================================================================*\
       New seek Position
 \*=========================================================================*/
-void hmiNewPosition( double seekPos )
+void hmiNewPosition( PlaylistItem *item, double seekPos )
 {
   int h, m, s;
+  int d = 0;
+  char buf[20];
 
-  DBGMSG( "new seek position: %.2lf", seekPos );
+  if( item )
+    d = playlistItemGetDuration( item );
+
+  DBGMSG( "hmiNewPosition: %.2lf/%.2lf (%s)",
+          seekPos, d, item?playlistItemGetText(item):"<None>" );
+
+  if( seekPos>=0 && d>0 )
+    snprintf(buf,sizeof(buf)-1," (%3d%%)", (int)(seekPos*100/d+.5) );
+  else
+    *buf = 0;
 
   h = (int)seekPos/3600;
   seekPos -= h*3600;
@@ -202,9 +235,9 @@ void hmiNewPosition( double seekPos )
   s = (int)seekPos;
 
   if( h )
-    printf( "HMI Playback position: %d:%02d:%02d\n", h, m, s );
+    printf( "HMI Playback position: %d:%02d:%02d%s\n", h, m, s, buf );
   else
-    printf( "HMI Playback position: %d:%02d\n", m, s );
+    printf( "HMI Playback position: %d:%02d%s\n", m, s, buf );
 }
 
 

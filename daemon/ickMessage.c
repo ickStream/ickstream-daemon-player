@@ -60,6 +60,7 @@ Remarks         : -
 #include <jansson.h>
 
 #include "utils.h"
+#include "hmi.h"
 #include "ickMessage.h"
 #include "ickCloud.h"
 #include "ickService.h"
@@ -840,6 +841,9 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 
     // Get services using this token
     ickServiceAddFromCloud( NULL, true );
+
+    // Inform HMI
+    hmiNewConfig( );
 
     // report result 
     jResult = json_pack( "{ssss}",

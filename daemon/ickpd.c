@@ -308,7 +308,7 @@ int main( int argc, char *argv[] )
   loginfo( "Using audio dev: \"%s\"", adev_name );
 
 /*------------------------------------------------------------------------*\
-    Dafault audio format changed or unavailable ?
+    Default audio format changed or unavailable ?
 \*------------------------------------------------------------------------*/
   if( default_format && playerSetDefaultAudioFormat(default_format) ) {
     fprintf( stderr, "Bad default audio format: '%s'\n", default_format );
@@ -399,12 +399,13 @@ int main( int argc, char *argv[] )
   ickDiscoveryAddService( ICKDEVICE_PLAYER );
 
 /*------------------------------------------------------------------------*\
-    Init player, announce state and get cloud services
+    Init player, announce state, get cloud services and inform HMI
 \*------------------------------------------------------------------------*/
   playerInit();
   ickMessageNotifyPlaylist( NULL );
   ickMessageNotifyPlayerState( NULL );
   ickServiceAddFromCloud( NULL, true );
+  hmiNewConfig();
 
 /*------------------------------------------------------------------------*\
     Mainloop:

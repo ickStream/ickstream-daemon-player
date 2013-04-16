@@ -88,6 +88,7 @@ int ickScrobbleTrack( PlaylistItem *item, double seekPos )
   const char      *token;
   json_t          *jParams;
   json_t          *jObj;
+  double           duration;
   ServiceListItem *service;
 
   DBGMSG( "ickScrobbleTrack (%p,%s): seekPos=%.2lfs.",
@@ -119,33 +120,11 @@ int ickScrobbleTrack( PlaylistItem *item, double seekPos )
   // Add timestamp
   json_object_set( jParams, "occurrenceTimestamp", json_real(srvtime()) );
 
-  // Shall and can we calculate a percentage?
-  jObj = playlistItemGetModelAttribute( item, "duration" );
-  if( seekPos>=0 && jObj ) {
-
-    // Get duration info out of playlist item
-    double duration = 0;
-    if( json_is_number(jObj) )
-      duration = json_number_value( jObj );
-    else if( json_is_string(jObj) ) {
-#ifdef ICK_DEBUG
-      logwarn( "ickScrobbleTrack (%s): Attribute \"duration\" is coded as string (%s).",
-               playlistItemGetText(item), json_string_value(jObj) );
-#endif
-      duration = atof( json_string_value(jObj) );
-    }
-    else
-      logwarn( "ickScrobbleTrack (%s): Attribute \"duration\" is not a number nor a string.",
-               playlistItemGetText(item) );
-
-    // Calculate and add percentage to methid parameters
-    if( duration>0 )
-      json_object_set( jParams, "playedPercentage",
-                       json_integer((int)(seekPos*100/duration+.5)) );
-    else
-      logwarn( "ickScrobbleTrack (%s): Attribute \"duration\" is %.2lf.",
-               playlistItemGetText(item), duration );
-  }
+  // If possible calculate and add percentage to method parameters
+  duration = playlistItemGetDuration( item );
+  if( seekPos>=0 && duration>0 )
+    json_object_set( jParams, "playedPercentage",
+                     json_integer((int)(seekPos*100/duration+.5)) );
 
   // Add playlist item info itself to method parameters
   json_object_set( jParams, "track", playlistItemGetJSON(item) );

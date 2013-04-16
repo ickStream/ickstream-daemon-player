@@ -55,6 +55,7 @@ Remarks         : -
 #include <ickDiscovery.h>
 
 #include "utils.h"
+#include "hmi.h"
 #include "ickDevice.h"
 #include "ickMessage.h"
 #include "ickService.h"
@@ -158,6 +159,12 @@ void _handleGetServiceInformation( const char *szDeviceId, json_t *jCmd, json_t 
     Add service
 \*------------------------------------------------------------------------*/
   ickServiceAdd( jObj, ServiceDevice );
+
+/*------------------------------------------------------------------------*\
+    Inform HMI
+\*------------------------------------------------------------------------*/
+  hmiNewConfig( );
+
 }
 
 

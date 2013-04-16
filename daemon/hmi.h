@@ -76,12 +76,13 @@ Remarks         : -
 
 int  hmiInit( void );
 void hmiShutdown( void );
+void hmiNewConfig( void );
 void hmiNewItem( Playlist *plst, PlaylistItem *item );
 void hmiNewState( PlayerState state );
 void hmiNewRepeatMode( PlayerRepeatMode mode );
 void hmiNewVolume( double volume, bool muted );
 void hmiNewFormat( AudioFormat *format );
-void hmiNewPosition( double seekPos );
+void hmiNewPosition( PlaylistItem *item, double seekPos );
 
 /*=========================================================================*\
        Dummies if no HMI is used
@@ -89,12 +90,13 @@ void hmiNewPosition( double seekPos );
 #ifdef ICK_NOHMI
 #define hmiInit()           0
 #define hmiShutdown()       {}
+#define hmiNewConfig()      {}
 #define hmiNewItem(a,b)     {}
 #define hmiNewState(a)      {}
 #define hmiNewRepeatMode(a) {}
 #define hmiNewVolume(a,b)   {}
 #define hmiNewFormat(a)     {}
-#define hmiNewPosition(a)   {}
+#define hmiNewPosition(a,b) {}
 #endif
 
 #endif  /* __HMI_H */
