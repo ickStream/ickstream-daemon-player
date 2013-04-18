@@ -52,6 +52,11 @@ Remarks         : -
 \************************************************************************/
 
 #include <stdio.h>
+#include <unistd.h>
+#include <string.h>
+#include <errno.h>
+#include <signal.h>
+#include <pthread.h>
 #include <ncurses.h>
 #include <jansson.h>
 
@@ -70,28 +75,37 @@ Remarks         : -
        Macro and type definitions 
 \*=========================================================================*/
 // none
- 
+enum PipeIndex { PipeRead, PipeWrite };
 
 /*=========================================================================*\
 	Private symbols
 \*=========================================================================*/
 static PlaylistItem *currentItem;
-WINDOW * winTitle;
-WINDOW * winConfig;
-WINDOW * winStatus;
+static WINDOW       *winTitle;
+static WINDOW       *winConfig;
+static WINDOW       *winStatus;
+static WINDOW       *winLog;
+static int           pipefd[2];
+static int           oldStderrFd;
+pthread_mutex_t      mutex;
+
 
 
 /*=========================================================================*\
 	Private prototypes
 \*=========================================================================*/
-// None
+static void *_captureThread( void *arg );
 
 
 /*=========================================================================*\
       Init HMI module
 \*=========================================================================*/
-int  hmiInit( void )
+int hmiInit( void )
 {
+  pthread_t            thread;
+  int                  rc;
+  pthread_mutexattr_t  attr;
+
   DBGMSG( "Initializing HMI module..." );
 
 /*------------------------------------------------------------------------*\
@@ -108,15 +122,52 @@ int  hmiInit( void )
     Setup windows
 \*------------------------------------------------------------------------*/
   int rWidth = MIN( 40, COLS/2 );
-  winTitle  = newwin(  1, COLS,   0, 0 );
-  winConfig = newwin( 20, COLS-rWidth, 2, rWidth+1 );
-  winStatus = newwin( 20, rWidth, 2, 0 );
+  winTitle  = newwin(  1, COLS,        0, 0 );
+  winConfig = newwin( 20, COLS-rWidth, 5, rWidth+1 );
+  winStatus = newwin( 20, rWidth,      5, 0 );
+  winLog    = newwin( 10, COLS,       25, 0);
+  scrollok( winLog, true );
+
+/*------------------------------------------------------------------------*\
+    Init mutex
+\*------------------------------------------------------------------------*/
+  pthread_mutexattr_init( &attr );
+  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
+  pthread_mutex_init( &mutex, &attr );
+
+/*------------------------------------------------------------------------*\
+    Create pipe and redirect stderr
+\*------------------------------------------------------------------------*/
+  if( pipe(pipefd) ) {
+    logerr( "hmiInit: could not create pipe (%s).", strerror(errno) );
+    return -1;
+  }
+  oldStderrFd = dup( fileno(stderr) );
+  fflush( stderr );
+  dup2( pipefd[PipeWrite], fileno(stderr) );
+
+/*------------------------------------------------------------------------*\
+    Start thread for capturing stderr
+\*------------------------------------------------------------------------*/
+  rc = pthread_create( &thread, NULL, _captureThread, NULL );
+  if( rc ) {
+    logerr( "hmiInit: Unable to start capture thread (%s).", strerror(rc) );
+    close( pipefd[0] );
+    close( pipefd[1] );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    We don't care for that thread any more
+\*------------------------------------------------------------------------*/
+  rc = pthread_detach( thread );
+  if( rc )
+    logerr( "hmiInit: Unable to detach request thread (%s).", strerror(rc) );
 
 /*------------------------------------------------------------------------*\
     Hello world
 \*------------------------------------------------------------------------*/
-  wprintw( winTitle, "Initializing...\n" );
-  wrefresh( winTitle );
+  fprintf( stderr, "Initializing...\n" );
 
 /*------------------------------------------------------------------------*\
     That's it
@@ -133,9 +184,111 @@ void hmiShutdown( void )
   DBGMSG( "Shutting down HMI module..." );
 
 /*------------------------------------------------------------------------*\
+    End capturing of stderr
+\*------------------------------------------------------------------------*/
+  fflush( stderr );
+  dup2( oldStderrFd, fileno(stderr) );
+  close( pipefd[PipeWrite] );
+
+/*------------------------------------------------------------------------*\
+    Delete mutex
+\*------------------------------------------------------------------------*/
+  pthread_mutex_destroy( &mutex );
+
+/*------------------------------------------------------------------------*\
     Shutdown NCurses
 \*------------------------------------------------------------------------*/
   endwin();
+}
+
+
+/*=========================================================================*\
+      Thread for capturing stdout to a ncurses window
+\*=========================================================================*/
+static void *_captureThread( void *arg )
+{
+  int maxx, maxy;
+  char buffer[256];
+  int  rc;
+
+  DBGMSG( "NCurses capture thread starting." );
+  PTHREADSETNAME( "ncurses" );
+
+/*------------------------------------------------------------------------*\
+    Block broken pipe signals from this thread
+\*------------------------------------------------------------------------*/
+  sigset_t sigSet;
+  sigemptyset( &sigSet );
+  sigaddset( &sigSet, SIGPIPE );
+  pthread_sigmask( SIG_BLOCK, NULL, &sigSet );
+
+/*------------------------------------------------------------------------*\
+    Get window size
+\*------------------------------------------------------------------------*/
+  getmaxyx( winLog, maxy, maxx );
+
+/*------------------------------------------------------------------------*\
+    Loop while pipe is active
+\*------------------------------------------------------------------------*/
+  for(;;) {
+    char *chr;
+
+    rc = read( pipefd[PipeRead], buffer, sizeof(buffer)-1 );
+
+    // Any error?
+    if( rc<0 ) {
+      logerr( "NCurses capture thread: could not read pipe (%s).", strerror(errno) );
+      break;
+    }
+
+    // Terminate buffer
+    buffer[ rc ] = 0;
+
+    // End of input
+    if( !rc )
+      break;
+
+    // Do the output - that's an awful quick hack meant only for debugging purposes...
+    pthread_mutex_lock( &mutex );
+    for( chr=buffer; *chr; chr++ ) {
+      int x, y;
+
+      // Character
+      if( *chr!='\n' ) {
+        waddch( winLog, *chr );
+        getyx( winLog, y, x );
+        if( x>=maxx ) {
+          x = 0;
+          y++;
+        }
+      }
+
+      // new line
+      else {
+        getyx( winLog, y, x );
+        y++;
+        x = 0;
+      }
+
+      // need to scroll
+      if( y>=maxy ) {
+        y--;
+        wscrl( winLog, 1 );
+      }
+
+      // need to move cursor
+      if( !x )
+        wmove( winLog, y, x );
+    }
+    wrefresh( winLog );
+    pthread_mutex_unlock( &mutex );
+
+  }
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+  return NULL;
 }
 
 
@@ -149,6 +302,7 @@ void hmiNewConfig( void )
   DBGMSG( "hmiNewConfig: %s, \"%s\", \"%s\".",
       playerGetUUID(),  playerGetName(), playerGetToken()?"Cloud":"No Cloud" );
 
+  pthread_mutex_lock( &mutex );
   wmove( winConfig, 0, 0 );
   wprintw( winConfig, "Player id    : %s\n", playerGetUUID() );
   wprintw( winConfig, "Player name  : \"%s\"\n", playerGetName() );
@@ -160,6 +314,8 @@ void hmiNewConfig( void )
             ickServiceGetType(service)  );
 
   wrefresh( winConfig );
+  pthread_mutex_unlock( &mutex );
+
 }
 
 
@@ -172,6 +328,7 @@ void hmiNewItem( Playlist *plst, PlaylistItem *item )
   DBGMSG( "hmiNewItem: %p (%s).", item, item?playlistItemGetText(item):"<None>" );
   currentItem = item;
 
+  pthread_mutex_lock( &mutex );
   wclear( winTitle );
 
   playlistLock( plst );
@@ -192,6 +349,7 @@ void hmiNewItem( Playlist *plst, PlaylistItem *item )
   wmove( winStatus, 2, 0 );
   wprintw( winStatus, "Playback position: %d/%d\n", playlistGetCursorPos(plst)+1, playlistGetLength(plst) );
   wrefresh( winStatus );
+  pthread_mutex_unlock( &mutex );
 
 }
 
@@ -210,9 +368,12 @@ void hmiNewState( PlayerState state )
     case PlayerStatePause: stateStr = "Paused"; break;
   }
 
+  pthread_mutex_lock( &mutex );
   wmove( winStatus, 3, 0 );
   wprintw( winStatus, "Playback state   : %s\n", stateStr );
   wrefresh(winStatus );
+  pthread_mutex_unlock( &mutex );
+
 }
 
 
@@ -231,9 +392,12 @@ void hmiNewRepeatMode( PlayerRepeatMode mode )
     case PlayerRepeatShuffle: modeStr = "Shuffle"; break;
   }
 
+  pthread_mutex_lock( &mutex );
   wmove( winStatus, 5, 0 );
   wprintw( winStatus, "Repeat mode      : %s\n", modeStr );
   wrefresh( winStatus );
+  pthread_mutex_unlock( &mutex );
+
 }
 
 
@@ -244,9 +408,12 @@ void hmiNewVolume( double volume, bool muted )
 {
   DBGMSG( "hmiNewVolume: %.2lf (muted: %s).", volume, muted?"On":"Off" );
 
+  pthread_mutex_lock( &mutex );
   wmove( winStatus, 4, 0 );
   wprintw( winStatus, "Playback volume  : %.2lf (%s)\n", volume, muted?"muted":"not muted" );
   wrefresh( winStatus );
+  pthread_mutex_unlock( &mutex );
+
 }
 
 
@@ -259,9 +426,12 @@ void hmiNewFormat( AudioFormat *format )
 
   DBGMSG( "hmiNewFormat: %s.", audioFormatStr(NULL,format) );
 
+  pthread_mutex_lock( &mutex );
   wmove( winStatus, 1, 0 );
   wprintw( winStatus, "Playback format  : %s\n", audioFormatStr(buffer,format) );
   wrefresh( winStatus );
+  pthread_mutex_unlock( &mutex );
+
 }
 
 
@@ -290,12 +460,14 @@ void hmiNewPosition( double seekPos )
   seekPos -= m*60;
   s = (int)seekPos;
 
+  pthread_mutex_lock( &mutex );
   wmove( winStatus, 0, 0 );
   if( h )
     wprintw( winStatus, "Playback position: %d:%02d:%02d%s\n", h, m, s, buf );
   else
     wprintw( winStatus, "Playback position: %d:%02d%s\n", m, s, buf );
   wrefresh( winStatus );
+  pthread_mutex_unlock( &mutex );
 }
 
 

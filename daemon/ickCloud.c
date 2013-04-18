@@ -216,7 +216,7 @@ int ickCloudRequestAsync( const char *uri, const char *oAuthToken, const char *m
 \*------------------------------------------------------------------------*/
   rc = pthread_create( &thread, NULL, _cloudRequestThread, request );
   if( rc ) {
-    logerr( "ickCloudRequestAsync (%s): Unable to start request thread: %s", method );
+    logerr( "ickCloudRequestAsync (%s): Unable to start request thread (%s).", method, strerror(rc) );
     json_decref( jParams );
     Sfree( request->uri );
     Sfree( request->oAuthToken );
@@ -230,7 +230,7 @@ int ickCloudRequestAsync( const char *uri, const char *oAuthToken, const char *m
 \*------------------------------------------------------------------------*/
   rc = pthread_detach( thread );
   if( rc )
-    logerr( "ickCloudRequestAsync (%s): Unable to detach request thread: %s", method );
+    logerr( "ickCloudRequestAsync (%s): Unable to detach request thread (%s).", method, strerror(rc) );
 
 /*------------------------------------------------------------------------*\
     That's it

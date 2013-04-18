@@ -96,10 +96,10 @@ void _srvlog( const char *file, int line,  int prio, const char *fmt, ... )
 
     // select stream due to priority
     //FILE *f = (prio<LOG_INFO) ? stderr : stdout;
-    FILE *f = stdout;
+    FILE *f = stderr;
 
-    // print timestamp and thread info
-    fprintf( f, "%.4f [%p]", srvtime(), (void*)pthread_self() );
+    // print timestamp, prio and thread info
+    fprintf( f, "%.4f %d [%p]", srvtime(), prio, (void*)pthread_self() );
 
     // prepend location to message (if available)
     if( file )
@@ -150,7 +150,7 @@ void _srvdump( const char *file, int line, int prio, const char *title, const vo
    Select stream
 \*------------------------------------------------------------------------*/
   //FILE *f = (prio<LOG_INFO) ? stderr : stdout;
-  f = stdout;
+  f = stderr;
 
 /*------------------------------------------------------------------------*\
     Lock mutex
@@ -161,9 +161,9 @@ void _srvdump( const char *file, int line, int prio, const char *title, const vo
     Create prefix
 \*------------------------------------------------------------------------*/
   if( !file )
-    sprintf( prefix, "%.4f [%p]:", srvtime(), (void*)pthread_self() );
+    sprintf( prefix, "%.4f %d [%p]:", srvtime(), prio, (void*)pthread_self() );
   else
-    sprintf( prefix, "%.4f [%p] %s,%d:", srvtime(), (void*)pthread_self(), file, line );
+    sprintf( prefix, "%.4f %d [%p] %s,%d:", srvtime(), prio, (void*)pthread_self(), file, line );
 
 /*------------------------------------------------------------------------*\
     Print header

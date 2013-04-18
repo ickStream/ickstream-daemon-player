@@ -132,7 +132,9 @@ int main( int argc, char *argv[] )
   addarg( "*name",    "-n",  &player_name, "name",     "Init/change Name for this player" );
   addarg( "*idev",    "-i",  &if_name,     "interface","Init/change network interface" );
   addarg( "*adevice", "-ad", &adev_name,   "name",     "Init/change audio device name" );
+#ifdef ICK_NOHMI
   addarg( "daemon",   "-d",  &daemon_flag, NULL,       "Start in daemon mode" );
+#endif
   addarg( "*pfile",   "-pid",&pid_fname,   "filename", "Filename to store process ID" );
   addarg( "*verbose", "-v",  &verb_arg,    "level",    "Set logging level (0-7)" );
   addarg( "Version",  "-V",  &vers_flag,   NULL,       "Show programm version" );
@@ -323,23 +325,16 @@ int main( int argc, char *argv[] )
   }
   loginfo( "Using audio def: %s", audioFormatStr(NULL,playerGetDefaultAudioFormat()) );
 
-  /*------------------------------------------------------------------------*\
-      Add default audio format (fixme: this should part of the player state)
-  \*------------------------------------------------------------------------*/
-    playerSetDefaultAudioFormat( "2x44100x16S" );
-
-
 /*------------------------------------------------------------------------*\
     Init audio module: check for interface
 \*------------------------------------------------------------------------*/
   if( audioInit(adev_name) )
     return -1;
 
-
 /*------------------------------------------------------------------------*\
     Init HMI
 \*------------------------------------------------------------------------*/
-  if( !daemon_flag && hmiInit() )
+  if( hmiInit() )
     return -1;
 
 /*------------------------------------------------------------------------*\
