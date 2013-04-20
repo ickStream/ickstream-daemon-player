@@ -620,9 +620,9 @@ int playlistAddItems( Playlist *plst, int pos, json_t *jItems, bool resetFlag )
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
-    Get anchor item (if any)
+    Get anchor item (if any and not in reset mode)
 \*------------------------------------------------------------------------*/
-  if( pos>=0 )
+  if( pos>=0 && !resetFlag )
     anchorItem = playlistGetItem( plst, pos );
 
 /*------------------------------------------------------------------------*\

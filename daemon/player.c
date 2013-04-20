@@ -1191,6 +1191,12 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
   }
 
 /*------------------------------------------------------------------------*\
+   Inform HMI
+\*------------------------------------------------------------------------*/
+  hmiNewItem( playerQueue, item );
+  hmiNewPosition( seekPos );
+
+/*------------------------------------------------------------------------*\
     Try to get a connected feed and codec for new track,
     if not successful skip queue item
 \*------------------------------------------------------------------------*/
@@ -1204,9 +1210,6 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
             playlistItemGetType(item)==PlaylistItemStream?"Stream":"Track",
             playlistItemGetText(item), audioFormatStr(NULL,format) );
     playlistItemUnlock( item );
-    playlistLock( playerQueue );
-    item = playlistIncrCursorItem( playerQueue );
-    playlistUnlock( playerQueue );
     return 0;
   }
 
@@ -1290,9 +1293,7 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
 /*------------------------------------------------------------------------*\
    Inform HMI
 \*------------------------------------------------------------------------*/
-  hmiNewItem( playerQueue, item );
   hmiNewFormat( format );
-  hmiNewPosition( seekPos );
 
 /*------------------------------------------------------------------------*\
   Scrobble streams at start of playing
@@ -1382,6 +1383,10 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, Audi
   int          feedFlags = 0;
   AudioFeed   *feed = NULL;
   AudioFormat  refFormat;
+  enum {
+    FormatStrict,
+    FormatIgnore
+  }            formatMode;
   memcpy( &refFormat, format, sizeof(AudioFormat) );
 
 
@@ -1406,96 +1411,120 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, Audi
 /*------------------------------------------------------------------------*\
     Loop over all hints 
 \*------------------------------------------------------------------------*/
-  for( i=0; !feed&&i<json_array_size(jStreamingRefs); i++ ) {
-    json_t      *jStreamRef = json_array_get( jStreamingRefs, i );
-    json_t      *jObj;
-    const char  *type;
-    char        *uri;
+  for( formatMode=FormatStrict; formatMode<=FormatIgnore; formatMode++ ) {
+    for( i=0; !feed&&i<json_array_size(jStreamingRefs); i++ ) {
+      json_t      *jStreamRef = json_array_get( jStreamingRefs, i );
+      json_t      *jObj;
+      const char  *type;
+      char        *uri;
+      const char  *oAuthToken = NULL;
 
-    // Reset Format
-    memcpy( &refFormat, format, sizeof(AudioFormat) );
+      // Reset Format
+      memcpy( &refFormat, format, sizeof(AudioFormat) );
 
-    // Get type
-    jObj = json_object_get( jStreamRef, "format" );
-    if( !jObj || !json_is_string(jObj) ) {
-      playlistItemLock( item );
-      logwarn( "_feedFromPlayListItem (%s,%s): StreamRef #%d contains no format!",
-              playlistItemGetText(item), playlistItemGetId(item), i );
-      playlistItemUnlock( item );
-      continue;
-    }
-    type = json_string_value( jObj );
+      // Get type
+      jObj = json_object_get( jStreamRef, "format" );
+      if( !jObj || !json_is_string(jObj) ) {
+        playlistItemLock( item );
+        logwarn( "_feedFromPlayListItem (%s,%s): StreamRef #%d contains no format!",
+                playlistItemGetText(item), playlistItemGetId(item), i );
+        playlistItemUnlock( item );
+        continue;
+      }
+      type = json_string_value( jObj );
 
-    // Get URI
-    jObj = json_object_get( jStreamRef, "url" );
-    if( !jObj || !json_is_string(jObj) ) {
-      playlistItemLock( item );
-      logwarn( "_feedFromPlayListItem (%s,%s): StreamRef #%d contains no URI!",
-              playlistItemGetText(item), playlistItemGetId(item), i );
-      playlistItemUnlock( item );
-      continue;
-    }
+      // Get URI
+      jObj = json_object_get( jStreamRef, "url" );
+      if( !jObj || !json_is_string(jObj) ) {
+        playlistItemLock( item );
+        logwarn( "_feedFromPlayListItem (%s,%s): StreamRef #%d contains no URI!",
+                playlistItemGetText(item), playlistItemGetId(item), i );
+        playlistItemUnlock( item );
+        continue;
+      }
 
-    // Try to resolve the URI (will allocate the string)
-    uri = ickServiceResolveURI( json_string_value(jObj), "content" );
-    if( !uri ) {
-      playlistItemLock( item );
-      logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: cannot resolve URL \"%s\"!",
-               playlistItemGetText(item), playlistItemGetId(item), i,
-               json_string_value(jObj) );
-      playlistItemUnlock( item );
-      continue;
-    }
+      // Try to resolve the URI (will allocate the string)
+      uri = ickServiceResolveURI( json_string_value(jObj), "content" );
+      if( !uri ) {
+        playlistItemLock( item );
+        logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: Cannot resolve URL \"%s\"!",
+                 playlistItemGetText(item), playlistItemGetId(item), i,
+                 json_string_value(jObj) );
+        playlistItemUnlock( item );
+        continue;
+      }
 
-    // Get sample rate (optional)
-    jObj = json_object_get( jStreamRef, "sampleRate" );
-    if( jObj && json_is_integer(jObj) )
-      refFormat.sampleRate = json_integer_value( jObj );
-    else if( jObj && json_is_string(jObj) )    // workaround
-      refFormat.sampleRate = atoi( json_string_value(jObj) );
-    else
-      refFormat.sampleRate = -1;
+      // Do we need authorization?
+      jObj = json_object_get( jStreamRef, "intermediate" );
+      if( json_is_true(jObj) ) {
+        oAuthToken = playerGetToken();
+        if( !oAuthToken ) {
+          playlistItemLock( item );
+          logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: Need token but device not yet registered.",
+                   playlistItemGetText(item), playlistItemGetId(item), i );
+          playlistItemUnlock( item );
+          continue;
+        }
+      }
 
-    // Get number of channels (optional)
-    jObj = json_object_get( jStreamRef, "channels" );
-    if( jObj && json_is_integer(jObj) )
-      refFormat.channels = json_integer_value( jObj );
-    else if( jObj && json_is_string(jObj) )    // workaround
-      refFormat.channels = atoi( json_string_value(jObj) );
-    else
-      refFormat.channels = -1;
+      // Get sample rate (optional)
+      jObj = json_object_get( jStreamRef, "sampleRate" );
+      if( jObj && json_is_integer(jObj) )
+        refFormat.sampleRate = json_integer_value( jObj );
+      else if( jObj && json_is_string(jObj) )    // workaround
+        refFormat.sampleRate = atoi( json_string_value(jObj) );
+      else
+        refFormat.sampleRate = -1;
 
-    // Get first codec matching type and format
-    *codec = codecFind( type, &refFormat, NULL );
-    if( !*codec ) {
-      logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: No codec found for %s, %s.",
-               playlistItemGetText(item), playlistItemGetId(item), i,
-               type, audioFormatStr(NULL,&refFormat) );
+      // Get number of channels (optional)
+      jObj = json_object_get( jStreamRef, "channels" );
+      if( jObj && json_is_integer(jObj) )
+        refFormat.channels = json_integer_value( jObj );
+      else if( jObj && json_is_string(jObj) )    // workaround
+        refFormat.channels = atoi( json_string_value(jObj) );
+      else
+        refFormat.channels = -1;
+
+      // Ignore format in second try
+      if( formatMode==FormatIgnore ) {
+        refFormat.sampleRate = -1;
+        refFormat.channels = -1;
+      }
+
+      // Get first codec matching type and format
+      *codec = codecFind( type, &refFormat, NULL );
+      if( !*codec ) {
+        logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: No codec found for %s, %s.",
+                 playlistItemGetText(item), playlistItemGetId(item), i,
+                 type, audioFormatStr(NULL,&refFormat) );
+        Sfree( uri );
+        continue;
+      }
+
+      // Try to open feed
+      feed = audioFeedCreate( uri, oAuthToken, feedFlags, &_audioFeedCallback, item );
+      if( !feed ) {
+        logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: Could not open feed for \"%s\".",
+                 playlistItemGetText(item), playlistItemGetId(item), i, uri );
+        Sfree( uri );
+        continue;
+      }
       Sfree( uri );
-      continue;
-    }
 
-    // Try to open feed
-    feed = audioFeedCreate( uri, feedFlags, &_audioFeedCallback, item );
-    if( !feed ) {
-      logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: Could not open feed for \"%s\".",
-               playlistItemGetText(item), playlistItemGetId(item), i, uri );
-      Sfree( uri );
-      continue;
-    }
-    Sfree( uri );
+      // Wait for connection
+      if( audioFeedLockWaitForConnection(feed,timeout) ) {
+        char *httpResponse = audioFeedGetResponseHeaderField( feed, NULL );
+        logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: Connection error for \"%s\" (%s, \"%s\").",
+                 playlistItemGetText(item), playlistItemGetId(item), i, audioFeedGetURI(feed), strerror(errno), httpResponse );
+        Sfree( httpResponse );
+        audioFeedDelete( feed, true );
+        feed = NULL;
+      }
+      else
+        audioFeedUnlock( feed );
 
-    // Wait for connection
-    if( audioFeedLockWaitForConnection(feed,timeout) ) {
-      logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: Connection error for \"%s\" (%s).",
-               playlistItemGetText(item), playlistItemGetId(item), i, audioFeedGetURI(feed), strerror(errno) );
-      audioFeedDelete( feed, true );
-      feed = NULL;
-    }
-    else
-      audioFeedUnlock( feed );
-
-  }  // for( i=0; !feed&&i<json_array_size(jStreamingRefs); i++ )
+    }  // for( i=0; !feed&&i<json_array_size(jStreamingRefs); i++ )
+  }
 
 /*------------------------------------------------------------------------*\
     Return result (if any)

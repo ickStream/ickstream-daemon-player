@@ -80,6 +80,7 @@ struct _audioFeed {
   volatile AudioFeedState  state;
   int                      flags;
   char                    *uri;
+  char                    *oAuthToken;
   AudioFeedCallback        callback;
   void                    *usrData;
   char                    *type;
@@ -106,13 +107,14 @@ static size_t _curlWriteCallback( void *contents, size_t size, size_t nmemb, voi
 /*=========================================================================*\
     Create and start an audio data feed
       We use curl so we basically can use all sorts of sources and auth schemes
-      uri      - is the source locator
-      flags    - controls the behavior (see header)
-      callback - is a function that signals state changes
+      uri        - is the source locator
+      oAuthToken - supply token if needed (NULL otherwise)
+      flags      - controls the behavior (see header)
+      callback   - is a function that signals state changes
       Use the file descriptor obtained by audioFeedGetFd() to access data
       Return NULL on error.
 \*=========================================================================*/
-AudioFeed *audioFeedCreate( const char *uri, int flags, AudioFeedCallback callback, void *usrData )
+AudioFeed *audioFeedCreate( const char *uri, const char *oAuthToken, int flags, AudioFeedCallback callback, void *usrData )
 {
   AudioFeed           *feed;
   pthread_mutexattr_t  attr;
@@ -154,10 +156,11 @@ AudioFeed *audioFeedCreate( const char *uri, int flags, AudioFeedCallback callba
 /*------------------------------------------------------------------------*\
     Copy parameters
 \*------------------------------------------------------------------------*/
-  feed->flags    = flags;
-  feed->uri      = strdup( uri );
-  feed->callback = callback;
-  feed->usrData  = usrData;
+  feed->flags      = flags;
+  feed->uri        = strdup( uri );
+  feed->oAuthToken = oAuthToken ? strdup(oAuthToken) : NULL;
+  feed->callback   = callback;
+  feed->usrData    = usrData;
 
 /*------------------------------------------------------------------------*\
     Create feeder thread, this encapsulates all curl actions
@@ -207,6 +210,7 @@ int audioFeedDelete( AudioFeed *feed, bool wait )
   if( feed->addedHeaderFields )
     curl_slist_free_all( feed->addedHeaderFields );
   Sfree( feed->uri );
+  Sfree( feed->oAuthToken );
   Sfree( feed->type );
   Sfree( feed->header );
   Sfree( feed );
@@ -369,6 +373,7 @@ const char *audioFeedGetResponseHeader( AudioFeed *feed )
 /*=========================================================================*\
      Get Response Header field
        if a field is contained more than once the _last_ instance is used
+       if field is NULL the first (response) line is sent.
        the result is allocated and must be freed!
        return NULL if not found
 \*=========================================================================*/
@@ -376,20 +381,21 @@ char *audioFeedGetResponseHeaderField( AudioFeed *feed, const char *fieldName )
 {
   const char *ptr     = feed->header;
   char       *retval  = NULL;
-  size_t      nameLen = strlen( fieldName );
+  size_t      nameLen = fieldName ? strlen(fieldName) : 0;
 
   DBGMSG( "audioFeedGetResponseHeader(%s): \"%s\":",
-           feed->uri, fieldName );
+           feed->uri, fieldName?fieldName:"(null)" );
 
   // Loop over all lines
   while( ptr && *ptr ) {
     size_t len;
 
-    // Check for field name
-    if( !strncasecmp(ptr,fieldName,nameLen) && ptr[nameLen]==':' ) {
+    // Check for field name (or first/response line)
+    if( !fieldName || (!strncasecmp(ptr,fieldName,nameLen) && ptr[nameLen]==':') ) {
 
       // Skip to value, ignore leading spaces
-      ptr += nameLen+1;
+      if( fieldName )
+        ptr += nameLen+1;
       while( *ptr==' ' || *ptr=='\t' )
         ptr++;
 
@@ -404,10 +410,11 @@ char *audioFeedGetResponseHeaderField( AudioFeed *feed, const char *fieldName )
       Sfree( retval );
       retval = strndup( ptr, len );
       DBGMSG( "audioFeedGetResponseHeader(%s): Found field \"%s\": \"%s\"",
-               feed->uri, fieldName, retval );
+               feed->uri, fieldName?fieldName:"(null)", retval );
 
-      // That's it (in case we're looking for the first instance
-      // return retval;
+      // That's it (in case we're looking for the first instance)
+      if( !fieldName )
+        return retval;
     }
 
     // Skip content of non-matching line
@@ -464,6 +471,7 @@ static void *_feederThread( void *arg )
 
   // ICY protocol enabled?
   if( feed->flags&FeedIcy ) {
+    DBGMSG( "Feeder thread (%p,%s): Requesting ICY data.", feed, feed->uri );
 
     // Add header ICY header field
     feed->addedHeaderFields = curl_slist_append( feed->addedHeaderFields , "Icy-MetaData: 1" );
@@ -475,7 +483,16 @@ static void *_feederThread( void *arg )
     }
   }
 
-  // We interested in the connection header?
+  // Need oAuth header
+  if( feed->oAuthToken ) {
+    DBGMSG( "Feeder thread (%p,%s): Requesting oAuth (%s).", feed, feed->uri, feed->oAuthToken );
+    char *hdr = malloc( strlen(feed->oAuthToken)+32 );
+    sprintf( hdr, "Authorization: Bearer %s", feed->oAuthToken );
+    feed->addedHeaderFields = curl_slist_append( feed->addedHeaderFields, hdr );  // Performs a strdup(hdr)
+    Sfree( hdr );
+  }
+
+  // We are interested in the HTTP response header
   rc = curl_easy_setopt( feed->curlHandle, CURLOPT_HEADER, 1 );
   if( rc ) {
     logerr( "audioFeedCreate (%s): Unable to set header mode.", feed->uri );

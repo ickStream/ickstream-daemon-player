@@ -102,7 +102,7 @@ typedef int (*AudioFeedCallback)( AudioFeed *feed, void *usrData );
 /*=========================================================================*\
        Prototypes 
 \*=========================================================================*/
-AudioFeed      *audioFeedCreate( const char *uri, int flags, AudioFeedCallback callback, void *usrData );
+AudioFeed      *audioFeedCreate( const char *uri, const char *oAuthToken, int flags, AudioFeedCallback callback, void *usrData );
 int             audioFeedDelete( AudioFeed *feed, bool wait );
 void            audioFeedLock( AudioFeed *feed );
 void            audioFeedUnlock( AudioFeed *feed );
