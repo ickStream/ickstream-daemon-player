@@ -234,11 +234,11 @@ static int _codecNewInstance( CodecInstance *instance )
     Set debug mode
 \*------------------------------------------------------------------------*/
 #ifdef ICK_DEBUG
-  DBGMSG( "mpg123 (%p): setting verbosity to %d", instance, streamloglevel );
-  rc = mpg123_param( mh, MPG123_VERBOSE, streamloglevel, 0);
+  DBGMSG( "mpg123 (%p): setting verbosity to %d", instance, logGetStreamLevel() );
+  rc = mpg123_param( mh, MPG123_VERBOSE, logGetStreamLevel(), 0);
   if( rc!=MPG123_OK ) {
     logerr( "mpg123: could not set verbosity level (%d): %d, %s",
-            streamloglevel, rc, MPG123ERRSTR(rc,mh) );
+            logGetStreamLevel(), rc, MPG123ERRSTR(rc,mh) );
     mpg123_delete( mh );
     return -1;
   }

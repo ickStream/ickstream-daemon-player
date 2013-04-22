@@ -1459,7 +1459,7 @@ static int _playlistCheckList( const char *file, int line, Playlist *plst )
   for( i=0,item=plst->firstItem; item; i++,item=item->next ) {
     // DBGMSG( "item #%d: %p <%p,%p> (%s)", i, item, item->prev, item->next, item->text );
     if( item->prev!=last ) {
-      _srvlog( file, line, LOG_ERR, "item #%d (%p, %s): prevpointer %p corrupt (should be %p)",
+      _mylog( file, line, LOG_ERR, "item #%d (%p, %s): prevpointer %p corrupt (should be %p)",
               i, item, item->text, item->prev, last );
       rc = -1;
     }
@@ -1473,7 +1473,7 @@ static int _playlistCheckList( const char *file, int line, Playlist *plst )
   for( i=plst->_numberOfItems-1,item=plst->lastItem; item; i--,item=item->prev ) {
     // DBGMSG( "item #%d: %p <%p,%p> (%s)", i, item, item->prev, item->next, item->text );
     if( item->next!=last ) {
-      _srvlog( file, line, LOG_ERR, "item #%d (%p, %s): nextpointer %p corrupt (should be %p)",
+      _mylog( file, line, LOG_ERR, "item #%d (%p, %s): nextpointer %p corrupt (should be %p)",
               i, item, item->text, item->next, last );
       rc = -1;
     }

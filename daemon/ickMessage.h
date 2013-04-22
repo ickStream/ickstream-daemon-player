@@ -78,8 +78,9 @@ typedef void (*IckCmdCallback)(const char *szDeviceId, json_t *jCmd, json_t *jRe
 /*========================================================================*\
    Prototypes
 \*========================================================================*/
-void ickMessage( const char *szDeviceId, const void *message, 
-                 size_t messageLength, enum ickMessage_communicationstate state );
+void ickMessage( const char *sourceUUID, const char *message,
+                 size_t message_size, ickMessageCommunicationstate_t state,
+                 ickDeviceServicetype_t service_type, const char *targetUUID );
 enum ickMessage_communicationstate  sendIckMessage( const char *szDeviceId, json_t *jMsg );
 enum ickMessage_communicationstate  sendIckCommand( const char *szDeviceId, const char *method, json_t *jParams, int *requestID, IckCmdCallback callBack );
 

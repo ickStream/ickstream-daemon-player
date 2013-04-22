@@ -66,20 +66,42 @@ Remarks         : -
 /*=========================================================================*\
 	Global symbols
 \*=========================================================================*/
-int    streamloglevel = LOG_NOTICE;
-int    sysloglevel = LOG_ALERT;
+// none
 
 /*=========================================================================*\
 	Private symbols
 \*=========================================================================*/
-pthread_mutex_t  loggerMutex  = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t  counterMutex = PTHREAD_MUTEX_INITIALIZER;
+static int              streamloglevel = LOG_NOTICE;
+static int              sysloglevel = LOG_ALERT;
+static pthread_mutex_t  loggerMutex  = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t  counterMutex = PTHREAD_MUTEX_INITIALIZER;
+
+
+void logSetStreamLevel( int prio )
+{
+  streamloglevel = prio;
+}
+
+void logSetSyslogLevel( int prio )
+{
+  sysloglevel = prio;
+}
+
+int logGetStreamLevel( void )
+{
+  return streamloglevel;
+}
+
+int    logGetSyslogLevel( void )
+{
+  return sysloglevel;
+}
 
 
 /*========================================================================*\
    Logging facility
 \*========================================================================*/
-void _srvlog( const char *file, int line,  int prio, const char *fmt, ... )
+void _mylog( const char *file, int line,  int prio, const char *fmt, ... )
 {
 
 /*------------------------------------------------------------------------*\
@@ -132,7 +154,7 @@ void _srvlog( const char *file, int line,  int prio, const char *fmt, ... )
 /*========================================================================*\
    Dump memory area (stream only)
 \*========================================================================*/
-void _srvdump( const char *file, int line, int prio, const char *title, const void *ptr, size_t size )
+void _mydump( const char *file, int line, int prio, const char *title, const void *ptr, size_t size )
 {
   char  prefix[100];
   char  dline[4*DUMPCOLS+10];
@@ -330,7 +352,7 @@ long getAndIncrementCounter( void )
 void *_smalloc( const char *file, int line, size_t s )
 {
   void *ptr = malloc( s );
-  _srvlog( file, line, LOG_DEBUG, "malloc(%ld) = %p", (long) s, ptr );	
+  _mylog( file, line, LOG_DEBUG, "malloc(%ld) = %p", (long) s, ptr );
   return ptr;
 }
 
@@ -338,7 +360,7 @@ void *_smalloc( const char *file, int line, size_t s )
 void  *_scalloc( const char *file, int line, size_t n, size_t s )
 {
   void *ptr = calloc( n, s );
-  _srvlog( file, line, LOG_DEBUG, "calloc(%ld,%ld) = %p", (long)n, (long)s, ptr );	
+  _mylog( file, line, LOG_DEBUG, "calloc(%ld,%ld) = %p", (long)n, (long)s, ptr );
   return ptr;
 }
 
@@ -346,7 +368,7 @@ void  *_scalloc( const char *file, int line, size_t n, size_t s )
 void  *_srealloc( const char *file, int line, void *optr, size_t s )
 {
   void *ptr = realloc( optr, s );
-  _srvlog( file, line, LOG_DEBUG, "realloc(%p,%ld) = %p", optr, (long)s, ptr );	
+  _mylog( file, line, LOG_DEBUG, "realloc(%p,%ld) = %p", optr, (long)s, ptr );
   return ptr;
 }
 
@@ -354,7 +376,7 @@ void  *_srealloc( const char *file, int line, void *optr, size_t s )
 char  *_sstrdup( const char *file, int line, const char *s )
 {
   void *ptr = strdup( s );
-  _srvlog( file, line, LOG_DEBUG, "strdup(%s (%p)) = %p", s, s, ptr );	
+  _mylog( file, line, LOG_DEBUG, "strdup(%s (%p)) = %p", s, s, ptr );
   return ptr;
 }
 

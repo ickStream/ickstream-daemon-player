@@ -51,6 +51,7 @@ Remarks         : -
 \************************************************************************/
 
 #include <stdio.h>
+#include <string.h>
 #include <jansson.h>
 #include <ickDiscovery.h>
 
@@ -69,7 +70,8 @@ Remarks         : -
 /*=========================================================================*\
 	Private symbols
 \*=========================================================================*/
-void _handleGetServiceInformation( const char *szDeviceId, json_t *jCmd, json_t *jResult );
+static void _handleGetServiceInformation( const char *szDeviceId, json_t *jCmd, json_t *jResult );
+static const char *_ickDeviceServiceTypeToStr( enum ickDevice_servicetype type );
 
 
 /*=========================================================================*\
@@ -82,7 +84,8 @@ void ickDevice( const char *szDeviceId, enum ickDiscovery_command cmd,
   switch( cmd ) {
 
     case ICKDISCOVERY_ADD_DEVICE:
-      loginfo( "ickDevice %s (type %d) added", szDeviceId, type );
+      loginfo( "ickDevice %s (type %d: %s) added",
+                szDeviceId, type, _ickDeviceServiceTypeToStr(type) );
 
       // New server found: request service descriptor
       if( type==ICKDEVICE_SERVER_GENERIC ) {
@@ -97,7 +100,8 @@ void ickDevice( const char *szDeviceId, enum ickDiscovery_command cmd,
       break;
 
     case ICKDISCOVERY_REMOVE_DEVICE:
-      loginfo( "ickDevice %s (type %d) removed", szDeviceId, type );
+      loginfo( "ickDevice %s (type %d: %s) removed",
+               szDeviceId, type,_ickDeviceServiceTypeToStr(type)  );
 
       // Remove service(s) for this device
       ickServiceRemove( szDeviceId, NULL, ServiceDevice );
@@ -105,7 +109,8 @@ void ickDevice( const char *szDeviceId, enum ickDiscovery_command cmd,
       break;
 
     case ICKDISCOVERY_UPDATE_DEVICE:
-      loginfo( "ickDevice %s (type %d) updated", szDeviceId, type );
+      loginfo( "ickDevice %s (type %d: %s) updated",
+               szDeviceId, type, _ickDeviceServiceTypeToStr(type)  );
 
       // Remove service(s) for this device
       ickServiceRemove( szDeviceId, NULL, ServiceDevice );
@@ -115,7 +120,6 @@ void ickDevice( const char *szDeviceId, enum ickDiscovery_command cmd,
         sendIckCommand( szDeviceId, "getServiceInformation", NULL, NULL,
                                     &_handleGetServiceInformation );
       }
-
 
       break;
 
@@ -133,7 +137,7 @@ void ickDevice( const char *szDeviceId, enum ickDiscovery_command cmd,
 /*=========================================================================*\
         Call back for get service info
 \*=========================================================================*/
-void _handleGetServiceInformation( const char *szDeviceId, json_t *jCmd, json_t *jResult)
+static void _handleGetServiceInformation( const char *szDeviceId, json_t *jCmd, json_t *jResult)
 { 
   json_t *jObj;
 
@@ -164,9 +168,47 @@ void _handleGetServiceInformation( const char *szDeviceId, json_t *jCmd, json_t 
     Inform HMI
 \*------------------------------------------------------------------------*/
   hmiNewConfig( );
-
 }
 
+
+/*=========================================================================*\
+    Convert service bit vector to string
+\*=========================================================================*/
+static const char *_ickDeviceServiceTypeToStr( enum ickDevice_servicetype type )
+{
+  static char buffer[128];
+  *buffer = 0;
+
+  if( type==ICKDEVICE_ANY )
+    return "any";
+  if( type==ICKDEVICE_NONE )
+    return "none";
+  if( type==ICKDEVICE_GENERIC )
+    return "generic";
+
+  if( type&ICKDEVICE_PLAYER )
+    strcat( buffer, "player" );
+
+  if( type&ICKDEVICE_CONTROLLER ) {
+    if( *buffer )
+      strcat( buffer, "," );
+    strcat( buffer, "controller" );
+  }
+
+  if( type&ICKDEVICE_SERVER_GENERIC ) {
+    if( *buffer )
+      strcat( buffer, "," );
+    strcat( buffer, "server-generic" );
+  }
+
+  if( type&ICKDEVICE_DEBUG ) {
+    if( *buffer )
+      strcat( buffer, "," );
+    strcat( buffer, "debug" );
+  }
+
+  return buffer;
+}
 
 
 /*=========================================================================*\

@@ -76,12 +76,12 @@ Remarks         : -
 #define MIN(a,b) ((a)<(b)?(a):(b))
 #endif
 
-#define srvmsg(prio, args...) _srvlog( NULL, 0, prio, args )
+#define srvmsg(prio, args...) _mylog( NULL, 0, prio, args )
 
 #ifdef ICK_DEBUG
-#define DBGMSG( args... ) _srvlog( __FILE__, __LINE__, LOG_DEBUG, args )
+#define DBGMSG( args... ) _mylog( __FILE__, __LINE__, LOG_DEBUG, args )
 //#define DBGMSG( args... ) printf( args );
-#define DBGMEM( title, pointer, size ) _srvdump( __FILE__, __LINE__, LOG_DEBUG, title, pointer, size )
+#define DBGMEM( title, pointer, size ) _mydump( __FILE__, __LINE__, LOG_DEBUG, title, pointer, size )
 #ifdef __linux__
 #include <sys/prctl.h>
 #define PTHREADSETNAME( name )  prctl( PR_SET_NAME, (name) )
@@ -95,10 +95,10 @@ Remarks         : -
 #define PTHREADSETNAME( name )  { ;}
 #endif
 
-#define logerr( args... )     _srvlog( __FILE__, __LINE__, LOG_ERR, args )
-#define logwarn( args... )    _srvlog( __FILE__, __LINE__, LOG_WARNING, args )
-#define lognotice( args... )  _srvlog( __FILE__, __LINE__, LOG_NOTICE, args )
-#define loginfo( args... )    _srvlog( __FILE__, __LINE__, LOG_INFO, args )
+#define logerr( args... )     _mylog( __FILE__, __LINE__, LOG_ERR, args )
+#define logwarn( args... )    _mylog( __FILE__, __LINE__, LOG_WARNING, args )
+#define lognotice( args... )  _mylog( __FILE__, __LINE__, LOG_NOTICE, args )
+#define loginfo( args... )    _mylog( __FILE__, __LINE__, LOG_INFO, args )
 
 #if MEMDEBUG
 #define Sfree(p) {DBGMSG("free %p", (p)); if(p)free(p); (p)=NULL;}
@@ -113,9 +113,7 @@ Remarks         : -
 /*=========================================================================*\
        Global symbols 
 \*=========================================================================*/
-extern int  streamloglevel;
-extern int  sysloglevel;
-
+// none
 
 /*========================================================================*\
    Prototypes
@@ -126,8 +124,13 @@ int         json_object_merge( json_t *target, json_t *source );
 const char *json_rpcerrstr( json_t *jError );
 long        getAndIncrementCounter( void );
 
-void   _srvlog( const char *file, int line, int prio, const char *fmt, ... );
-void   _srvdump( const char *file, int line, int prio, const char *title, const void *ptr, size_t size );
+void   logSetStreamLevel( int prio );
+void   logSetSyslogLevel( int prio );
+int    logGetStreamLevel( void );
+int    logGetSyslogLevel( void );
+
+void   _mylog( const char *file, int line, int prio, const char *fmt, ... );
+void   _mydump( const char *file, int line, int prio, const char *title, const void *ptr, size_t size );
 void  *_smalloc( const char *file, int line, size_t s );
 void  *_scalloc( const char *file, int line, size_t n, size_t s );
 void  *_srealloc( const char *file, int line, void *p, size_t s );

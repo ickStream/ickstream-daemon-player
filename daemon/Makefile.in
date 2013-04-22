@@ -17,10 +17,12 @@
 # ------------------------------------------------------------------------
 @cinfo@
 
+GITVERSION      = $(shell git rev-list HEAD --max-count=1)
+
 SHELL=/bin/sh
 
 CC              = @cc@
-CFLAGS          = @cflags@ 
+CFLAGS          = @cflags@ -DICKPD_GITVERSION=\"$(GITVERSION)\"
 LD              = $(CC)
 LDFLAGS         = @ldflags@
 MKDEPFLAGS      = -Y

@@ -103,8 +103,9 @@ json_t *_jPlayerStatus( void );
 /*=========================================================================*\
   Handle messages for this device
 \*=========================================================================*/
-void ickMessage( const char *szDeviceId, const void *iMessage, 
-                 size_t messageLength, enum ickMessage_communicationstate state )
+void ickMessage( const char *sourceUUID, const char *ickMessage,
+                 size_t message_size, ickMessageCommunicationstate_t state,
+                 ickDeviceServicetype_t service_type, const char *targetUUID )
 {
   char         *message;
   json_t       *jRoot,
@@ -123,14 +124,13 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 /*------------------------------------------------------------------------*\
     Get a standard terminated string out of buffer
 \*------------------------------------------------------------------------*/
-  message = malloc( messageLength+1 );
+  message = strndup( ickMessage, message_size );
   if( !message ) {
     logerr( "ickMessage: out of memory" );
     return;
   }
-  strncpy( message, iMessage, messageLength );
-  message[messageLength] = 0;
-  loginfo( "ickMessage from %s: %s", szDeviceId, message );
+  loginfo( "ickMessage from %s to %s (state %d, type %d): \"%s\".",
+            sourceUUID, targetUUID, state, service_type, message );
 
 /*------------------------------------------------------------------------*\
     Init JSON interpreter
@@ -138,14 +138,14 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
   jRoot = json_loads( message, 0, &error );
   if( !jRoot ) {
     logerr( "ickMessage from %s: corrupt line %d: %s",
-             szDeviceId, error.line, error.text );
+             sourceUUID, error.line, error.text );
     rpcErrCode    = RPC_INVALID_REQUEST;
     rpcErrMessage = "Could not parse";
     goto rpcError;
   }
   if( !json_is_object(jRoot) ) {
     logerr( "ickMessage from %s: could not parse to object: %s",
-            szDeviceId, message );
+            sourceUUID, message );
     rpcErrCode    = RPC_INVALID_REQUEST;
     rpcErrMessage = "Parse did not result in JSON object";
     goto rpcError;
@@ -157,7 +157,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 \*------------------------------------------------------------------------*/
   rpcId = json_object_get( jRoot, "id" );
   if( !rpcId ) {
-    logerr( "ickMessage from %s contains no id: %s", szDeviceId, message );
+    logerr( "ickMessage from %s contains no id: %s", sourceUUID, message );
     rpcErrCode    = RPC_INVALID_REQUEST;
     rpcErrMessage = "RPC header contains no Id";
     goto rpcError;
@@ -179,13 +179,13 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
       id = json_integer_value( rpcId );
     else if( json_is_string(rpcId) ) {
 #ifdef ICK_DEBUG
-      logwarn( "ickMessage from %s returned id as string: %s", szDeviceId, message );
+      logwarn( "ickMessage from %s returned id as string: %s", sourceUUID, message );
 #endif
       id = atol( json_string_value(rpcId) );
     }
     else {
       logwarn( "ickMessage from %s returned id in unknown format: %s", 
-               szDeviceId, message );
+               sourceUUID, message );
       json_decref( jRoot );
       Sfree( message );
       return;
@@ -208,7 +208,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     // Orphaned result?
     else 
       logwarn( "Found no open request for ickMessage from %s : %s", 
-               szDeviceId, message );
+               sourceUUID, message );
 
     // Clean up and take the chance to check for timedout requests
     json_decref( jRoot ); 
@@ -225,13 +225,13 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
   jObj = json_object_get( jRoot, "method" );
   if( !jObj || !json_is_string(jObj) ) {
     logerr( "ickMessage from %s contains neither method or result: %s", 
-                     szDeviceId, message );
+                     sourceUUID, message );
     rpcErrCode    = RPC_INVALID_REQUEST;
     rpcErrMessage = "RPC header contains no method, result or error field";
     goto rpcError;
   }
   method = json_string_value( jObj );
-  DBGMSG( "ickMessage from %s: Executing command \"%s\"", szDeviceId, method );
+  DBGMSG( "ickMessage from %s: Executing command \"%s\"", sourceUUID, method );
 
   jParams = json_object_get( jRoot, "params" );
 
@@ -265,7 +265,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 
     // Expect parameters
     if( !jParams || !json_is_object(jParams) ) {
-      logerr( "ickMessage from %s contains no parameters: %s", szDeviceId, message );
+      logerr( "ickMessage from %s contains no parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -302,7 +302,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 
     // Expect parameters
     if( !jParams || !json_is_object(jParams) ) {
-      logerr( "ickMessage from %s contains no parameters: %s", szDeviceId, message );
+      logerr( "ickMessage from %s contains no parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -312,7 +312,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     jObj = json_object_get( jParams, "repeatMode" );
     if( !jObj || !json_is_string(jObj) )  {
       logerr( "ickMessage from %s: missing field \"repeatMode\": %s",
-                       szDeviceId, message );
+                       sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"repeatMode\": missing or of wrong type";
       goto rpcError;
@@ -320,7 +320,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     mode = playerRepeatModeFromStr( json_string_value(jObj) );
     if( mode<0 ) {
       logerr( "ickMessage from %s: unknown repeat mode: %s",
-                       szDeviceId, json_string_value(jObj) );
+                       sourceUUID, json_string_value(jObj) );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"repeatMode\": invalid value";
       goto rpcError;
@@ -343,7 +343,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 
     // Expect parameters
     if( !jParams || !json_is_object(jParams) ) {
-      logerr( "ickMessage from %s contains no parameters: %s", szDeviceId, message );
+      logerr( "ickMessage from %s contains no parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -353,7 +353,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     jObj = json_object_get( jParams, "playlistPos" );
     if( !jObj || !json_is_integer(jObj) )  {
       logerr( "ickMessage from %s: missing field \"playlistPos\": %s", 
-                       szDeviceId, message );
+                       sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"playlistPos\": missing or of wrong type";
       goto rpcError;
@@ -383,7 +383,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 
     // Expect parameters
     if( !jParams || !json_is_object(jParams) ) {
-      logerr( "ickMessage from %s contains no parameters: %s", szDeviceId, message );
+      logerr( "ickMessage from %s contains no parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -393,7 +393,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     jObj = json_object_get( jParams, "playing" );
     if( !jObj || !json_is_boolean(jObj) )  {
       logerr( "ickMessage from %s: missing field \"playing\": %s", 
-                       szDeviceId, message );
+                       sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"playing\": missing or of wrong type";
       goto rpcError;
@@ -426,7 +426,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 
     // Expect parameters
     if( !jParams || !json_is_object(jParams) ) {
-      logerr( "ickMessage from %s contains no parameters: %s", szDeviceId, message );
+      logerr( "ickMessage from %s contains no parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -467,7 +467,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 
     // Expect parameters
     if( !jParams || !json_is_object(jParams) ) {
-      logerr( "ickMessage from %s contains no parameters: %s", szDeviceId, message );
+      logerr( "ickMessage from %s contains no parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -501,7 +501,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 
     // Expect parameters
     if( !jParams || !json_is_object(jParams) ) {
-      logerr( "ickMessage from %s contains no parameters: %s", szDeviceId, message );
+      logerr( "ickMessage from %s contains no parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -511,7 +511,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     jObj = json_object_get( jParams, "playlistId" );
     if( !jObj || !json_is_string(jObj) )  {
       logerr( "ickMessage from %s: missing field \"playlistId\": %s", 
-              szDeviceId, message );
+              sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"playListId\": missing or of wrong type";
       goto rpcError;
@@ -522,7 +522,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     jObj = json_object_get( jParams, "playlistName" );
     if( !jObj || !json_is_string(jObj) ) {
       logerr( "ickMessage from %s: missing field \"playlistName\": %s", 
-                       szDeviceId, message );
+                       sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"playListName\": missing or of wrong type";
       goto rpcError;
@@ -559,7 +559,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 
     // Expect parameters
     if( !jParams || !json_is_object(jParams) ) {
-      logerr( "ickMessage from %s contains no parameters: %s", szDeviceId, message );
+      logerr( "ickMessage from %s contains no parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -574,7 +574,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     jItems = json_object_get( jParams, "items" );
     if( !jItems || !json_is_array(jItems) ) {
       logerr( "ickMessage from %s: missing field \"items\": %s", 
-               szDeviceId, message );
+               sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"items\": missing or of wrong type";
       goto rpcError;
@@ -584,7 +584,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     playlistLock( plst );
     if( playlistAddItems(plst,pos,jItems,resetFlag) ) {
       logerr( "ickMessage from %s: could not add items to playlist: %s", 
-               szDeviceId, message );
+               sourceUUID, message );
       playlistUnlock( plst );
       result = 0;
     }
@@ -610,7 +610,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 
     // Expect parameters
     if( !jParams || !json_is_object(jParams) ) {
-      logerr( "ickMessage from %s contains no parameters: %s", szDeviceId, message );
+      logerr( "ickMessage from %s contains no parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -620,7 +620,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     jItems = json_object_get( jParams, "items" );
     if( !jItems || !json_is_array(jItems) ) {
       logerr( "ickMessage from %s: missing field \"items\": %s", 
-                       szDeviceId, message );
+                       sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"items\": missing or of wrong type";
       goto rpcError;
@@ -630,7 +630,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     playlistLock( plst );
     if( playlistDeleteItems(plst,jItems) ) {
       logerr( "ickMessage from %s: could not remove items from playlist: %s", 
-               szDeviceId, message );
+               sourceUUID, message );
       playlistUnlock( plst );
       result = 0;
     }
@@ -656,7 +656,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 
     // Expect parameters
     if( !jParams || !json_is_object(jParams) ) {
-      logerr( "ickMessage from %s contains no parameters: %s", szDeviceId, message );
+      logerr( "ickMessage from %s contains no parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -671,7 +671,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     jItems = json_object_get( jParams, "items" );
     if( !jItems || !json_is_array(jItems) ) {
       logerr( "ickMessage from %s: missing field \"items\": %s", 
-                       szDeviceId, message );
+                       sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"items\": missing or of wrong type";
       goto rpcError;
@@ -681,7 +681,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     playlistLock( plst );
     if( playlistMoveItems(plst,pos,jItems) ) {
       logerr( "ickMessage from %s: could not move items in playlist: %s", 
-               szDeviceId, message );
+               sourceUUID, message );
       playlistUnlock( plst );
       result = 0;
     }
@@ -747,7 +747,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 
     // Expect parameters
     if( !jParams || !json_is_object(jParams) ) {
-      logerr( "ickMessage from %s contains no parameters: %s", szDeviceId, message );
+      logerr( "ickMessage from %s contains no parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -771,7 +771,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     jObj = json_object_get( jParams, "track" );
     if( !jObj || !json_is_object(jObj) ) {
       logerr( "ickMessage from %s: missing field \"track\": %s",
-                       szDeviceId, message );
+                       sourceUUID, message );
       playlistUnlock( plst );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"track\": missing or of wrong type";
@@ -782,7 +782,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     pItem = playlistGetItem( plst, pos );
     if( !pItem ) {
       logwarn( "ickMessage from %s: no item found at queue position %d: %s",
-               szDeviceId, pos, message );
+               sourceUUID, pos, message );
       result = 0;
     }
 
@@ -814,7 +814,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 
     // Expect parameters
     if( !jParams || !json_is_object(jParams) ) {
-      logerr( "ickMessage from %s contains no parameters: %s", szDeviceId, message );
+      logerr( "ickMessage from %s contains no parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -824,7 +824,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     jObj = json_object_get( jParams, "playerName" );
     if( !jObj || !json_is_string(jObj) ) {
       logerr( "ickMessage from %s: item missing field \"playerName\": %s", 
-                       szDeviceId, message );
+                       sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"playerName\": missing or of wrong type";
       goto rpcError;
@@ -872,7 +872,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
     Unknown message 
 \*------------------------------------------------------------------------*/
   else {
-    logerr( "ickMessage from %s: ignoring method %s", szDeviceId, method );
+    logerr( "ickMessage from %s: ignoring method %s", sourceUUID, method );
     rpcErrCode = RPC_METHOD_NOT_FOUND;
     rpcErrMessage = "Method not found";
   }
@@ -883,7 +883,7 @@ void ickMessage( const char *szDeviceId, const void *iMessage,
 rpcError:
   if( rpcErrCode!=RPC_NO_ERROR ) {
     logwarn( "ickMessage from %s: error code %d (%s) (message was: %s)",
-             szDeviceId, rpcErrCode, rpcErrMessage, message);
+             sourceUUID, rpcErrCode, rpcErrMessage, message);
     jResult = json_pack( "{siss}",
                          "code",    rpcErrCode,
                          "message", rpcErrMessage);
@@ -902,7 +902,7 @@ rpcError:
                          "jsonrpc", "2.0", 
                          "id",     rpcId,
                          "result", jResult );
-    sendIckMessage( szDeviceId, jResult );
+    sendIckMessage( sourceUUID, jResult );
     json_decref( jResult );
   } 
 
@@ -910,7 +910,7 @@ rpcError:
    Broadcast changes in playlist 
 \*------------------------------------------------------------------------*/
   DBGMSG( "ickMessage from %s: need to update playlist: %s", 
-            szDeviceId, playlistChanged?"Yes":"No" );
+            sourceUUID, playlistChanged?"Yes":"No" );
   if( playlistChanged )
     ickMessageNotifyPlaylist( NULL );
 

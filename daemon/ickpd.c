@@ -120,12 +120,13 @@ int main( int argc, char *argv[] )
   int         retval = 0;
   
 /*-------------------------------------------------------------------------*\
-	Set up commandline switches (leading * flags availability in config file)
+	Set up command line switches (leading * flags availability in config file)
 \*-------------------------------------------------------------------------*/
   addarg( "help",     "-?",  &help_flag,   NULL,       "Show this help message and quit" );
+  addarg( "version",  "-V",  &vers_flag,   NULL,       "Show version and quit" );
   addarg( "devices",  "-al", &adev_flag,   NULL,       "List audio devices and quit" );
   addarg( "config",   "-c",  &cfg_fname,   "filename", "Set name of configuration file" );
-  addarg( "*pers",    "-p",  &pers_fname,  "filename", "Set name of persistency file" );
+  addarg( "*pers",    "-p",  &pers_fname,  "filename", "Set name of persistence file" );
 #ifdef ICK_DEBUG
   addarg( "*uuid",    "-u",  &player_uuid, "uuid",     "Init/change UUID for this player" );
 #endif
@@ -137,7 +138,6 @@ int main( int argc, char *argv[] )
 #endif
   addarg( "*pfile",   "-pid",&pid_fname,   "filename", "Filename to store process ID" );
   addarg( "*verbose", "-v",  &verb_arg,    "level",    "Set logging level (0-7)" );
-  addarg( "Version",  "-V",  &vers_flag,   NULL,       "Show programm version" );
 
 /*-------------------------------------------------------------------------*\
 	Parse the arguments
@@ -151,9 +151,11 @@ int main( int argc, char *argv[] )
     Show version and/or help
 \*-------------------------------------------------------------------------*/
   if( vers_flag ) {
-    printf( "%s version %g (using ickstream lib version %s)\n", 
-      argv[0], ICKPD_VERSION, "??" );
+    printf( "%s version %g (%s)\n", argv[0], ICKPD_VERSION, ICKPD_GITVERSION );
+    printf( "ickstream p2p library version %s (%s)\n",
+            ickDiscoveryGetVersion(NULL,NULL), ickDiscoveryGetGitVersion() );
     printf( "<c> 2013 by //MAF, ickStream GmbH\n\n" );
+    return 0;
   }
   if( help_flag ) {
     usage( argv[0], 0 );
@@ -164,18 +166,18 @@ int main( int argc, char *argv[] )
     Set verbosity level 
 \*------------------------------------------------------------------------*/  
   if( verb_arg ) {
-    streamloglevel = (int) strtol( verb_arg, &eptr, 10 );
+    logSetStreamLevel( (int)strtol(verb_arg,&eptr,10) );
     while( isspace(*eptr) )
       eptr++;
-    if( *eptr || streamloglevel<0 || streamloglevel>7 ) {
+    if( *eptr || logGetStreamLevel()<0 || logGetStreamLevel()>7 ) {
       fprintf( stderr, "Bad verbosity level: '%s'\n", verb_arg );
       return 1;
     }
   }
 #ifndef ICK_DEBUG
-  if( streamloglevel>=LOG_DEBUG ) {
+  if( logGetStreamLevel()>=LOG_DEBUG ) {
      fprintf( stderr, "%s: binary not compiled for debugging, loglevel %d might be too high!\n", 
-                      argv[0], streamloglevel );
+                      argv[0], logGetStreamLevel() );
   }
 #endif
 
@@ -341,11 +343,11 @@ int main( int argc, char *argv[] )
     Goto background
 \*------------------------------------------------------------------------*/
   if( daemon_flag ) {
-    if( streamloglevel>=LOG_DEBUG ) 
+    if( logGetStreamLevel()>=LOG_DEBUG )
       fprintf( stderr, "%s: loglevel %d might be too high for syslog (daemon mode). Run in foreground to get all messages!\n",
-                       argv[0], streamloglevel );
-    sysloglevel = streamloglevel;
-    streamloglevel = 0;
+                       argv[0], logGetStreamLevel() );
+    logSetSyslogLevel( logGetStreamLevel() );
+    logSetStreamLevel( 0 );
     cpid = fork();
     if( cpid==-1 ) {
       perror( "Could not fork" );
@@ -387,6 +389,7 @@ int main( int argc, char *argv[] )
 /*------------------------------------------------------------------------*\
     Initalize ickstream environment...
 \*------------------------------------------------------------------------*/
+  ickDiscoverySetLogFacility( &_mylog );
   ickDeviceRegisterMessageCallback( &ickMessage );
   ickDeviceRegisterDeviceCallback( &ickDevice );
   ickInitDiscovery( player_uuid, if_name, NULL );
