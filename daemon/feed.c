@@ -51,6 +51,7 @@ Remarks         : -
 \************************************************************************/
 
 // #undef ICK_DEBUG
+// #define ICK_TRACECURL
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -87,7 +88,6 @@ struct _audioFeed {
   AudioFormat              format;
   int                      icyInterval;
   int                      pipefd[2];
-  struct curl_slist       *addedHeaderFields;
   char                    *header;
   size_t                   headerLen;
   CURL                    *curlHandle;
@@ -102,6 +102,8 @@ struct _audioFeed {
 \*=========================================================================*/
 static void *_feederThread( void *arg );
 static size_t _curlWriteCallback( void *contents, size_t size, size_t nmemb, void *userp );
+static int    _curlTraceCallback( CURL *handle, curl_infotype type, char *data, size_t size, void *userp );
+
 
 
 /*=========================================================================*\
@@ -131,7 +133,6 @@ AudioFeed *audioFeedCreate( const char *uri, const char *oAuthToken, int flags, 
     return NULL;
   }
   feed->state             = FeedInitialized;
-  feed->addedHeaderFields = NULL;
   feed->header            = NULL;
   memset( &feed->format, 0, sizeof(AudioFormat) );
 
@@ -207,8 +208,6 @@ int audioFeedDelete( AudioFeed *feed, bool wait )
 /*------------------------------------------------------------------------*\
     Free buffers and header
 \*------------------------------------------------------------------------*/
-  if( feed->addedHeaderFields )
-    curl_slist_free_all( feed->addedHeaderFields );
   Sfree( feed->uri );
   Sfree( feed->oAuthToken );
   Sfree( feed->type );
@@ -437,8 +436,9 @@ char *audioFeedGetResponseHeaderField( AudioFeed *feed, const char *fieldName )
 \*=========================================================================*/
 static void *_feederThread( void *arg )
 {
-  AudioFeed *feed = (AudioFeed*)arg;
-  int        rc;
+  AudioFeed         *feed = (AudioFeed*)arg;
+  int                rc;
+  struct curl_slist *addedHeaderFields = NULL;
 
   DBGMSG( "Feeder thread (%p,%s): starting.", feed, feed->uri );
   PTHREADSETNAME( "feed" );
@@ -474,22 +474,27 @@ static void *_feederThread( void *arg )
     DBGMSG( "Feeder thread (%p,%s): Requesting ICY data.", feed, feed->uri );
 
     // Add header ICY header field
-    feed->addedHeaderFields = curl_slist_append( feed->addedHeaderFields , "Icy-MetaData: 1" );
-    rc = curl_easy_setopt( feed->curlHandle, CURLOPT_HTTPHEADER, feed->addedHeaderFields );
+    addedHeaderFields = curl_slist_append( addedHeaderFields , "Icy-MetaData: 1" );
+    DBGMSG( "Feeder thread (%p,%s): Added request header \"%s\".", feed, feed->uri, "Icy-MetaData: 1" );
+  }
+
+  // Need oAuth header
+  if( feed->oAuthToken ) {
+    char *hdr = malloc( strlen(feed->oAuthToken)+32 );
+    sprintf( hdr, "Authorization: Bearer %s", feed->oAuthToken );
+    addedHeaderFields = curl_slist_append( addedHeaderFields, hdr );  // Performs a strdup(hdr)
+    DBGMSG( "Feeder thread (%p,%s): Added request header \"%s\".", feed, feed->uri, hdr );
+    Sfree( hdr );
+  }
+
+  // Add headers
+  if( addedHeaderFields ) {
+    rc = curl_easy_setopt( feed->curlHandle, CURLOPT_HTTPHEADER, addedHeaderFields );
     if( rc ) {
       logerr( "audioFeedCreate (%s): Unable to add ICY HTTP header.", feed->uri );
       feed->state = FeedTerminatedError;
       goto end;
     }
-  }
-
-  // Need oAuth header
-  if( feed->oAuthToken ) {
-    DBGMSG( "Feeder thread (%p,%s): Requesting oAuth (%s).", feed, feed->uri, feed->oAuthToken );
-    char *hdr = malloc( strlen(feed->oAuthToken)+32 );
-    sprintf( hdr, "Authorization: Bearer %s", feed->oAuthToken );
-    feed->addedHeaderFields = curl_slist_append( feed->addedHeaderFields, hdr );  // Performs a strdup(hdr)
-    Sfree( hdr );
   }
 
   // We are interested in the HTTP response header
@@ -530,6 +535,12 @@ static void *_feederThread( void *arg )
     goto end;
   }
 
+  // Set tracing callback in debugging mode
+#ifdef ICK_TRACECURL
+  curl_easy_setopt( feed->curlHandle, CURLOPT_DEBUGFUNCTION, _curlTraceCallback );
+  curl_easy_setopt( feed->curlHandle, CURLOPT_VERBOSE, 1L);
+#endif
+
 /*------------------------------------------------------------------------*\
     Collect data, this represents the thread main loop  
 \*------------------------------------------------------------------------*/
@@ -567,6 +578,8 @@ end:
   if(feed->curlHandle )
     curl_easy_cleanup( feed->curlHandle );
   feed->curlHandle = NULL;
+  if( addedHeaderFields )
+    curl_slist_free_all( addedHeaderFields );
 
 /*------------------------------------------------------------------------*\
     That's all ...
@@ -729,6 +742,51 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
   return retVal;
 }
 
+/*=========================================================================*\
+      cURL debug callback
+      (stolen from http://curl.haxx.se/libcurl/c/debug.html)
+\*=========================================================================*/
+static int _curlTraceCallback( CURL *handle, curl_infotype type, char *data, size_t size, void *userp )
+{
+  const char *text;
+
+/*------------------------------------------------------------------------*\
+    Switch on trace message type
+\*------------------------------------------------------------------------*/
+  switch (type) {
+    case CURLINFO_TEXT:
+      DBGMSG( "== Info: %s", data );
+      // no break
+
+    default: /* in case a new one is introduced to shock us */
+      return 0;
+
+    case CURLINFO_HEADER_OUT:
+      text = "=> Send header";
+      break;
+    case CURLINFO_DATA_OUT:
+      text = "=> Send data";
+      break;
+    case CURLINFO_SSL_DATA_OUT:
+      text = "=> Send SSL data";
+      break;
+    case CURLINFO_HEADER_IN:
+      text = "<= Recv header";
+      break;
+    case CURLINFO_DATA_IN:
+      text = "<= Recv data";
+      break;
+    case CURLINFO_SSL_DATA_IN:
+      text = "<= Recv SSL data";
+      break;
+  }
+
+/*------------------------------------------------------------------------*\
+    Dump data and return
+\*------------------------------------------------------------------------*/
+  DBGMEM( text, data, size );
+  return 0;
+}
 
 /*=========================================================================*\
                                     END OF FILE
