@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef ICK_DEBUG
+//#undef ICK_DEBUG
 
 #include <stdio.h>
 #include <strings.h>
@@ -477,7 +477,7 @@ static int _ifSetPause( AudioIf *aif, bool pause )
 static int _ifSetVolume( AudioIf *aif, double volume, bool muted )
 {
   AlsaData *ifData = (AlsaData*)aif->ifData;
-  long      min, max;
+  long      min, max, newVolume;
   double    setVol = volume;
   int       rc = 0;
   DBGMSG( "Alsa (%s): set volume to %.2lf%% %s", aif->devName, 
@@ -500,15 +500,24 @@ static int _ifSetVolume( AudioIf *aif, double volume, bool muted )
     volume = 0;
 
 /*------------------------------------------------------------------------*\
-    Set volume
+    Calculate and set new volume
 \*------------------------------------------------------------------------*/
-  snd_mixer_selem_get_playback_volume_range( ifData->mixerElem, &min, &max);
-  DBGMSG( "Alsa (%s): volume range [%ld,%ld], set: %ld", 
-           aif->devName, min, max, min+(long)(volume*max)); 
-  rc = snd_mixer_selem_set_playback_volume_all( ifData->mixerElem, min+(long)(volume*max) );
+  rc = snd_mixer_selem_get_playback_dB_range( ifData->mixerElem, &min, &max);
+  if( rc<0 ) {
+    logerr( "Alsa (%s): Error getting volume range: %s",
+            aif->devName, snd_strerror(rc) );
+    return -1;
+  }
+  // Hack: clip scale minimum to -100 dB if volume is not zero
+  if( min<-100*100 && volume>0 )
+    min = -100*100;
+  newVolume = min + (long)(volume*(max-min));
+  DBGMSG( "Alsa (%s): volume range [%.2lf,%.2lf] dB, set: %.2lf dB", 
+           aif->devName, min/100.0, max/100.0, newVolume/100.0 ); 
+  rc = snd_mixer_selem_set_playback_dB_all( ifData->mixerElem, newVolume, 1 );
   if( rc<0 ) {
     logerr( "Alsa (%s): Error setting volume %ld [%ld,%ld]: %s", 
-            aif->devName, min, max, min+(long)(volume*max), snd_strerror(rc) );
+            aif->devName, min, max, newVolume, snd_strerror(rc) );
     return -1;
   }
 
