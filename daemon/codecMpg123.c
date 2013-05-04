@@ -63,6 +63,7 @@ Remarks         : -
 
 #include "utils.h"
 #include "audio.h"
+#include "metaIcy.h"
 #include "codec.h"
 #include "codecMpg123.h"
 
@@ -351,7 +352,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
 /*------------------------------------------------------------------------*\
     New meta data?
 \*------------------------------------------------------------------------*/
-  if( metaVector&(MPG123_NEW_ID3|MPG123_NEW_ICY) ) {
+  if( instance->metaCallback && (metaVector&(MPG123_NEW_ID3|MPG123_NEW_ICY)) ) {
 
     // Decode ID3 data
     if( metaVector&MPG123_NEW_ID3 ) {
@@ -363,11 +364,20 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
     }
 
     // Decode ICY data
-    if( metaVector&MPG123_NEW_ICY ) {
-      char *icyString;
+    if( instance->metaCallback && (metaVector&MPG123_NEW_ICY) ) {
+      char   *icyString;
+      json_t *jMeta;
+
       mpg123_icy( mh, &icyString );
       DBGMSG( "New ICY data: \"%s\"", icyString );
-      // Fixme.
+
+      jMeta = icyParseInband( icyString );
+      if( !jMeta )
+        logwarn( "_codecDeliverOutput: Could not parse ICY data \"%s\".", icyString );
+      else {
+        instance->metaCallback( instance, CodecMetaICY, jMeta, instance->metaCallbackUserData );
+        json_decref( jMeta );
+      }
     }
 
     // Reset Data in stream

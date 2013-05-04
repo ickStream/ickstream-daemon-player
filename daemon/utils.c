@@ -346,6 +346,51 @@ long getAndIncrementCounter( void )
 
 
 /*========================================================================*\
+   Check if a string starts with a given prefix.
+     Returns 0 if so non-zero otherwise.
+\*========================================================================*/
+int strcmpprefix( const char *str, const char *prefix )
+{
+  return strncmp( str, prefix, strlen(prefix) );
+}
+
+/*========================================================================*\
+   Convert a ISO-8859-1 coded ASCII string to UTF-8
+     Returns an allocated converted string (needs to be freed) or
+             NULL on error.
+     Note: this will not work with windows CP-1252 strings...
+\*========================================================================*/
+char *strIso88591toUtf8( const char *str, const char *pbrk )
+{
+  char *result = malloc( 2*strlen(str)+1 );
+  const unsigned char *orig = (const unsigned char*)str;
+  unsigned char *dest;
+
+  if( !result ) {
+    logerr( "strIso88591toUtf8: Out of memory." );
+    return NULL;
+  }
+
+  for( dest=(unsigned char *)result;
+       *orig && (!pbrk || orig<(unsigned char *)pbrk); orig++ ) {
+    if( *orig<128 )
+      *dest++ = *orig;
+    else {
+      *dest++ = (*orig>0xbf)? 0xc3 : 0xc2;
+      *dest++ = 0x80 + (*orig&0x3f);
+    }
+  }
+  *dest = 0;
+
+  DBGMSG( "strIso88591toUtf8: \"%.*s\" -> \"%s\"",
+           pbrk?pbrk-str:strlen(str), str, result );
+
+  return realloc( result, strlen(result)+1 );
+}
+
+
+
+/*========================================================================*\
    Log memory usage (by this code only)
 \*========================================================================*/
 #undef malloc

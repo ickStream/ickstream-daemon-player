@@ -76,6 +76,7 @@ Remarks         : -
 #include "ickMessage.h"
 #include "ickCloud.h"
 #include "ickScrobble.h"
+#include "metaIcy.h"
 #include "persist.h"
 #include "playlist.h"
 #include "feed.h"
@@ -142,6 +143,7 @@ static int        _playItem( PlaylistItem *item, AudioFormat *format );
 static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, AudioFormat *format, int timeout );
 static int        _audioFeedCallback( AudioFeed *feed, void* usrData );
 static int        _codecNewFormatCallback( CodecInstance *instance, void *userData );
+static void       _codecMetaCallback( CodecInstance *instance, CodecMetaType mType, json_t *jMeta, void *userData );
 
 
 /*=========================================================================*\
@@ -1214,6 +1216,32 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
   }
 
 /*------------------------------------------------------------------------*\
+    Interpret ICY header fields and add to item
+\*------------------------------------------------------------------------*/
+  if( audioFeedGetFlags(feed)&FeedIcy ) {
+    json_t *jIcyHdr;
+
+    // Parse HTTP header for ICY information
+    jIcyHdr = icyExtractHeaders( audioFeedGetResponseHeader(feed) );
+    if( !jIcyHdr ) {
+      logwarn( "_feedFromPlayListItem (%s,%s), Could not parse ICY headers.",
+               playlistItemGetText(item), playlistItemGetId(item) );
+      json_decref( jIcyHdr );
+    }
+
+    // Change and distribute meta data of current item
+    else {
+      json_t *jRawMeta = json_object_get( playlistItemGetJSON(item), "rawMeta" );
+      if( !jRawMeta ) {
+        jRawMeta = json_object();
+        json_object_set_new( playlistItemGetJSON(item), "rawMeta", jRawMeta );
+      }
+      json_object_set_new( jRawMeta, "icyHeader", jIcyHdr );
+      ickMessageNotifyPlayerState( NULL );
+    }
+  }
+
+/*------------------------------------------------------------------------*\
     Create a codec instance...
 \*------------------------------------------------------------------------*/
   DBGMSG( "_playItem (%s,\"%s\"): Init instance for codec %s (format %s).",
@@ -1229,6 +1257,7 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
   }
   codecSetIcyInterval( codecInst, audioFeedGetIcyInterval(feed) );
   codecSetFormatCallback( codecInst, &_codecNewFormatCallback, format );
+  codecSetMetaCallback( codecInst, &_codecMetaCallback, item );
   if( codecStartInstance(codecInst) ) {
     logerr( "_playItem (%s \"%s\"): Could not start codec.",
                 playlistItemGetType(item)==PlaylistItemStream?"Stream":"Track",
@@ -1610,6 +1639,36 @@ static int _codecNewFormatCallback( CodecInstance *instance, void *userData )
   // That's all
   return 0;
 }
+
+
+/*=========================================================================*\
+    Handle callbacks from codec meta data detection
+\*=========================================================================*/
+static void _codecMetaCallback( CodecInstance *instance, CodecMetaType mType, json_t *jMeta, void *userData )
+{
+  PlaylistItem *item     = userData;
+  json_t       *jRawMeta = json_object_get( playlistItemGetJSON(item), "rawMeta" );
+
+  DBGMSG( "_codecMetaCallback (%p,%s): type %d.",
+          instance, instance->codec->name, mType );
+
+  // Process ICY data
+  if( mType==CodecMetaICY ) {
+    if( !jRawMeta ) {
+      jRawMeta = json_object();
+      json_object_set_new( playlistItemGetJSON(item), "rawMeta", jRawMeta );
+    }
+    json_object_set( jRawMeta, "icyInband", jMeta );
+  }
+
+  // Nothing to do...
+  else
+    return;
+
+  // Inform controller
+  ickMessageNotifyPlayerState( NULL );
+}
+
 
 
 /*=========================================================================*\

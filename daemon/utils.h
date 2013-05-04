@@ -123,6 +123,8 @@ long        rndInteger( long min, long max );
 int         json_object_merge( json_t *target, json_t *source );
 const char *json_rpcerrstr( json_t *jError );
 long        getAndIncrementCounter( void );
+int         strcmpprefix( const char *str, const char *prefix );
+char       *strIso88591toUtf8( const char *str, const char *pbrk );
 
 void   logSetStreamLevel( int prio );
 void   logSetSyslogLevel( int prio );

@@ -99,7 +99,7 @@ typedef int    (*CodecVolume)( CodecInstance *instance, double volume, bool mute
 typedef int    (*CodecGetSeekTime)( CodecInstance *instance, double *pos );  
 
 typedef int    (*CodecFormatCallback)( CodecInstance *instance, void *userData );
-typedef int    (*CodecMetaCallback)( CodecInstance *instance, CodecMetaType mType, json_t *jMeta, void *userData );
+typedef void   (*CodecMetaCallback)( CodecInstance *instance, CodecMetaType mType, json_t *jMeta, void *userData );
 
 
 /*------------------------------------------------------------------------*\

@@ -669,7 +669,7 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
       if( feed->callback ) {
         int rc = feed->callback( feed, feed->usrData );
         if( rc ) {
-          logerr( "Feeder thread (%s): callback returned error % - terminating.",
+          logerr( "Feeder thread (%s): callback returned error %d - terminating.",
               feed->uri, rc );
           Sfree( newbuf );
           return errVal;
