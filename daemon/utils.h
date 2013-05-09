@@ -120,11 +120,14 @@ Remarks         : -
 \*========================================================================*/
 double      srvtime( void );
 long        rndInteger( long min, long max );
+json_t     *json_mkstring( const char *str, ssize_t len );
+int         json_getinteger( const json_t *jObj, long *value );
+int         json_getreal( const json_t *jObj, double *value );
 int         json_object_merge( json_t *target, json_t *source );
 const char *json_rpcerrstr( json_t *jError );
 long        getAndIncrementCounter( void );
 int         strcmpprefix( const char *str, const char *prefix );
-char       *strIso88591toUtf8( const char *str, const char *pbrk );
+char       *strIso88591toUtf8( const char *str, ssize_t len );
 
 void   logSetStreamLevel( int prio );
 void   logSetSyslogLevel( int prio );

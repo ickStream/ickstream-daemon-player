@@ -102,8 +102,9 @@ struct _audioFeed {
 \*=========================================================================*/
 static void *_feederThread( void *arg );
 static size_t _curlWriteCallback( void *contents, size_t size, size_t nmemb, void *userp );
+#ifdef ICK_TRACECURL
 static int    _curlTraceCallback( CURL *handle, curl_infotype type, char *data, size_t size, void *userp );
-
+#endif
 
 
 /*=========================================================================*\
@@ -746,6 +747,7 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
       cURL debug callback
       (stolen from http://curl.haxx.se/libcurl/c/debug.html)
 \*=========================================================================*/
+#ifdef ICK_TRACECURL
 static int _curlTraceCallback( CURL *handle, curl_infotype type, char *data, size_t size, void *userp )
 {
   const char *text;
@@ -787,6 +789,7 @@ static int _curlTraceCallback( CURL *handle, curl_infotype type, char *data, siz
   DBGMEM( text, data, size );
   return 0;
 }
+#endif
 
 /*=========================================================================*\
                                     END OF FILE

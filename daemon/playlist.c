@@ -1294,20 +1294,9 @@ double playlistItemGetDuration( PlaylistItem *pItem )
     Find and parse attribute
 \*------------------------------------------------------------------------*/
   jObj = playlistItemGetModelAttribute( pItem, "duration" );
-  if( jObj ) {
-    if( json_is_number(jObj) )
-      duration = json_number_value( jObj );
-    else if( json_is_string(jObj) ) {
-#ifdef ICK_DEBUG
-      logwarn( "playlistItemGetDuration (%s): Attribute \"duration\" is coded as string (%s).",
-               pItem->text, json_string_value(jObj) );
-#endif
-      duration = atof( json_string_value(jObj) );
-    }
-    else
-      logwarn( "playlistItemGetDuration (%s): Attribute \"duration\" is not a number nor a string.",
+  if( json_getreal(jObj,&duration) )
+      logwarn( "playlistItemGetDuration (%s): Cannot interpret attribute \"duration\".",
                pItem->text );
-  }
 
 /*------------------------------------------------------------------------*\
     That's it
@@ -1315,6 +1304,7 @@ double playlistItemGetDuration( PlaylistItem *pItem )
   DBGMSG( "playlistItemGetDuration (%p,%s): %lfs.", pItem, pItem->text, duration );
   return duration;
 }
+
 
 /*=========================================================================*\
        Get image URI

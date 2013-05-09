@@ -174,16 +174,8 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     OpenRequest *request = openRequestList;
     long id;
     
-    // Get integer Id from message
-    if( json_is_integer(rpcId) )
-      id = json_integer_value( rpcId );
-    else if( json_is_string(rpcId) ) {
-#ifdef ICK_DEBUG
-      logwarn( "ickMessage from %s returned id as string: %s", sourceUUID, message );
-#endif
-      id = atol( json_string_value(rpcId) );
-    }
-    else {
+    // Get integer id from message
+    if( json_getinteger(rpcId,&id) ) {
       logwarn( "ickMessage from %s returned id in unknown format: %s", 
                sourceUUID, message );
       json_decref( jRoot );

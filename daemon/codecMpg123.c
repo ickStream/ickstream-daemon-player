@@ -94,6 +94,10 @@ static int    _codecGetSeekTime( CodecInstance *instance, double *pos );
 
 static enum mpg123_enc_enum _getMpg123Format( const AudioFormat *format );
 static int _translateMpg123Format( int encoding, AudioFormat *format );
+static json_t *_getMetaId3v1( const mpg123_id3v1 *id3 );
+static json_t *_getMetaId3v2( const mpg123_id3v2 *id3 );
+static int     _getId3v2Frame( json_t *jMeta, const mpg123_text *frame );
+static json_t *_getId3v2Strings( const mpg123_string *string );
 
 
 /*=========================================================================*\
@@ -356,11 +360,31 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
 
     // Decode ID3 data
     if( metaVector&MPG123_NEW_ID3 ) {
-      mpg123_id3v1 *id3V1;
-      mpg123_id3v2 *id3V2;
-      mpg123_id3( mh, &id3V1, &id3V2 );
-      DBGMSG( "New ID3 data: "  );
-      // Fixme.
+      mpg123_id3v1 *id3v1 = NULL;
+      mpg123_id3v2 *id3v2 = NULL;
+      rc = mpg123_id3( mh, &id3v1, &id3v2 );
+      if( rc!=MPG123_OK )
+        logwarn( "_codecDeliverOutput: Could not extract id3v2 data (%s).", MPG123ERRSTR(rc,mh) );
+      if( id3v1 ) {
+        DBGMSG( "_codecDeliverOutput: New id3v1 data." );
+        json_t *jMeta = _getMetaId3v1( id3v1 );
+        if( !jMeta )
+          logwarn( "_codecDeliverOutput: Could not parse id3v1 data." );
+        else {
+          instance->metaCallback( instance, CodecMetaID3V1, jMeta, instance->metaCallbackUserData );
+          json_decref( jMeta );
+        }
+      }
+      if( id3v2 ) {
+        DBGMSG( "_codecDeliverOutput: New id3v2 data." );
+        json_t *jMeta = _getMetaId3v2( id3v2 );
+        if( !jMeta )
+          logwarn( "_codecDeliverOutput: Could not parse id3v2 data." );
+        else {
+          instance->metaCallback( instance, CodecMetaID3V2, jMeta, instance->metaCallbackUserData );
+          json_decref( jMeta );
+        }
+      }
     }
 
     // Decode ICY data
@@ -369,7 +393,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
       json_t *jMeta;
 
       mpg123_icy( mh, &icyString );
-      DBGMSG( "New ICY data: \"%s\"", icyString );
+      DBGMSG( "_codecDeliverOutput: New ICY data \"%s\".", icyString );
 
       jMeta = icyParseInband( icyString );
       if( !jMeta )
@@ -604,6 +628,234 @@ static int _translateMpg123Format( int encoding, AudioFormat *format )
 
   return 0;
 }
+
+
+/*=========================================================================*\
+    Get ID3V1 data in a JSON container
+\*=========================================================================*/
+static json_t *_getMetaId3v1( const mpg123_id3v1 *id3 )
+{
+  json_t *jMeta;
+
+/*------------------------------------------------------------------------*\
+    Try to allocate container
+\*------------------------------------------------------------------------*/
+  jMeta = json_object();
+  if( !jMeta ) {
+    logwarn( "_codecDeliverOutput: Out of memory." );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Fill with data: all fields are well known
+\*------------------------------------------------------------------------*/
+  json_object_set_new( jMeta, "title",   json_mkstring(id3->title,  sizeof(id3->title)) );
+  json_object_set_new( jMeta, "artist",  json_mkstring(id3->artist, sizeof(id3->artist)) );
+  json_object_set_new( jMeta, "album",   json_mkstring(id3->album,  sizeof(id3->album)) );
+  json_object_set_new( jMeta, "year",    json_mkstring(id3->year,   sizeof(id3->year)) );
+  json_object_set_new( jMeta, "comment", json_mkstring(id3->comment,sizeof(id3->comment)) );
+  json_object_set_new( jMeta, "genre",   json_integer(id3->genre) );
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  return jMeta;
+}
+
+
+/*=========================================================================*\
+    Get ID3V2 data in a JSON container
+\*=========================================================================*/
+static json_t *_getMetaId3v2( const mpg123_id3v2 *id3 )
+{
+  json_t *jMeta;
+  int     i;
+
+/*------------------------------------------------------------------------*\
+    Try to allocate container
+\*------------------------------------------------------------------------*/
+  jMeta = json_object();
+  if( !jMeta ) {
+    logwarn( "_codecDeliverOutput: Out of memory." );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Insert version
+\*------------------------------------------------------------------------*/
+  json_object_set_new( jMeta, "version", json_integer((int)(id3->version)) );
+
+/*------------------------------------------------------------------------*\
+    Transcript all texts
+\*------------------------------------------------------------------------*/
+  for( i=0; i<id3->texts; i++ ) {
+    if( _getId3v2Frame(jMeta,id3->text+i) ) {
+      char fname[5];
+      memcpy( fname, id3->text[i].id, 4 );
+      fname[4] = 0;
+      logerr( "_getMetaId3v2: Could not transcript frame \"%s\".", fname );
+    }
+  }
+
+/*------------------------------------------------------------------------*\
+    Transcript all comments
+\*------------------------------------------------------------------------*/
+  for( i=0; i<id3->comments; i++ ) {
+    if( _getId3v2Frame(jMeta,id3->comment_list+i) ) {
+      char fname[5];
+      memcpy( fname, id3->comment_list[i].id, 4 );
+      fname[4] = 0;
+      logerr( "_getMetaId3v2: Could not transcript frame \"%s\".", fname );
+    }
+  }
+
+/*------------------------------------------------------------------------*\
+    Transcript all extras
+\*------------------------------------------------------------------------*/
+  for( i=0; i<id3->extras; i++ ) {
+    if( _getId3v2Frame(jMeta,id3->extra+i) ) {
+      char fname[5];
+      memcpy( fname, id3->extra[i].id, 4 );
+      fname[4] = 0;
+      logerr( "_getMetaId3v2: Could not transcript frame \"%s\".", fname );
+    }
+  }
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  return jMeta;
+}
+
+
+/*=========================================================================*\
+    Translate ID3V2 strings to a JSON array
+      returns an array of json strings,
+              new lines and \0 in string will trigger separate elements
+              or NULL on error
+\*=========================================================================*/
+static int _getId3v2Frame( json_t *jMeta, const mpg123_text *frame )
+{
+  json_t *jElement;
+  char    fname[5];
+
+/*------------------------------------------------------------------------*\
+    Get frame name
+\*------------------------------------------------------------------------*/
+  memcpy( fname, frame->id, 4 );
+  fname[4] = 0;
+  DBGMSG( "_getId3v2Frame: \"%s\".", fname );
+
+/*------------------------------------------------------------------------*\
+    Crate json object for frame content
+\*------------------------------------------------------------------------*/
+  jElement = json_object();
+  if( !jElement ) {
+    logwarn( "_getId3v2Frame: Out of memory." );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    Transcript language element
+\*------------------------------------------------------------------------*/
+  if( frame->lang && *frame->lang ) {
+    char buf[4];
+    memcpy( buf, frame->lang, 3 );
+    buf[3] = 0;
+    json_object_set_new( jElement, "language", json_string(buf) );
+    DBGMSG( "_getId3v2Frame (%s): language \"%s\".", fname, buf );
+  }
+
+/*------------------------------------------------------------------------*\
+    Transcript description strings
+\*------------------------------------------------------------------------*/
+  if( frame->description.fill ) {
+    json_t *jObj = _getId3v2Strings( &frame->description );
+    if( jObj )
+      json_object_set_new( jElement, "description", jObj );
+    else
+      logwarn( "_getId3v2Frame: Could not get description for frame \"%s\".", fname );
+  }
+
+/*------------------------------------------------------------------------*\
+    Transcript text strings
+\*------------------------------------------------------------------------*/
+  if( frame->text.fill ) {
+    json_t *jObj = _getId3v2Strings( &frame->text );
+    if( jObj )
+      json_object_set_new( jElement, "text", jObj );
+    else
+      logwarn( "_getId3v2Frame: Could not get text for frame \"%s\".", fname );
+  }
+
+/*------------------------------------------------------------------------*\
+    Add frame to container
+\*------------------------------------------------------------------------*/
+  if( json_object_set_new(jMeta,fname,jElement) ) {
+    logwarn( "_getId3v2Frame: Could not add object for frame \"%s\".", fname );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  return 0;
+}
+
+
+/*=========================================================================*\
+    Translate ID3V2 strings to a JSON array
+      returns an array of json strings,
+              new lines and \0 in string will trigger separate elements
+              or NULL on error
+\*=========================================================================*/
+static json_t *_getId3v2Strings( const mpg123_string *string )
+{
+  json_t *jArray;
+  char   *str;
+  char   *ptr;
+
+/*------------------------------------------------------------------------*\
+    Try to allocate container
+\*------------------------------------------------------------------------*/
+  jArray = json_array();
+  if( !jArray ) {
+    logwarn( "_getId3v2Strings: Out of memory." );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Loop over all string components
+\*------------------------------------------------------------------------*/
+  for( str=ptr=string->p; ptr<=string->p+string->fill; ptr++ ) {
+
+    // End of component?
+    if( !*ptr || *ptr=='\n' || *ptr=='\r' ) {
+
+      // Create json string and append to array
+      json_t *jStr = json_mkstring( str, ptr-str );
+      if( jStr ) {
+        DBGMSG( "_getId3v2Strings: Adding string \"%.*s\".", ptr-str, str );
+        json_array_append_new( jArray, jStr);
+      }
+      else
+        logwarn( "_getId3v2Strings: Could not code string \"%.*s\".", ptr-str, str );
+
+      // Ignore line feeds
+      while( *ptr=='\n' || *ptr=='\r' )
+        ptr++;
+
+      // start of new string (if any)
+      str = ptr;
+    }
+  }
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  return jArray;
+}
+
 
 /*=========================================================================*\
                                     END OF FILE

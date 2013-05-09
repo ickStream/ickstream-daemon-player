@@ -311,6 +311,11 @@ for a in *.in `find daemon -name '*.in' -print`; do
 done
 
 # ----------------------------------------
+if test $MAKEDEPEND != 'true'; then
+  make depend
+fi
+
+echo '*************************************************************'
 echo
 echo "Makefiles are configured for your system environment now. Type"
 echo "  make"

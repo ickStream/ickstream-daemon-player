@@ -81,8 +81,8 @@ typedef enum {
 
 // Types of meta data
 typedef enum {
+  CodecMetaID3V1,
   CodecMetaID3V2,
-  CodecMetaID3V3,
   CodecMetaICY
 } CodecMetaType;
 

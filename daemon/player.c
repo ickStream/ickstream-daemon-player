@@ -1661,6 +1661,24 @@ static void _codecMetaCallback( CodecInstance *instance, CodecMetaType mType, js
     json_object_set( jRawMeta, "icyInband", jMeta );
   }
 
+  // Process ID3V1
+  else if( mType==CodecMetaID3V1 ) {
+    if( !jRawMeta ) {
+      jRawMeta = json_object();
+      json_object_set_new( playlistItemGetJSON(item), "rawMeta", jRawMeta );
+    }
+    json_object_set( jRawMeta, "id3v1", jMeta );
+  }
+
+  // Process ID3V2
+  else if( mType==CodecMetaID3V2 ) {
+    if( !jRawMeta ) {
+      jRawMeta = json_object();
+      json_object_set_new( playlistItemGetJSON(item), "rawMeta", jRawMeta );
+    }
+    json_object_set( jRawMeta, "id3v2", jMeta );
+  }
+
   // Nothing to do...
   else
     return;

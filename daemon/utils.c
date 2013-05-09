@@ -259,6 +259,140 @@ double srvtime( void )
 }
 
 
+/*=========================================================================*\
+    Convert a str to a JSON element.
+      If len>=0, at most len characters are used.
+      If str is not ASCII or UTF8, conversion is done assuming ISO-8859-1.
+\*=========================================================================*/
+json_t *json_mkstring( const char *str, ssize_t len )
+{
+  char   *cpy     = NULL;
+  json_t *jResult = NULL;
+
+  // Try to make JSON from literal
+  if( len<0 )
+    jResult = json_string( str );
+  else {
+    cpy = strndup( str, len );
+    if( !cpy ) {
+      logerr( "json_mkstring: Out of memory." );
+      return NULL;
+    }
+    jResult = json_string( cpy );
+  }
+
+  // No success with literal: try to convert to utf8
+  if( !jResult ) {
+    cpy = strIso88591toUtf8( str, len );
+    if( !cpy )
+      return NULL;
+    jResult = json_string ( cpy );
+  }
+
+  // Clean up and return
+  Sfree( cpy );
+  return jResult;
+}
+
+
+/*========================================================================*\
+    Get an integer value from a JSON object.
+      Convert string objects if necessary.
+      returns 0 on success, -1 on error (wrong type or malformed string).
+\*========================================================================*/
+int json_getinteger( const json_t *jObj, long *value )
+{
+  const char *str;
+  char       *eptr;
+
+/*------------------------------------------------------------------------*\
+    Check parameters
+\*------------------------------------------------------------------------*/
+  if( !jObj || !value )
+    return -1;
+
+/*------------------------------------------------------------------------*\
+    If object is of type integer, everything is fine
+\*------------------------------------------------------------------------*/
+  if( json_is_integer(jObj) ) {
+    *value = json_integer_value( jObj );
+    return 0;
+  }
+
+/*------------------------------------------------------------------------*\
+    If object is no string, bail out
+\*------------------------------------------------------------------------*/
+  if( !json_is_string(jObj) )
+    return -1;
+
+/*------------------------------------------------------------------------*\
+    Try to convert the string
+\*------------------------------------------------------------------------*/
+  str = json_string_value( jObj );
+  *value = strtol( str, &eptr, 10 );
+  while( *eptr && isspace(*eptr) )
+    eptr++;
+
+/*------------------------------------------------------------------------*\
+    Conversion successful without remnants?
+\*------------------------------------------------------------------------*/
+  return (eptr!=str && !*eptr) ? 0 : -1;
+}
+
+
+/*========================================================================*\
+    Get an real value from a JSON object.
+      Convert string or integer objects if necessary.
+      returns 0 on success, -1 on error (wrong type or malformed string).
+\*========================================================================*/
+int json_getreal( const json_t *jObj, double *value )
+{
+  const char *str;
+  char       *eptr;
+
+/*------------------------------------------------------------------------*\
+    Check parameters
+\*------------------------------------------------------------------------*/
+  if( !jObj || !value )
+    return -1;
+
+/*------------------------------------------------------------------------*\
+    If object is of type real, everything is fine
+\*------------------------------------------------------------------------*/
+  if( json_is_real(jObj) ) {
+    *value = json_real_value( jObj );
+    return 0;
+  }
+
+/*------------------------------------------------------------------------*\
+    If object is of type integer, use it
+\*------------------------------------------------------------------------*/
+  if( json_is_integer(jObj) ) {
+    *value = (double)json_integer_value( jObj );
+    return 0;
+  }
+
+/*------------------------------------------------------------------------*\
+    If object is no string, bail out
+\*------------------------------------------------------------------------*/
+  if( !json_is_string(jObj) )
+    return -1;
+
+/*------------------------------------------------------------------------*\
+    Try to convert the string
+\*------------------------------------------------------------------------*/
+  str = json_string_value( jObj );
+  *value = strtod( str, &eptr );
+  while( *eptr && isspace(*eptr) )
+    eptr++;
+
+/*------------------------------------------------------------------------*\
+    Conversion successful without remnants?
+\*------------------------------------------------------------------------*/
+  return (eptr!=str && !*eptr) ? 0 : -1;
+}
+
+
 /*========================================================================*\
    Recursively merge a JSON hierarchy into a target one
      Arrays are handled as basic types, i.e. not deeply merged
@@ -354,25 +488,29 @@ int strcmpprefix( const char *str, const char *prefix )
   return strncmp( str, prefix, strlen(prefix) );
 }
 
+
 /*========================================================================*\
    Convert a ISO-8859-1 coded ASCII string to UTF-8
+     If len>=0, at most len characters are read.
      Returns an allocated converted string (needs to be freed) or
              NULL on error.
      Note: this will not work with windows CP-1252 strings...
 \*========================================================================*/
-char *strIso88591toUtf8( const char *str, const char *pbrk )
+char *strIso88591toUtf8( const char *str, ssize_t len )
 {
   char *result = malloc( 2*strlen(str)+1 );
   const unsigned char *orig = (const unsigned char*)str;
   unsigned char *dest;
+
+  DBGMSG( "strIso88591toUtf8: \"%.*s\" (%ld bytes).",
+           len?len:strlen(str), str, len );
 
   if( !result ) {
     logerr( "strIso88591toUtf8: Out of memory." );
     return NULL;
   }
 
-  for( dest=(unsigned char *)result;
-       *orig && (!pbrk || orig<(unsigned char *)pbrk); orig++ ) {
+  for( dest=(unsigned char *)result; *orig && (len<0 || len--); orig++ ) {
     if( *orig<128 )
       *dest++ = *orig;
     else {
@@ -382,9 +520,7 @@ char *strIso88591toUtf8( const char *str, const char *pbrk )
   }
   *dest = 0;
 
-  DBGMSG( "strIso88591toUtf8: \"%.*s\" -> \"%s\"",
-           pbrk?pbrk-str:strlen(str), str, result );
-
+  DBGMSG( "strIso88591toUtf8: Result \"%s\".", result );
   return realloc( result, strlen(result)+1 );
 }
 
