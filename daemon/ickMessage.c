@@ -322,7 +322,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     playerSetRepeatMode( mode, true );
 
     // report current state
-    jResult = json_pack( "{si}",
+    jResult = json_pack( "{ss}",
                          "repeatMode", playerRepeatModeToStr(playerGetRepeatMode()) );
   }
 

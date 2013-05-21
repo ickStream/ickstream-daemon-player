@@ -233,17 +233,8 @@ int codecStartInstance( CodecInstance *instance )
     Check state
 \*------------------------------------------------------------------------*/
   if( instance->state!=CodecInitialized ) {
-    logerr( "codecStartInstance (%p,%s): Instance was already started.",
-        instance, instance->codec->name );
-    return -1;
-  }
-
-/*------------------------------------------------------------------------*\
-    Call Codec instance initializer
-\*------------------------------------------------------------------------*/
-  if( instance->codec->newInstance(instance) ) {
-    logerr( "codecStartInstance (%p,%s): Could not init instance.",
-            instance, instance->codec->name );
+    logerr( "codecStartInstance (%s): Instance was already started.",
+            instance->codec->name );
     return -1;
   }
 
@@ -254,8 +245,8 @@ int codecStartInstance( CodecInstance *instance )
   int rc = pthread_create( &instance->thread, NULL, _codecThread, instance );
   if( rc ) {
     instance->state = CodecTerminatedError;
-    logerr( "codecStartInstance (%p,%s): Unable to start thread (%s).",
-            instance, instance->codec->name, strerror(rc) );
+    logerr( "codecStartInstance (%s): Unable to start thread (%s).",
+            instance->codec->name, strerror(rc) );
     return -1;
   }
 
@@ -465,9 +456,19 @@ static void *_codecThread( void *arg )
   PTHREADSETNAME( codec->name );
 
 /*------------------------------------------------------------------------*\
-    Thread main loop  
+    Call Codec instance initializer
 \*------------------------------------------------------------------------*/
-  while( instance->state==CodecRunning ) {
+  if( instance->codec->newInstance(instance) ) {
+    logerr( "Codec thread (%s): Could not init instance.", codec->name );
+    instance->state = CodecTerminatedError;
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Thread main loop, used if deliverOutput is defined, else the codec
+    is blocking in the initializer till end of input
+\*------------------------------------------------------------------------*/
+  while( codec->deliverOutput && instance->state==CodecRunning ) {
     int    rc;
     size_t size = 0;
     

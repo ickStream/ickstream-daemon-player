@@ -583,7 +583,12 @@ static int _ifSetParameters( AudioIf *aif, AudioFormat *format )
     logerr( "Unable to set alsa pcm hw format to: %s", audioFormatStr(NULL,format) );
     return -1;
   }
-  aif->framesize = format->bitWidth/8*format->channels;
+
+  // Calculate frame size (sample size*channels)
+  int bytes = format->bitWidth/8;
+  if( format->bitWidth-bytes*8 )
+    bytes++;
+  aif->framesize = bytes*format->channels;
 
   // Sample rate 
   realRate = format->sampleRate;

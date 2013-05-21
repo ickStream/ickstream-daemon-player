@@ -224,14 +224,14 @@ static int _codecNewInstance( CodecInstance *instance )
   mpg123_handle *mh;
   int            rc = MPG123_OK;
   
-  DBGMSG( "mpg123 (%p): init instance", instance  );
+  DBGMSG( "mpg123 (%p): init instance.", instance );
 
 /*------------------------------------------------------------------------*\
-    Get libarary handle 
+    Get library handle
 \*------------------------------------------------------------------------*/
   mh = mpg123_new( NULL, &rc );   
   if( !mh ) {
-    logerr( "mpg123: could not init instance: %s", mpg123_plain_strerror(rc) );
+    logerr( "mpg123: could not init instance (%s).", mpg123_plain_strerror(rc) );
     return -1;
   }
   
@@ -239,10 +239,10 @@ static int _codecNewInstance( CodecInstance *instance )
     Set debug mode
 \*------------------------------------------------------------------------*/
 #ifdef ICK_DEBUG
-  DBGMSG( "mpg123 (%p): setting verbosity to %d", instance, logGetStreamLevel() );
+  DBGMSG( "mpg123 (%p): setting verbosity to %d.", instance, logGetStreamLevel() );
   rc = mpg123_param( mh, MPG123_VERBOSE, logGetStreamLevel(), 0);
   if( rc!=MPG123_OK ) {
-    logerr( "mpg123: could not set verbosity level (%d): %d, %s",
+    logerr( "mpg123: could not set verbosity level to %d (%d, %s).",
             logGetStreamLevel(), rc, MPG123ERRSTR(rc,mh) );
     mpg123_delete( mh );
     return -1;
@@ -253,7 +253,7 @@ static int _codecNewInstance( CodecInstance *instance )
     Icy mode?
 \*------------------------------------------------------------------------*/
   if( instance->icyInterval ) {
-    DBGMSG( "mpg123 (%p): icy enabled (interval %ld)",
+    DBGMSG( "mpg123 (%p): icy enabled with interval %ld.",
             instance, instance->icyInterval );
     if( !mpg123_feature(MPG123_FEATURE_PARSE_ICY) ) {
       logerr( "mpg123: icy not supported by this library version." );
@@ -262,7 +262,7 @@ static int _codecNewInstance( CodecInstance *instance )
     }
     rc = mpg123_param( mh, MPG123_ICY_INTERVAL, instance->icyInterval, 0);
     if( rc!=MPG123_OK ) {
-      logerr( "mpg123: could not set icy interval (%ld): %d, %s",
+      logerr( "mpg123: could not set icy interval to %ld (%d, %s).",
               instance->icyInterval, rc, MPG123ERRSTR(rc,mh) );
       mpg123_delete( mh );
       return -1;
@@ -276,7 +276,7 @@ static int _codecNewInstance( CodecInstance *instance )
 \*------------------------------------------------------------------------*/
   rc = mpg123_open_fd( mh, instance->fdIn );
   if( rc!=MPG123_OK ) {
-    logerr( "mpg123: could not open file handle %d: %d, %s",
+    logerr( "mpg123: could not open file handle %d (%d, %s).",
             instance->fdIn, rc, MPG123ERRSTR(rc,mh) );
     mpg123_delete( mh );
     return -1;
@@ -295,7 +295,7 @@ static int _codecNewInstance( CodecInstance *instance )
 \*=========================================================================*/
 static int _codecDeleteInstance( CodecInstance *instance )
 {
-  mpg123_handle *mh = (mpg123_handle *)instance->instanceData;    
+  mpg123_handle *mh = (mpg123_handle *)instance->instanceData;
   int            rc = 0;
   
 /*------------------------------------------------------------------------*\
@@ -309,7 +309,7 @@ static int _codecDeleteInstance( CodecInstance *instance )
     Close data source (reading pipe end)
 \*------------------------------------------------------------------------*/
   if( close(instance->fdIn)<0 ) {
-    logerr( "mpg123: could not close file handle %d: %s", instance->fdIn,
+    logerr( "mpg123: could not close feeder file handle %d (%s).", instance->fdIn,
             strerror(errno) );
     rc = -1;
   }
@@ -328,7 +328,7 @@ static int _codecDeleteInstance( CodecInstance *instance )
 
 /*=========================================================================*\
       Write data to output 
-        return  0  on succes
+        return  0  on success
                -1 on error
                 1  when end of track is reached
 \*=========================================================================*/
@@ -350,7 +350,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
   metaVector = mpg123_meta_check( mh );
   pthread_mutex_unlock( &instance->mutex );
   
-  DBGMSG( "mpg123 (%p): delivered data (%ld/%ld bytes), meta=%d: %s",
+  DBGMSG( "mpg123 (%p): delivered data (%ld/%ld bytes), meta=%d (%s).",
           instance, (long)*realSize, (long)maxLength, metaVector, MPG123ERRSTR(rc,mh) );
 
 /*------------------------------------------------------------------------*\
@@ -472,7 +472,7 @@ static int _codecSetVolume( CodecInstance *instance, double volume, bool muted )
   rc = mpg123_volume( mh, muted?0.0:volume );
   pthread_mutex_unlock( &instance->mutex );
   if( rc )
-    logerr( "mpg123: could not set volume to %f %s: %s", 
+    logerr( "mpg123: could not set volume to %f %s (%s).",
              volume, muted?"(muted)":"(unmuted)", MPG123ERRSTR(rc,mh) );
 
 /*------------------------------------------------------------------------*\
@@ -642,7 +642,7 @@ static json_t *_getMetaId3v1( const mpg123_id3v1 *id3 )
 \*------------------------------------------------------------------------*/
   jMeta = json_object();
   if( !jMeta ) {
-    logwarn( "_codecDeliverOutput: Out of memory." );
+    logwarn( "_getMetaId3v1: Out of memory." );
     return NULL;
   }
 
@@ -676,7 +676,7 @@ static json_t *_getMetaId3v2( const mpg123_id3v2 *id3 )
 \*------------------------------------------------------------------------*/
   jMeta = json_object();
   if( !jMeta ) {
-    logwarn( "_codecDeliverOutput: Out of memory." );
+    logwarn( "_getMetaId3v2: Out of memory." );
     return NULL;
   }
 

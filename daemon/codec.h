@@ -134,8 +134,8 @@ struct _codec {
   CodecCheckType       checkType;
   CodecInstanceNew     newInstance; 
   CodecInstanceDelete  deleteInstance;
-  CodecOutput          deliverOutput;
-  CodecVolume          setVolume;
+  CodecOutput          deliverOutput;       // optional
+  CodecVolume          setVolume;           // optional
   CodecGetSeekTime     getSeekTime;
 };
 

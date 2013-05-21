@@ -227,6 +227,17 @@ else
 fi
 
 # ----------------------------------------
+echo -n 'Check for flac                  : '
+if echo "#include <FLAC/stream_decoder.h>" | gcc -o /dev/null -E -x c - 2>/dev/null; then
+  CFLAGS="$CFLAGS -DICK_FLAC"
+  EXTRASRCS="$EXTRASRCS codecFlac.c"
+  EXTRALIBS="$EXTRALIBS -lFLAC"
+  echo "found"
+else
+  echo "not found"
+fi
+
+# ----------------------------------------
 echo -n 'using HMI module                : '
 if [ -z "$HMISRC" ]; then
   echo "None"
