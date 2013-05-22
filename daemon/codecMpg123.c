@@ -357,6 +357,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
     New meta data?
 \*------------------------------------------------------------------------*/
   if( instance->metaCallback && (metaVector&(MPG123_NEW_ID3|MPG123_NEW_ICY)) ) {
+    int rc; 
 
     // Decode ID3 data
     if( metaVector&MPG123_NEW_ID3 ) {
