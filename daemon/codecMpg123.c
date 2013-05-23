@@ -357,15 +357,15 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
     New meta data?
 \*------------------------------------------------------------------------*/
   if( instance->metaCallback && (metaVector&(MPG123_NEW_ID3|MPG123_NEW_ICY)) ) {
-    int rc; 
 
     // Decode ID3 data
     if( metaVector&MPG123_NEW_ID3 ) {
       mpg123_id3v1 *id3v1 = NULL;
       mpg123_id3v2 *id3v2 = NULL;
-      rc = mpg123_id3( mh, &id3v1, &id3v2 );
-      if( rc!=MPG123_OK )
+
+      if( mpg123_id3(mh,&id3v1,&id3v2)!=MPG123_OK )
         logwarn( "_codecDeliverOutput: Could not extract id3v2 data (%s).", MPG123ERRSTR(rc,mh) );
+
       if( id3v1 ) {
         DBGMSG( "_codecDeliverOutput: New id3v1 data." );
         json_t *jMeta = _getMetaId3v1( id3v1 );
@@ -376,6 +376,7 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
           json_decref( jMeta );
         }
       }
+
       if( id3v2 ) {
         DBGMSG( "_codecDeliverOutput: New id3v2 data." );
         json_t *jMeta = _getMetaId3v2( id3v2 );

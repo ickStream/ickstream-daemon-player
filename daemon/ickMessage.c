@@ -115,9 +115,11 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
   json_error_t  error;
   const char   *method;
   json_t       *rpcId;
-  int           rpcErrCode      = RPC_NO_ERROR;
-  char         *rpcErrMessage   = "Generic Error";
-  bool          playlistChanged = 0;
+  int           rpcErrCode         = RPC_NO_ERROR;
+  char         *rpcErrMessage      = "Generic Error";
+  bool          playlistChanged    = false;
+  bool          playerStateChanged = false;
+
 
   // DBGMSG( "ickMessage from %s: %ld bytes", szDeviceId, (long)messageLength );
 
@@ -584,6 +586,9 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     // Playback queue has changed
     playlistChanged = true;
 
+    // Playlist cursor might have changed
+    playerStateChanged = true;
+
     // report result 
     jResult = json_pack( "{sbsi}",
                          "result", result,
@@ -629,6 +634,9 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
 
     // Playback queue has changed
     playlistChanged = true;
+
+    // Playlist cursor might have changed
+    playerStateChanged = true;
 
     // report result 
     jResult = json_pack( "{sbsi}",
@@ -680,7 +688,10 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
 
     // Playback queue has changed
     playlistChanged = true;
-      
+
+    // Playlist cursor might have changed
+    playerStateChanged = true;
+
     // report result 
     jResult = json_pack( "{sbsi}",
                          "result", result,
@@ -697,7 +708,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     int            result  = 1;
 
     playlistLock( plst );
-    int            rangeStart = 0;
+    int            rangeStart = playlistGetCursorPos( plst );
     int            rangeEnd   = playlistGetLength( plst )-1;
 
     // Get explicit positions
@@ -717,6 +728,9 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
 
       // Playback queue has changed
       playlistChanged = true;
+
+      // Playlist cursor might have changed
+      playerStateChanged = true;
     }
 
     // report result
@@ -899,12 +913,15 @@ rpcError:
   } 
 
 /*------------------------------------------------------------------------*\
-   Broadcast changes in playlist 
+   Broadcast changes in playlist and/or player state
 \*------------------------------------------------------------------------*/
   DBGMSG( "ickMessage from %s: need to update playlist: %s", 
             sourceUUID, playlistChanged?"Yes":"No" );
   if( playlistChanged )
     ickMessageNotifyPlaylist( NULL );
+  if( playerStateChanged )
+    ickMessageNotifyPlayerState( NULL );
+
 
 /*------------------------------------------------------------------------*\
     Clean up: Free JSON message object and check for timedout requests
