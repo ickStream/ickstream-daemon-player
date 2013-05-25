@@ -848,7 +848,6 @@ int playlistMoveItems( Playlist *plst, int pos, json_t *jItems )
 /*=========================================================================*\
        Shuffle playlist
          Shuffles range between startPos and endPos (included)
-         If cursor is in that range, it will be set to startPos
          If cursor is in that range and moveCursorToStart is true,
            the cursor item will be moved to startPos
          returns pointer to queue item at startpos or NULL on error
@@ -907,14 +906,9 @@ PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool mo
   }
 
 /*------------------------------------------------------------------------*\
-    Set cursor to start of range
+    Invalidate cursor position and return item under cursor
 \*------------------------------------------------------------------------*/
-  plst->_cursorItem = playlistGetItem( plst, startPos );
   plst->_cursorPos  = -1;
-
-/*------------------------------------------------------------------------*\
-    Return item under cursor
-\*------------------------------------------------------------------------*/
   return plst->_cursorItem;
 }
 
