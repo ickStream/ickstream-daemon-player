@@ -238,6 +238,21 @@ else
 fi
 
 # ----------------------------------------
+if [ "$HMISRC" = "hmiDirectFB.c" ]; then
+  echo -n 'Check for directFB              : '
+  DFBFLAGS=`directfb-config --cflags 2>/dev/null`
+  if [ -n "$DFBFLAGS" ] && echo "#include <directfb.h>" | gcc -o /dev/null $DFBFLAGS -E -x c - 2>/dev/null; then
+    echo "found `directfb-config --version`"
+    CFLAGS="$CFLAGS -DICK_DIRECTFB $DFBFLAGS"
+    #don't need -L part:     EXTRALIBS="$EXTRALIBS `directfb-config --libs`"
+    EXTRALIBS="-ldirectfb -lfusion -ldirect -lfreetype $EXTRALIBS"
+  else
+    echo "please install libdirectfb and retry..."
+    exit 1
+  fi
+fi
+
+# ----------------------------------------
 echo -n 'using HMI module                : '
 if [ -z "$HMISRC" ]; then
   echo "None"

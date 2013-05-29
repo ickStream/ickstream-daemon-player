@@ -85,11 +85,21 @@ static PlaylistItem *currentItem;
 
 
 /*=========================================================================*\
-      Init HMI module
+      Init HMI module with command line arguments
 \*=========================================================================*/
-int  hmiInit( void )
+int  hmiInit( int *argc, char *(*argv[]) )
 {
-  DBGMSG( "Initializing HMI module..." );
+  DBGMSG( "Init HMI..." );
+  return 0;
+}
+
+
+/*=========================================================================*\
+      Create HMI module
+\*=========================================================================*/
+int  hmiCreate( void )
+{
+  DBGMSG( "Creating HMI..." );
   return 0;
 }
 

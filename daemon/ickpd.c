@@ -142,7 +142,7 @@ int main( int argc, char *argv[] )
 /*-------------------------------------------------------------------------*\
 	Parse the arguments
 \*-------------------------------------------------------------------------*/
-  if( getargs(argc,argv) ) {
+  if( hmiInit(&argc,&argv) || getargs(argc,argv) ) {
     usage( argv[0], 1 );
     return 1;
   }
@@ -251,7 +251,7 @@ int main( int argc, char *argv[] )
     return -1;
       
 /*------------------------------------------------------------------------*\
-    Interface changed or unavailabale ?
+    Interface changed or unavailable ?
 \*------------------------------------------------------------------------*/
   if( if_name )
     playerSetInterface( if_name );
@@ -265,7 +265,7 @@ int main( int argc, char *argv[] )
   loginfo( "Using interface: \"%s\"", if_name );
 
 /*------------------------------------------------------------------------*\
-    Uuid changed or unavilabale ?
+    Uuid changed or unavailable ?
 \*------------------------------------------------------------------------*/  
 #ifdef ICK_DEBUG
   if( player_uuid )                  // command line or config file argument
@@ -336,7 +336,7 @@ int main( int argc, char *argv[] )
 /*------------------------------------------------------------------------*\
     Init HMI
 \*------------------------------------------------------------------------*/
-  if( hmiInit() )
+  if( hmiCreate() )
     return -1;
 
 /*------------------------------------------------------------------------*\
