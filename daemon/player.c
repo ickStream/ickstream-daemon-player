@@ -198,7 +198,7 @@ int playerInit( void )
 /*------------------------------------------------------------------------*\
     Inform HMI and set timestamp 
 \*------------------------------------------------------------------------*/
-  hmiNewItem( playerQueue, playlistGetCursorItem(playerQueue) );
+  hmiNewQueue( playerQueue );
   hmiNewState( playerState );
   hmiNewVolume( playerVolume, playerMuted );
   hmiNewRepeatMode( playerRepeatMode );
@@ -1021,6 +1021,16 @@ int playerSetState( PlayerState state, bool broadcast )
 \*------------------------------------------------------------------------*/
     case PlayerStateStop:
 
+      // Inform HMI in any case
+      hmiNewPosition( 0.0 );
+      /*
+      playlistItemLock( newTrack );
+      newTrackId = playlistItemGetId( newTrack );
+      playlistItemUnlock( newTrack );
+      if( newTrack && (!currentTrackId || strcmp(newTrackId,currentTrackId)) )
+      */
+      hmiNewQueue( playerQueue );
+
       // not yet initialized?
       if( !audioIf ) {
         loginfo( "playerSetState (stop): Audio device not yet initialized." );
@@ -1034,13 +1044,6 @@ int playerSetState( PlayerState state, bool broadcast )
         pthread_join( playbackThread, NULL );
       playerState = PlayerStateStop;
 
-      // Inform HMI
-      hmiNewPosition( 0.0 );
-      playlistItemLock( newTrack );
-      newTrackId = playlistItemGetId( newTrack );
-      playlistItemUnlock( newTrack );
-      if( newTrack && (!currentTrackId || strcmp(newTrackId,currentTrackId)) )
-        hmiNewItem( playerQueue, newTrack );
 
       break; 
 
@@ -1126,7 +1129,8 @@ static void *_playbackThread( void *arg )
     // repeat at end of list with shuffling
     else if( playerRepeatMode==PlayerRepeatShuffle ) {
       playlistLock( playerQueue );
-      item = playlistShuffle( playerQueue, 0, playlistGetLength(playerQueue)-1, false );
+      playlistShuffle( playerQueue, 0, playlistGetLength(playerQueue)-1, false );
+      item = playlistSetCursorPos( playerQueue, 0 );
       playlistUnlock( playerQueue );
       ickMessageNotifyPlaylist( NULL );
      }
@@ -1195,7 +1199,7 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
 /*------------------------------------------------------------------------*\
    Inform HMI
 \*------------------------------------------------------------------------*/
-  hmiNewItem( playerQueue, item );
+  hmiNewQueue( playerQueue );
   hmiNewPosition( seekPos );
 
 /*------------------------------------------------------------------------*\

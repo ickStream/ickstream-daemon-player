@@ -361,7 +361,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
 
     // Set and broadcast player mode to account for skipped tracks
     playerSetState( playerGetState(), true );
-       
+
     // report current state
     playlistLock( plst );
     jResult = json_pack( "{si}",
@@ -708,7 +708,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     int            result  = 1;
 
     playlistLock( plst );
-    int            rangeStart = playlistGetCursorPos( plst );
+    int            rangeStart = 0*playlistGetCursorPos( plst );
     int            rangeEnd   = playlistGetLength( plst )-1;
 
     // Get explicit positions
@@ -917,8 +917,10 @@ rpcError:
 \*------------------------------------------------------------------------*/
   DBGMSG( "ickMessage from %s: need to update playlist: %s", 
             sourceUUID, playlistChanged?"Yes":"No" );
-  if( playlistChanged )
+  if( playlistChanged ) {
     ickMessageNotifyPlaylist( NULL );
+    hmiNewQueue( playerGetQueue() );
+  }
   if( playerStateChanged )
     ickMessageNotifyPlayerState( NULL );
 

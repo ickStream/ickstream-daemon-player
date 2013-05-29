@@ -329,12 +329,13 @@ void hmiNewConfig( void )
 
 
 /*=========================================================================*\
-      Queue cursor is pointing to a new item
-        item might be NULL, if no current track is defined...
+      Queue changed or cursor is pointing to a new item
 \*=========================================================================*/
-void hmiNewItem( Playlist *plst, PlaylistItem *item )
+void hmiNewQueue( Playlist *plst )
 {
-  DBGMSG( "hmiNewItem: %p (%s).", item, item?playlistItemGetText(item):"<None>" );
+  PlaylistItem *item = playlistGetCursorItem( plst );
+
+  DBGMSG( "hmiNewQueue: %p (%s).", item, item?playlistItemGetText(item):"<None>" );
   currentItem = item;
 
   pthread_mutex_lock( &mutex );

@@ -77,7 +77,7 @@ int  hmiInit( int *argc, char *(*argv[]) );
 int  hmiCreate( void );
 void hmiShutdown( void );
 void hmiNewConfig( void );
-void hmiNewItem( Playlist *plst, PlaylistItem *item );
+void hmiNewQueue( Playlist *plst );
 void hmiNewState( PlayerState state );
 void hmiNewRepeatMode( PlayerRepeatMode mode );
 void hmiNewVolume( double volume, bool muted );
@@ -93,7 +93,7 @@ void hmiNewPosition( double seekPos );
 #define hmiCreate()         0
 #define hmiShutdown()       {}
 #define hmiNewConfig()      {}
-#define hmiNewItem(a,b)     {}
+#define hmiNewQueue(a)      {}
 #define hmiNewState(a)      {}
 #define hmiNewRepeatMode(a) {}
 #define hmiNewVolume(a,b)   {}

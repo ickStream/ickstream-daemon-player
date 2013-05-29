@@ -255,17 +255,17 @@ void hmiNewConfig( void )
 
 
 /*=========================================================================*\
-      Queue cursor is pointing to a new item
-        item might be NULL, if no current track is defined...
+      Queue changed or cursor is pointing to a new item
 \*=========================================================================*/
-void hmiNewItem( Playlist *plst, PlaylistItem *item )
+void hmiNewQueue( Playlist *plst )
 {
   int i;
   int width  = dfb_width / 2;
   int height = dfb_height / DFB_ITEMS;
   int border = dfb_height/100;
+  PlaylistItem *item = playlistGetCursorItem( plst );
 
-  DBGMSG( "hmiNewItem: %p (%s).", item, item?playlistItemGetText(item):"<None>" );
+  DBGMSG( "hmiNewQueue: %p (%s).", item, item?playlistItemGetText(item):"<None>" );
   currentItem = item;
 
 /*------------------------------------------------------------------------*\
@@ -281,18 +281,14 @@ void hmiNewItem( Playlist *plst, PlaylistItem *item )
 \*------------------------------------------------------------------------*/
   playlistLock( plst );
   for( i=0; i<DFB_ITEMS; i++ ) {
-    PlaylistItem *theItem;
-    int           pos = playlistGetCursorPos(plst)-DFB_ITEMS/2 + i;
+    int           pos     = playlistGetCursorPos(plst)-DFB_ITEMS/2 + i;
+    PlaylistItem *theItem = playlistGetItem( plst, pos );
 
-    // Out of bounds?
-    theItem = playlistGetItem( plst, pos );
-    if( !theItem )
-      continue;
-
-    // Draw item
-    playlistItemLock( theItem );
+    if( theItem )
+      playlistItemLock( theItem );
     dfb_items[i] = dfb_item( theItem, pos, width-border, height-border, theItem==item );
-    playlistItemUnlock( theItem );
+    if( theItem )
+      playlistItemUnlock( theItem );
   }
   playlistUnlock( plst );
 
@@ -423,8 +419,8 @@ static IDirectFBSurface *dfb_item( PlaylistItem *item, int pos, int width, int h
   int                    txt_x  = height + border;
   int                    w;
 
-  DBGMSG( "dfb_item: %p (%d - %s) %s",
-          item, pos, playlistItemGetText(item), isCursor?"<<<":"" );
+  DBGMSG( "dfb_item: %p (%d - %s) %s", item, pos,
+          item?playlistItemGetText(item):"<None>", isCursor?"<<<":"" );
 
 /*------------------------------------------------------------------------*\
     Create new surface
@@ -447,9 +443,17 @@ static IDirectFBSurface *dfb_item( PlaylistItem *item, int pos, int width, int h
 \*------------------------------------------------------------------------*/
   if( isCursor )
     surf->SetColor( surf, 0x80, 0x00, 0x0, 0x80 );
-  else
+  else if( item )
     surf->SetColor( surf, 0x0, 0x0, 0x80, 0x80 );
+  else
+    surf->SetColor( surf, 0x10, 0x10, 0x10, 0x80 );
   surf->FillRectangle( surf, 0, 0, width, height );
+
+/*------------------------------------------------------------------------*\
+    No item data?
+\*------------------------------------------------------------------------*/
+  if( !item )
+    return surf;
 
 /*------------------------------------------------------------------------*\
     Get and show Queue Position and title in one line
@@ -459,7 +463,7 @@ static IDirectFBSurface *dfb_item( PlaylistItem *item, int pos, int width, int h
   sprintf( buffer, "%d.", pos+1 );
   font1->GetStringWidth( font1, buffer, -1, &w );
   txt_x += w;
-  surf->SetColor( surf, 0x80, 0x80, 0x80, 0xFF );
+  surf->SetColor( surf, 0xFF, 0xFF, 0xFF, 0xFF );
   surf->DrawString( surf, buffer, -1, txt_x, txt_y, DSTF_RIGHT );
   txt_x += border;
 
@@ -469,7 +473,7 @@ static IDirectFBSurface *dfb_item( PlaylistItem *item, int pos, int width, int h
   else
     txt = playlistItemGetText( item );
   surf->SetFont( surf, font2 );
-  surf->SetColor( surf, 0x80, 0x80, 0x80, 0xFF );
+  surf->SetColor( surf, 0xFF, 0xFF, 0xFF, 0xFF );
   surf->DrawString( surf, txt, -1, txt_x, txt_y, DSTF_LEFT );
 
 /*------------------------------------------------------------------------*\
@@ -482,7 +486,7 @@ static IDirectFBSurface *dfb_item( PlaylistItem *item, int pos, int width, int h
       txt = json_string_value( jObj );
       surf->SetFont( surf, font1 );
       txt_y += font1_height;
-      surf->SetColor( surf, 0x80, 0x80, 0x80, 0xFF );
+      surf->SetColor( surf, 0xFF, 0xFF, 0xFF, 0xFF );
       surf->DrawString( surf, txt, -1, txt_x, txt_y, DSTF_LEFT );
     }
   }
