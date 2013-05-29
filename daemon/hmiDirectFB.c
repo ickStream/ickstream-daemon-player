@@ -134,6 +134,9 @@ int hmiCreate( void )
     Get main interface
 \*------------------------------------------------------------------------*/
   DirectFBSetOption( "no-cursor", NULL );
+  DirectFBSetOption ("bg-none", NULL);
+  DirectFBSetOption ("no-init-layer", NULL);
+
   drc = DirectFBCreate( &dfb );
   if( drc!=DFB_OK ) {
     logerr( "hmiInit: could not create direct fb (%s).", DirectFBErrorString(drc) );
@@ -426,9 +429,10 @@ static IDirectFBSurface *dfb_item( PlaylistItem *item, int pos, int width, int h
 /*------------------------------------------------------------------------*\
     Create new surface
 \*------------------------------------------------------------------------*/
-  sdsc.flags = DSDESC_CAPS | DSDESC_PIXELFORMAT | DSDESC_WIDTH | DSDESC_HEIGHT;
-  sdsc.caps        = DSCAPS_PREMULTIPLIED;
-  sdsc.pixelformat = DSPF_ARGB;
+  //sdsc.flags = DSDESC_CAPS | DSDESC_PIXELFORMAT | DSDESC_WIDTH | DSDESC_HEIGHT;
+  //sdsc.caps        = DSCAPS_PREMULTIPLIED;
+  sdsc.flags = DSDESC_PIXELFORMAT | DSDESC_WIDTH | DSDESC_HEIGHT;
+  dfb_primary->GetPixelFormat( dfb_primary, &sdsc.pixelformat );
   sdsc.width       = width;
   sdsc.height      = height;
 
