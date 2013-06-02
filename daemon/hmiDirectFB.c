@@ -127,6 +127,7 @@ int hmiCreate( void )
 {
   IDirectFB            *dfb;
   DfbtWidget           *screen;
+  DfbtWidget           *wLogo;
   int                   width, height;
   DFBResult             drc;
   DFBFontDescription    fdsc;
@@ -182,6 +183,15 @@ int hmiCreate( void )
   artRect.y = border;
 
 /*------------------------------------------------------------------------*\
+    Load logo
+\*------------------------------------------------------------------------*/
+ wLogo = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
+ if( wLogo ) {
+   dfbtContainerAdd( screen, wLogo, artRect.x, artRect.y, DfbtAlignTopLeft );
+   dfbtRelease( wLogo );
+ }
+
+/*------------------------------------------------------------------------*\
     Create and add container for playlist elements
 \*------------------------------------------------------------------------*/
   wPlaylist = dfbtContainer( width/2, height );
@@ -190,6 +200,7 @@ int hmiCreate( void )
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/
+  dfbtRedrawScreen( false );
   return 0;
 }
 
@@ -238,6 +249,8 @@ void hmiNewConfig( void )
     printf( "HMI Service          : \"%s\" (%s)\n", ickServiceGetName(service),
             ickServiceGetType(service)  );
 
+  // Trigger redisplay of playlist since images might have become available
+  hmiNewQueue( playerGetQueue() );
 }
 
 
@@ -394,6 +407,7 @@ static DfbtWidget *wPlaylistItem( PlaylistItem *item, int pos, int width, int he
 {
   DfbtWidget            *container;
   DfbtWidget            *wNum, *wTxt;
+  DfbtWidget            *wImage;
   json_t                *jObj;
   const char            *txt;
   char                   buffer[64];
@@ -495,7 +509,17 @@ static DfbtWidget *wPlaylistItem( PlaylistItem *item, int pos, int width, int he
 /*------------------------------------------------------------------------*\
     Show Artwork
 \*------------------------------------------------------------------------*/
-
+  wImage = NULL;
+  jObj = playlistItemGetAttribute( item, "image" );
+  if( jObj && json_is_string(jObj) ) {
+    char *uri = ickServiceResolveURI( json_string_value(jObj), "content" );
+    if( uri )
+      wImage = dfbtImage( height-2*border, height-2*border, uri, false );
+  }
+ if( !wImage )
+    wImage = dfbtImage( height-2*border, height-2*border, "icklogo.png", true );
+  dfbtContainerAdd( container, wImage, border, border, DfbtAlignTopLeft );
+  dfbtRelease( wImage );
 
 /*------------------------------------------------------------------------*\
     That's all

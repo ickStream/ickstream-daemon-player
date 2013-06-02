@@ -92,7 +92,7 @@ typedef enum {
 
 // State of images
 typedef enum {
-  DfbtImageInitialzed,
+  DfbtImageInitialized,
   DfbtImageConnecting,
   DfbtImageLoading,
   DfbtImageComplete,
@@ -134,23 +134,10 @@ int               dfbtContainerRemove( DfbtWidget *container, DfbtWidget *widget
 DfbtWidget       *dfbtText( const char *text, IDirectFBFont *font, DFBColor *color );
 IDirectFBFont    *dfbtTextGetFont( DfbtWidget *widget );
 
-
-
-
-/*DfbWidget        *dfbtWidget( DFBRectangle size );
-DfbWidget        *dfbImageFromFile( DFBRectangle size, const char *fname );
-DfbWidget        *dfbImageFromURI( DFBRectangle size, const char *uri );
-DfbWidget        *dfbText( DFBRectangle size, const char *txt, DFBColor *color, DFBTextFlags flags );
-void       dfbRelease( DfbImage *dfbi );
-void       dfbLock( DfbImage *dfbi );
-void       dfbUnlock( DfbImage *dfbi );
-int        dfbLockWaitForComplete( DfbImage *dfbi, int timeout );
-
-const char             *dfbImageGetId( DfbImage *dfbi );
-const char             *dfbImageGetName( DfbImage *dfbi );
-DfbImageState           dfbImageGetState( DfbImage *dfbi );
-IDirectFBImageProvider *dfbImageGetProvider( const DfbImage *dfbi );
-*/
+DfbtWidget       *dfbtImage( int width, int height, const char *uri, bool isFile );
+const char       *dfbtImageGetUri( DfbtWidget *widget );
+DfbtImageState    dfbtImageGetState( DfbtWidget *widget );
+int               dfbtImageWaitForComplete( DfbtWidget *widget, int timeout );
 
 #endif  /* __DFBTTOOLS_H */
 

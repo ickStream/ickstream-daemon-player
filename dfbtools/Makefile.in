@@ -33,7 +33,7 @@ LIBNAME         = libdfbtools
 EXECUTABLE      = dfbtest
 
 # Source files for library
-LIBSRC          = dfbTools.c dfbContainer.c dfbText.c
+LIBSRC          = dfbTools.c dfbContainer.c dfbText.c dfbImage.c
 LIBOBJ          = $(LIBSRC:.c=.o)
 
 # Source files for test

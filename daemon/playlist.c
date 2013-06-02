@@ -1252,6 +1252,20 @@ json_t *playlistItemGetStreamingRefs( PlaylistItem *pItem )
 
 
 /*=========================================================================*\
+       Get an attribute
+         return NULL if not available
+\*=========================================================================*/
+json_t *playlistItemGetAttribute( PlaylistItem *pItem, const char *attribute )
+{
+  DBGMSG( "playlistItemGetAttribute (%p,%s): \"%s\".",
+           pItem, pItem->text, attribute );
+
+  // Get an return attribute
+  return json_object_get( pItem->jItem, attribute );
+}
+
+
+/*=========================================================================*\
        Get a model attribute
          return NULL if not available
 \*=========================================================================*/

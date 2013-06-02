@@ -67,7 +67,7 @@ Remarks         : -
 /*=========================================================================*\
     Global symbols
 \*=========================================================================*/
-// none
+char *_dfbtResourcePath;
 
 
 /*=========================================================================*\
@@ -79,7 +79,6 @@ Remarks         : -
 /*=========================================================================*\
     Private symbols
 \*=========================================================================*/
-static char              *resPath;
 static IDirectFB         *dfb;
 static IDirectFBSurface  *primary;
 static DfbtWidget        *screen;
@@ -107,7 +106,7 @@ int dfbtInit( const char *resourcePath )
 /*------------------------------------------------------------------------*\
     Save resource path
 \*------------------------------------------------------------------------*/
-  resPath = strdup( resourcePath );
+  _dfbtResourcePath = strdup( resourcePath );
 
 /*------------------------------------------------------------------------*\
     Get super interface
@@ -181,7 +180,7 @@ void dfbtShutdown( void )
 /*------------------------------------------------------------------------*\
   Free resource path
 \*------------------------------------------------------------------------*/
-  Sfree( resPath );
+  Sfree( _dfbtResourcePath );
 }
 
 
@@ -236,7 +235,9 @@ void dfbtRetain( DfbtWidget *widget )
 {
   DBGMSG( "dfbtRetain (%p): refcount now %d", widget, widget->refCount+1 );
 
+  pthread_mutex_lock( &widget->mutex );
   widget->refCount++;
+  pthread_mutex_unlock( &widget->mutex );
 }
 
 
@@ -246,6 +247,11 @@ void dfbtRetain( DfbtWidget *widget )
 void dfbtRelease( DfbtWidget *widget )
 {
   DBGMSG( "dfbtRelease (%p): refcount now %d", widget, widget->refCount-1 );
+
+/*------------------------------------------------------------------------*\
+    Lock item
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &widget->mutex );
 
 /*------------------------------------------------------------------------*\
     Decrement counter and get rid of widget if necessary
@@ -259,6 +265,11 @@ void dfbtRelease( DfbtWidget *widget )
     // Now call the actual object destructor
     _dfbtWidgetDestruct( widget );
   }
+
+/*------------------------------------------------------------------------*\
+    Unlock item
+\*------------------------------------------------------------------------*/
+  pthread_mutex_unlock( &widget->mutex );
 
 /*------------------------------------------------------------------------*\
     That's all
@@ -277,6 +288,11 @@ void dfbtSetNeedsUpdate( DfbtWidget *widget )
   DBGMSG( "dfbtSetNeedsUpdate (%p): ", widget );
 
 /*------------------------------------------------------------------------*\
+    Lock item
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &widget->mutex );
+
+/*------------------------------------------------------------------------*\
     Set flag
 \*------------------------------------------------------------------------*/
   widget->needsUpdate = true;
@@ -286,6 +302,11 @@ void dfbtSetNeedsUpdate( DfbtWidget *widget )
 \*------------------------------------------------------------------------*/
   for( walk=widget->content; walk; walk=walk->next )
     dfbtSetNeedsUpdate( walk );
+
+/*------------------------------------------------------------------------*\
+    Unlock item
+\*------------------------------------------------------------------------*/
+  pthread_mutex_unlock( &widget->mutex );
 
 /*------------------------------------------------------------------------*\
     That's all
@@ -301,7 +322,9 @@ void dfbtSetBackground( DfbtWidget *widget, DFBColor *color )
   DBGMSG( "dfbtSetBackground (%p): %02x,%02x,%02x,%02x", widget,
           color->r, color->g, color->b, color->a );
 
+  pthread_mutex_lock( &widget->mutex );
   memcpy( &widget->background, color, sizeof(DFBColor) );
+  pthread_mutex_unlock( &widget->mutex );
 }
 
 
@@ -325,8 +348,10 @@ int dfbtRedrawScreen( bool force )
 /*------------------------------------------------------------------------*\
     else mark all elements that need to be redrawn
 \*------------------------------------------------------------------------*/
-  else
-    _checkUpdates( screen );
+  else if( !_checkUpdates(screen) ) {
+    DBGMSG( "dfbtRedrawScreen: no redraw necessary" );
+    return NULL;
+  }
 
 /*------------------------------------------------------------------------*\
     Now redraw all marked elements
@@ -448,7 +473,7 @@ int _dfbtWidgetDestruct( DfbtWidget *widget )
       break;
 
     case DfbtImage:
-      // fixme
+      _dfbtImageDestruct( widget );
       break;
 
     default:
@@ -480,7 +505,7 @@ int _dfbtWidgetDestruct( DfbtWidget *widget )
 
 
 /*=========================================================================*\
-    Propagate update flags in tree hierarchy
+    Propagate update flags bottom up in tree hierarchy
 \*=========================================================================*/
 static bool _checkUpdates( DfbtWidget *widget )
 {
@@ -489,23 +514,27 @@ static bool _checkUpdates( DfbtWidget *widget )
   DBGMSG( "_checkUpdates (%p): ", widget );
 
 /*------------------------------------------------------------------------*\
-    Flag set?
+    Lock this item.
 \*------------------------------------------------------------------------*/
-  if( widget->needsUpdate )
-    return true;
+  pthread_mutex_lock( &widget->mutex );
 
 /*------------------------------------------------------------------------*\
     Check descendents
 \*------------------------------------------------------------------------*/
   for( walk=widget->content; walk; walk=walk->next ) {
     if( _checkUpdates(walk) )
-      return true;
+      widget->needsUpdate = true;
   }
 
 /*------------------------------------------------------------------------*\
-    No update necessary for this branch
+    Unlock this item.
 \*------------------------------------------------------------------------*/
-  return false;
+  pthread_mutex_unlock( &widget->mutex );
+
+/*------------------------------------------------------------------------*\
+    Return flag
+\*------------------------------------------------------------------------*/
+  return widget->needsUpdate;
 }
 
 
@@ -523,9 +552,15 @@ static int _redraw( DfbtWidget *widget, IDirectFBSurface *surf )
           widget->size.w, widget->size.h );
 
 /*------------------------------------------------------------------------*\
+    Lock this item.
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &widget->mutex );
+
+/*------------------------------------------------------------------------*\
     Do we need to regenerate this item?
 \*------------------------------------------------------------------------*/
   if( widget->needsUpdate ) {
+    widget->needsUpdate = false;
 
 /*------------------------------------------------------------------------*\
     Prepare background
@@ -544,8 +579,10 @@ static int _redraw( DfbtWidget *widget, IDirectFBSurface *surf )
       case DfbtScreen:
       case DfbtContainer:
         for( walk=widget->content; walk; walk=walk->next ) {
-          if( _redraw(walk,widget->surface) )
+          if( _redraw(walk,widget->surface) ) {
+            pthread_mutex_unlock( &widget->mutex );
             return -1;
+          }
         }
         break;
 
@@ -554,11 +591,12 @@ static int _redraw( DfbtWidget *widget, IDirectFBSurface *surf )
         break;
 
       case DfbtImage:
-        // fixme
+        _dfbtImageDraw( widget );
         break;
 
       default:
         logerr( "_redraw: unknown widget type %d", widget->type );
+        pthread_mutex_unlock( &widget->mutex );
         return -1;
     }
   }
@@ -571,9 +609,15 @@ static int _redraw( DfbtWidget *widget, IDirectFBSurface *surf )
     if( drc!=DFB_OK ) {
       logerr( "_redraw: could not blit widget to parent (%s).",
                DirectFBErrorString(drc) );
+      pthread_mutex_unlock( &widget->mutex );
       return -1;
     }
   }
+
+/*------------------------------------------------------------------------*\
+    Unlock this item
+\*------------------------------------------------------------------------*/
+  pthread_mutex_unlock( &widget->mutex );
 
 /*------------------------------------------------------------------------*\
     That's it

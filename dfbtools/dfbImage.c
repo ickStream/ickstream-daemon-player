@@ -2,13 +2,14 @@
 
 Name            : -
 
-Source File     : image.c
+Source File     : dfbImage.c
 
-Description     : Image widget for direct frame buffer HMI
+Description     : Image widget of dfb toolkit
 
-Comments        : only needed for "hmi=DirectFB" configurations
+Comments        : implements a buffer for images and allows primitive
+                  asynchronous loading
 
-Called by       : hmiDirectFB.c
+Called by       :
 
 Calls           : 
 
@@ -60,10 +61,10 @@ Remarks         : -
 #include <signal.h>
 #include <curl/curl.h>
 
-#include "dfbWidget.h"
-#include "dfbImage.h"
-#include "../ickpd.h"
-#include "../utils.h"
+#include "dfbTools.h"
+#include "dfbToolsInternal.h"
+#include "ickpd.h"
+#include "ickutils.h"
 
 
 /*=========================================================================*\
@@ -75,14 +76,15 @@ Remarks         : -
 /*=========================================================================*\
     Macro and type definitions
 \*=========================================================================*/
-struct _dfbimage {
-  volatile DfbImageState   state;
+
+// Cache item
+typedef struct _imageCacheItem {
+  volatile DfbtImageState  state;
   int                      refCounter;
   double                   lastaccess;
-  DfbImage                *next;               // weak
+  struct _imageCacheItem  *next;               // weak
   char                    *uri;                // strong
   char                    *oAuthToken;         // strong
-  IDirectFB               *dfb;                // weak
   IDirectFBDataBuffer     *dfbBuffer;          // strong
   IDirectFBImageProvider  *dfbProvider;        // strong
   char                    *bufferData;         // strong
@@ -91,21 +93,30 @@ struct _dfbimage {
   pthread_t                thread;
   pthread_mutex_t          mutex;
   pthread_cond_t           condIsComplete;
-};
+} ImageCacheItem;
+
+// Extra widget data
+typedef struct {
+  ImageCacheItem          *cacheItem;          // strong
+} DfbtImageData;
+
 
 
 /*=========================================================================*\
     Private symbols
 \*=========================================================================*/
-static char             *resPath;
-static pthread_mutex_t   listMutex = PTHREAD_MUTEX_INITIALIZER;
-static DfbImage         *imageList;
+static pthread_mutex_t   cacheMutex = PTHREAD_MUTEX_INITIALIZER;
+static ImageCacheItem   *cacheList;
 
 
 /*=========================================================================*\
     Private prototypes
 \*=========================================================================*/
-static void *_imageThread( void *arg );
+static ImageCacheItem *_cacheGetImage( const char *uri, bool isfile );
+void _cacheItemRelease( ImageCacheItem *dfbi );
+
+
+static void *_imageLoaderThread( void *arg );
 static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void *userp );
 #ifdef ICK_TRACECURL
 static int    _curlTraceCallback( CURL *handle, curl_infotype type, char *data, size_t size, void *userp );
@@ -113,212 +124,70 @@ static int    _curlTraceCallback( CURL *handle, curl_infotype type, char *data, 
 
 
 /*=========================================================================*\
-    Set resource path (use NULL to clean up)
+    Create an image widget
 \*=========================================================================*/
-void dfbImageSetResourcePath( const char *path )
+DfbtWidget *dfbtImage( int width, int height, const char *uri, bool isFile )
 {
-  DBGMSG( "dfbImageSetResourcePath: \"%s\"", path );
+  ImageCacheItem *cacheItem;
+  DfbtWidget     *widget;
+  DfbtImageData  *imageData;
 
-  Sfree( resPath );
-  if( path )
-    resPath = strdup( path );
-}
-
-
-/*=========================================================================*\
-    Get or Create an image instance
-\*=========================================================================*/
-DfbImage *dfbImageGet( IDirectFB *dfb, const char *uri, bool isfile )
-{
-  DfbImage            *dfbi;
-  pthread_mutexattr_t  attr;
-
-  DBGMSG( "dfbImageGet: \"%s\"", uri );
+  DBGMSG( "dfbtImage: \"%s\"", uri );
 
 /*------------------------------------------------------------------------*\
-    Already in cache?
+    Request image from cache
 \*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &listMutex );
-  for( dfbi=imageList; dfbi; dfbi=dfbi->next )
-    if( !strcmp(uri,dfbi->uri) )
-      break;
-  if( dfbi ) {
-    dfbi->refCounter++;
-    pthread_mutex_unlock( &listMutex );
-    DBGMSG( "dfbImageGet (%p): \"%s\" found in cache, now %d references",
-            dfbi, uri, dfbi->refCounter );
-    dfbi->lastaccess = srvtime();
-    return dfbi;
-  }
-  pthread_mutex_unlock( &listMutex );
+  cacheItem  = _cacheGetImage( uri, isFile );
+  if( !cacheItem )
+    return NULL;
+
+  // fixme: get size and surface setting from image
 
 /*------------------------------------------------------------------------*\
-    Create header
+    Create widget
 \*------------------------------------------------------------------------*/
-  dfbi = calloc( 1, sizeof(DfbImage) );
-  if( !dfbi ) {
-    logerr( "dfbImageGet (%s): out of memory!", uri );
+  widget = _dfbtNewWidget( DfbtImage, width, height );
+  if( !widget )
+    return NULL;
+
+/*------------------------------------------------------------------------*\
+    Allocate and init additional data
+\*------------------------------------------------------------------------*/
+  imageData = calloc( 1, sizeof(DfbtImageData) );
+  if( !imageData ) {
+    logerr( "dfbtImage: out of memory!" );
+    _dfbtWidgetDestruct( widget );
     return NULL;
   }
-  dfbi->refCounter = 1;
-  dfbi->state      = DfbImageInitialzed;
-  dfbi->dfb        = dfb;
-
-/*------------------------------------------------------------------------*\
-    Create full path for non-absolute file names
-\*------------------------------------------------------------------------*/
-  if( isfile && resPath && *uri!='/' ) {
-    dfbi->uri = malloc( strlen(resPath)+strlen(uri)+2 );
-    sprintf( dfbi->uri, "%s/%s", resPath, uri );
-  }
-  else
-    dfbi->uri = strdup( uri );
-
-/*------------------------------------------------------------------------*\
-    Files: Try to read directly
-\*------------------------------------------------------------------------*/
-  if( isfile ) {
-    DFBResult drc = dfb->CreateImageProvider( dfb, dfbi->uri, &dfbi->dfbProvider );
-    if( drc!=DFB_OK ) {
-      logerr( "dfbImageGet (%s): could not create image provider (%s).",
-              dfbi->uri, DirectFBErrorString(drc) );
-      Sfree( dfbi->uri );
-      Sfree( dfbi );
-      return NULL;
-    }
-
-    dfbi->state = DfbImageComplete;
-  }
-
-/*------------------------------------------------------------------------*\
-    Non-Files: Create feeder thread, this encapsulates all curl actions
-\*------------------------------------------------------------------------*/
-  else {
-    int rc = pthread_create( &dfbi->thread, NULL, _imageThread, dfbi );
-    if( rc ) {
-      logerr( "dfbImageGet (%s): Unable to start feeder thread: %s",
-              dfbi->uri, strerror(rc) );
-      Sfree( dfbi->uri );
-      Sfree( dfbi );
-      return NULL;
-    }
-    dfbi->state = DfbImageConnecting;
-  }
-
-/*------------------------------------------------------------------------*\
-    Init mutex and conditions
-\*------------------------------------------------------------------------*/
-  pthread_mutexattr_init( &attr );
-  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
-  pthread_mutex_init( &dfbi->mutex, &attr );
-  pthread_cond_init( &dfbi->condIsComplete, NULL );
-
-/*------------------------------------------------------------------------*\
-    Link entry to list
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &listMutex );
-  if( imageList )
-    imageList->next = dfbi;
-  imageList = dfbi;
-  pthread_mutex_unlock( &listMutex );
+  imageData->cacheItem  = cacheItem;
+  widget->data          = imageData;
 
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/
-  return dfbi;
+  return widget;
 }
 
 
 /*=========================================================================*\
-    Release an image instance
+       Get image uri
 \*=========================================================================*/
-void dfbImageRelease( DfbImage *dfbi )
+const char *dfbtImageGetUri( DfbtWidget *widget )
 {
-  DBGMSG( "dfbImageRelease (%p, %s): Now %d references.", dfbi, dfbi->uri, dfbi->refCounter-1 );
-
-  if( --dfbi->refCounter<0 )
-    logerr( "dfbImageRelease (%s): Reached negative reference counter %d",
-            dfbi->uri, dfbi->refCounter );
-
-  // fixme: garbage collection
+  DfbtImageData  *imageData = widget->data;
+  ImageCacheItem *cacheItem = imageData->cacheItem;
+  return cacheItem->uri;
 }
 
 
 /*=========================================================================*\
-    Release an image instance
+       Get image state
 \*=========================================================================*/
-void dfbImageDelete( DfbImage *dfbi )
+DfbtImageState dfbtImageGetState( DfbtWidget *widget )
 {
-  DfbImage *walk;
-  DBGMSG( "dfbImageDelete (%p, %s): %d references.", dfbi, dfbi->uri, dfbi->refCounter );
-
-/*------------------------------------------------------------------------*\
-    Check reference counter
-\*------------------------------------------------------------------------*/
-  if( dfbi->refCounter>0 )
-    logerr( "dfbImageDelete (%s): Reference counter still positive %d",
-            dfbi->uri, dfbi->refCounter );
-
-/*------------------------------------------------------------------------*\
-    Unlink from list
-\*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &listMutex );
-  if( dfbi==imageList )
-    imageList = imageList->next;
-  else
-    for( walk=imageList; walk; walk=walk->next )
-      if( walk->next==dfbi )
-        walk->next = walk->next->next;
-  pthread_mutex_unlock( &listMutex );
-
-/*------------------------------------------------------------------------*\
-    Delete mutex and conditions
-\*------------------------------------------------------------------------*/
-  pthread_mutex_destroy( &dfbi->mutex );
-  pthread_cond_destroy( &dfbi->condIsComplete );
-
-/*------------------------------------------------------------------------*\
-    Free all allocated elements
-\*------------------------------------------------------------------------*/
-  if( dfbi->dfbProvider )
-    dfbi->dfbProvider->Release( dfbi->dfbProvider );
-  if( dfbi->dfbBuffer )
-    dfbi->dfbBuffer->Release( dfbi->dfbBuffer );
-   Sfree( dfbi->bufferData );
-  Sfree( dfbi->oAuthToken );
-  Sfree( dfbi->uri );
-  Sfree( dfbi );
-}
-
-/*=========================================================================*\
-      Clear image buffer
-\*=========================================================================*/
-void dfbImageClearBuffer( void )
-{
-  DBGMSG( "dfbImages: clear buffer." );
-
-  // fixme
-}
-
-
-
-/*=========================================================================*\
-      Lock image to avoid concurrent access
-\*=========================================================================*/
-void dfbImageLock( DfbImage *dfbi )
-{
-  DBGMSG( "dfbImage (%p,%s): lock.", dfbi, dfbi->uri );
-  pthread_mutex_lock( &dfbi->mutex );
-}
-
-
-/*=========================================================================*\
-      Unlock image after access or waits
-\*=========================================================================*/
-void dfbImageUnlock( DfbImage *dfbi )
-{
-  DBGMSG( "dfbImage (%p,%s): unlock.", dfbi, dfbi->uri );
-  pthread_mutex_unlock( &dfbi->mutex );
+  DfbtImageData *imageData = widget->data;
+  ImageCacheItem *cacheItem = imageData->cacheItem;
+  return cacheItem->state;
 }
 
 
@@ -328,19 +197,21 @@ void dfbImageUnlock( DfbImage *dfbi )
       returns 0 and locks feed, if condition is met
         std. errode (ETIMEDOUT in case of timeout) and no locking otherwise
 \*=========================================================================*/
-int dfbImageLaockWaitForComplete( DfbImage *dfbi, int timeout )
+int dfbtImageWaitForComplete( DfbtWidget *widget, int timeout )
 {
-  struct timeval  now;
-  struct timespec abstime;
-  int             err = 0;
+  DfbtImageData   *imageData = widget->data;
+  ImageCacheItem  *cacheItem = imageData->cacheItem;
+  struct timeval   now;
+  struct timespec  abstime;
+  int              err = 0;
 
   DBGMSG( "dfbImageWaitForComplete (%p,%s): waiting for completion (timeout %dms)",
-          dfbi, dfbi->uri, timeout );
+          cacheItem, cacheItem->uri, timeout );
 
 /*------------------------------------------------------------------------*\
     Lock mutex
 \*------------------------------------------------------------------------*/
-   pthread_mutex_lock( &dfbi->mutex );
+   pthread_mutex_lock( &cacheItem->mutex );
 
 /*------------------------------------------------------------------------*\
     Get absolute timestamp for timeout
@@ -358,63 +229,264 @@ int dfbImageLaockWaitForComplete( DfbImage *dfbi, int timeout )
 /*------------------------------------------------------------------------*\
     Loop while condition is not met (cope with "spurious  wakeups")
 \*------------------------------------------------------------------------*/
-  while( dfbi->state<DfbImageComplete ) {
+  while( cacheItem->state<DfbtImageComplete ) {
 
     // wait for condition
-    err = timeout>0 ? pthread_cond_timedwait( &dfbi->condIsComplete, &dfbi->mutex, &abstime )
-                    : pthread_cond_wait( &dfbi->condIsComplete, &dfbi->mutex );
+    err = timeout>0 ? pthread_cond_timedwait( &cacheItem->condIsComplete, &cacheItem->mutex, &abstime )
+                    : pthread_cond_wait( &cacheItem->condIsComplete, &cacheItem->mutex );
 
     // Break on errors
     if( err )
       break;
   }
 
+  if( !err )
+    pthread_mutex_unlock( &cacheItem->mutex );
+
 /*------------------------------------------------------------------------*\
     That's it
 \*------------------------------------------------------------------------*/
-  DBGMSG( "dfbImageWaitForComplete (%p,%s): waiting for connection: %s",
-          dfbi, dfbi->uri, err?strerror(err):"Locked" );
+  DBGMSG( "dfbImageWaitForComplete (%p,%s): %s",
+          cacheItem, cacheItem->uri, strerror(err) );
   return err;
 }
 
 
+
 /*=========================================================================*\
-       Get image uri
+    Destruct type specific part of a image widget
 \*=========================================================================*/
-const char *dfbImageGetUri( DfbImage *dfbi )
+void _dfbtImageDestruct( DfbtWidget *widget )
 {
-  return dfbi->uri;
+  DfbtImageData *imageData = widget->data;
+
+  DBGMSG( "_dfbImageDestruct (%p): \"%s\"", widget, imageData->cacheItem->uri );
+
+/*------------------------------------------------------------------------*\
+    Release cache item and free widget specific part
+\*------------------------------------------------------------------------*/
+  _cacheItemRelease( imageData->cacheItem );
+  Sfree( widget->data );
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
 }
 
 
 /*=========================================================================*\
-       Get image state
+    Draw image widget
 \*=========================================================================*/
-DfbImageState dfbImageGetState( DfbImage *dfbi )
+void _dfbtImageDraw( DfbtWidget *widget )
 {
-  return dfbi->state;
+  IDirectFBSurface  *surf      = widget->surface;
+  DfbtImageData     *imageData = widget->data;
+  ImageCacheItem    *cacheItem = imageData->cacheItem;
+  DFBResult          drc;
+
+  DBGMSG( "_dfbtImageDraw (%p): \"%s\" ", widget, cacheItem->uri );
+
+/*------------------------------------------------------------------------*\
+    We can do nothing if item is not complete, mark as dirty.
+\*------------------------------------------------------------------------*/
+  if( cacheItem->state!=DfbtImageComplete ) {
+    DBGMSG( "_dfbtImageDraw (%p,%s): drawing suspended, cache not complete",
+            widget, cacheItem->uri );
+    widget->needsUpdate = true;
+    return;
+  }
+
+/*------------------------------------------------------------------------*\
+    Draw image to surface
+\*------------------------------------------------------------------------*/
+  drc = cacheItem->dfbProvider->RenderTo( cacheItem->dfbProvider, surf, NULL );
+  if( drc!=DFB_OK ) {
+    logerr( "_dfbtImageDraw: could not render image \"%s\" (%s).",
+        cacheItem->uri, DirectFBErrorString(drc) );
+  }
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
 }
 
 
 /*=========================================================================*\
-       Get image provider
+    Get or create an cached image item
 \*=========================================================================*/
-IDirectFBImageProvider *dfbImageGetProvider( const DfbImage *dfbi )
+static ImageCacheItem *_cacheGetImage( const char *uri, bool isfile )
 {
-  return dfbi->dfbProvider;
+  ImageCacheItem      *cacheItem;
+  pthread_mutexattr_t  attr;
+
+  DBGMSG( "_chacheGetImage: \"%s\"", uri );
+
+/*------------------------------------------------------------------------*\
+    Already in cache?
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &cacheMutex );
+  for( cacheItem=cacheList; cacheItem; cacheItem=cacheItem->next )
+    if( !strcmp(uri,cacheItem->uri) )
+      break;
+  if( cacheItem ) {
+    cacheItem->refCounter++;
+    pthread_mutex_unlock( &cacheMutex );
+    DBGMSG( "_cacheGetImage (%p): \"%s\" found in cache, now %d references",
+            cacheItem, uri, cacheItem->refCounter );
+    cacheItem->lastaccess = srvtime();
+    return cacheItem;
+  }
+  pthread_mutex_unlock( &cacheMutex );
+
+/*------------------------------------------------------------------------*\
+    Create object
+\*------------------------------------------------------------------------*/
+  cacheItem = calloc( 1, sizeof(ImageCacheItem) );
+  if( !cacheItem ) {
+    logerr( "_cacheGetImage (%s): out of memory!", uri );
+    return NULL;
+  }
+  cacheItem->refCounter = 1;
+  cacheItem->state      = DfbtImageInitialized;
+
+/*------------------------------------------------------------------------*\
+    Create full path for non-absolute file names
+\*------------------------------------------------------------------------*/
+  if( isfile && _dfbtResourcePath && *uri!='/' ) {
+    cacheItem->uri = malloc( strlen(_dfbtResourcePath)+strlen(uri)+2 );
+    sprintf( cacheItem->uri, "%s/%s", _dfbtResourcePath, uri );
+  }
+  else
+    cacheItem->uri = strdup( uri );
+
+/*------------------------------------------------------------------------*\
+    Files: Try to read directly
+\*------------------------------------------------------------------------*/
+  if( isfile ) {
+    IDirectFB *dfb = dfbtGetDdb();
+    DFBResult drc = dfb->CreateImageProvider( dfb, cacheItem->uri, &cacheItem->dfbProvider );
+    if( drc!=DFB_OK ) {
+      logerr( "_cacheGetImage (%s): could not create image provider (%s).",
+              cacheItem->uri, DirectFBErrorString(drc) );
+      Sfree( cacheItem->uri );
+      Sfree( cacheItem );
+      return NULL;
+    }
+    cacheItem->state = DfbtImageComplete;
+  }
+
+/*------------------------------------------------------------------------*\
+    Non-Files: Create loader thread, which encapsulates all curl actions
+\*------------------------------------------------------------------------*/
+  else {
+    int rc = pthread_create( &cacheItem->thread, NULL, _imageLoaderThread, cacheItem );
+    if( rc ) {
+      logerr( "dfbImageGet (%s): Unable to start feeder thread: %s",
+              cacheItem->uri, strerror(rc) );
+      Sfree( cacheItem->uri );
+      Sfree( cacheItem );
+      return NULL;
+    }
+    cacheItem->state = DfbtImageConnecting;
+  }
+
+/*------------------------------------------------------------------------*\
+    Init mutex and conditions
+\*------------------------------------------------------------------------*/
+  pthread_mutexattr_init( &attr );
+  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
+  pthread_mutex_init( &cacheItem->mutex, &attr );
+  pthread_cond_init( &cacheItem->condIsComplete, NULL );
+
+/*------------------------------------------------------------------------*\
+    Link entry to list
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &cacheMutex );
+  if( cacheList )
+    cacheList->next = cacheItem;
+  cacheList = cacheItem;
+  pthread_mutex_unlock( &cacheMutex );
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+  return cacheItem;
+}
+
+
+/*=========================================================================*\
+    Release an image instance
+\*=========================================================================*/
+void _cacheItemRelease( ImageCacheItem *dfbi )
+{
+  DBGMSG( "_cacheItemRelease (%p, %s): Now %d references.", dfbi, dfbi->uri, dfbi->refCounter-1 );
+
+  if( --dfbi->refCounter<0 )
+    logerr( "_cacheItemRelease (%s): Reached negative reference counter %d",
+            dfbi->uri, dfbi->refCounter );
+
+  // fixme: garbage collection
+}
+
+
+/*=========================================================================*\
+    Destruct an image instance
+\*=========================================================================*/
+void _cacheItemDestruct( ImageCacheItem *cacheItem )
+{
+  ImageCacheItem *walk;
+  DBGMSG( "_cacheItemDestruct (%p, %s): %d references.",
+          cacheItem, cacheItem->uri, cacheItem->refCounter );
+
+/*------------------------------------------------------------------------*\
+    Check reference counter
+\*------------------------------------------------------------------------*/
+  if( cacheItem->refCounter>0 )
+    logerr( "dfbImageDelete (%s): Reference counter still positive %d",
+            cacheItem->uri, cacheItem->refCounter );
+
+/*------------------------------------------------------------------------*\
+    Unlink from list
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &cacheMutex );
+  if( cacheItem==cacheList )
+    cacheList = cacheList->next;
+  else
+    for( walk=cacheList; walk; walk=walk->next )
+      if( walk->next==cacheItem )
+        walk->next = walk->next->next;
+  pthread_mutex_unlock( &cacheMutex );
+
+/*------------------------------------------------------------------------*\
+    Delete mutex and conditions
+\*------------------------------------------------------------------------*/
+  pthread_mutex_destroy( &cacheItem->mutex );
+  pthread_cond_destroy( &cacheItem->condIsComplete );
+
+/*------------------------------------------------------------------------*\
+    Free all allocated elements
+\*------------------------------------------------------------------------*/
+  if( cacheItem->dfbProvider )
+    DFBRELEASE( cacheItem->dfbProvider );
+  if( cacheItem->dfbBuffer )
+    DFBRELEASE( cacheItem->dfbBuffer );
+  Sfree( cacheItem->bufferData );
+  Sfree( cacheItem->oAuthToken );
+  Sfree( cacheItem->uri );
+  Sfree( cacheItem );
 }
 
 
 /*=========================================================================*\
        A feeder thread
 \*=========================================================================*/
-static void *_imageThread( void *arg )
+static void *_imageLoaderThread( void *arg )
 {
-  DfbImage          *dfbi = arg;
+  ImageCacheItem    *cacheItem = arg;
   int                rc;
   struct curl_slist *addedHeaderFields = NULL;
 
-  DBGMSG( "Image loader thread (%p,%s): starting.", dfbi, dfbi->uri );
+  DBGMSG( "Image loader thread (%p,%s): starting.", cacheItem, cacheItem->uri );
   PTHREADSETNAME( "loadimage" );
 
 /*------------------------------------------------------------------------*\
@@ -428,67 +500,67 @@ static void *_imageThread( void *arg )
 /*------------------------------------------------------------------------*\
     Setup cURL
 \*------------------------------------------------------------------------*/
-  dfbi->curlHandle = curl_easy_init();
-  if( !dfbi->curlHandle ) {
-    logerr( "Image loader thread (%s): Unable to init cURL.", dfbi->uri );
-    dfbi->state = DfbImageError;
+  cacheItem->curlHandle = curl_easy_init();
+  if( !cacheItem->curlHandle ) {
+    logerr( "Image loader thread (%s): Unable to init cURL.", cacheItem->uri );
+    cacheItem->state = DfbtImageError;
     goto end;
   }
 
   // Set URI
-  rc = curl_easy_setopt( dfbi->curlHandle, CURLOPT_URL, dfbi->uri );
+  rc = curl_easy_setopt( cacheItem->curlHandle, CURLOPT_URL, cacheItem->uri );
   if( rc ) {
-    logerr( "Image loader thread (%s): Unable to set URI.", dfbi->uri );
-    dfbi->state = DfbImageError;
+    logerr( "Image loader thread (%s): Unable to set URI.", cacheItem->uri );
+    cacheItem->state = DfbtImageError;
     goto end;
   }
 
   // Need oAuth header
-  if( dfbi->oAuthToken ) {
-    char *hdr = malloc( strlen(dfbi->oAuthToken)+32 );
-    sprintf( hdr, "Authorization: Bearer %s", dfbi->oAuthToken );
+  if( cacheItem->oAuthToken ) {
+    char *hdr = malloc( strlen(cacheItem->oAuthToken)+32 );
+    sprintf( hdr, "Authorization: Bearer %s", cacheItem->oAuthToken );
     addedHeaderFields = curl_slist_append( addedHeaderFields, hdr );  // Performs a strdup(hdr)
-    DBGMSG( "Image loader thread (%p,%s): Added request header \"%s\".", dfbi, dfbi->uri, hdr );
+    DBGMSG( "Image loader thread (%p,%s): Added request header \"%s\".", cacheItem, cacheItem->uri, hdr );
     Sfree( hdr );
   }
 
   // Add headers
   if( addedHeaderFields ) {
-    rc = curl_easy_setopt( dfbi->curlHandle, CURLOPT_HTTPHEADER, addedHeaderFields );
+    rc = curl_easy_setopt( cacheItem->curlHandle, CURLOPT_HTTPHEADER, addedHeaderFields );
     if( rc ) {
-      logerr( "Image loader thread (%s): Unable to add HTTP headers.", dfbi->uri );
-      dfbi->state = DfbImageError;
+      logerr( "Image loader thread (%s): Unable to add HTTP headers.", cacheItem->uri );
+      cacheItem->state = DfbtImageError;
       goto end;
     }
   }
 
   // Set our identity
-  rc = curl_easy_setopt( dfbi->curlHandle, CURLOPT_USERAGENT, HttpAgentString );
+  rc = curl_easy_setopt( cacheItem->curlHandle, CURLOPT_USERAGENT, HttpAgentString );
   if( rc ) {
-    logerr( "Image loader thread (%s): unable to set user agent to \"%s\"", dfbi->uri, HttpAgentString );
-    dfbi->state = DfbImageError;
+    logerr( "Image loader thread (%s): unable to set user agent to \"%s\"", cacheItem->uri, HttpAgentString );
+    cacheItem->state = DfbtImageError;
     goto end;
   }
 
   // Enable HTTP redirects
-  rc = curl_easy_setopt( dfbi->curlHandle, CURLOPT_FOLLOWLOCATION, 1L );
+  rc = curl_easy_setopt( cacheItem->curlHandle, CURLOPT_FOLLOWLOCATION, 1L );
   if( rc ) {
-    logerr( "audioFeedCreate (%s): unable to enable redirects", dfbi->uri );
-    dfbi->state = DfbImageError;
+    logerr( "audioFeedCreate (%s): unable to enable redirects", cacheItem->uri );
+    cacheItem->state = DfbtImageError;
     goto end;
   }
 
   // Set receiver callback
-  rc = curl_easy_setopt( dfbi->curlHandle, CURLOPT_WRITEDATA, (void*)dfbi );
+  rc = curl_easy_setopt( cacheItem->curlHandle, CURLOPT_WRITEDATA, (void*)cacheItem );
   if( rc ) {
-    logerr( "Image loader thread (%s): Unable set callback mode.", dfbi->uri );
-    dfbi->state = DfbImageError;
+    logerr( "Image loader thread (%s): Unable set callback mode.", cacheItem->uri );
+    cacheItem->state = DfbtImageError;
     goto end;
   }
-  rc = curl_easy_setopt( dfbi->curlHandle, CURLOPT_WRITEFUNCTION, _curlWriteCallback );
+  rc = curl_easy_setopt( cacheItem->curlHandle, CURLOPT_WRITEFUNCTION, _curlWriteCallback );
   if( rc ) {
-    logerr( "Image loader thread (%s): Unable set callback function.", dfbi->uri );
-    dfbi->state = DfbImageError;
+    logerr( "Image loader thread (%s): Unable set callback function.", cacheItem->uri );
+    cacheItem->state = DfbtImageError;
     goto end;
   }
 
@@ -501,59 +573,64 @@ static void *_imageThread( void *arg )
 /*------------------------------------------------------------------------*\
     Collect data, this represents the thread main loop
 \*------------------------------------------------------------------------*/
-  dfbi->state = DfbImageConnecting;
-  rc = curl_easy_perform( dfbi->curlHandle );
+  cacheItem->state = DfbtImageConnecting;
+  rc = curl_easy_perform( cacheItem->curlHandle );
   if( rc!=CURLE_OK ) {
-    logerr( "Image loader thread (%p,%s): %s", dfbi, dfbi->uri, curl_easy_strerror(rc) );
-    dfbi->state = DfbImageError;
+    logerr( "Image loader thread (%p,%s): %s", cacheItem, cacheItem->uri, curl_easy_strerror(rc) );
+    cacheItem->state = DfbtImageError;
   }
   DBGMSG( "Image loader thread (%p,%s): terminating with curl state \"%s\".",
-          dfbi, dfbi->uri, curl_easy_strerror(rc) );
+          cacheItem, cacheItem->uri, curl_easy_strerror(rc) );
 
 end:
 
 /*------------------------------------------------------------------------*\
     Clean up curl
 \*------------------------------------------------------------------------*/
-  if( dfbi->curlHandle )
-    curl_easy_cleanup( dfbi->curlHandle );
-  dfbi->curlHandle = NULL;
+  if( cacheItem->curlHandle )
+    curl_easy_cleanup( cacheItem->curlHandle );
+  cacheItem->curlHandle = NULL;
   if( addedHeaderFields )
     curl_slist_free_all( addedHeaderFields );
 
 /*------------------------------------------------------------------------*\
     Create direct frame buffer image provider
 \*------------------------------------------------------------------------*/
-  if( dfbi->state == DfbImageLoading ) {
+  if( cacheItem->state == DfbtImageLoading ) {
+    IDirectFB *dfb = dfbtGetDdb();
     DFBDataBufferDescription ddsc;
     ddsc.flags         = DBDESC_MEMORY;
-    ddsc.memory.data   = dfbi->bufferData;
-    ddsc.memory.length = dfbi->bufferLen;
-    DFBResult drc =  dfbi->dfb->CreateDataBuffer( dfbi->dfb, &ddsc, &dfbi->dfbBuffer);
+    ddsc.memory.data   = cacheItem->bufferData;
+    ddsc.memory.length = cacheItem->bufferLen;
+    DFBResult drc =  dfb->CreateDataBuffer( dfb, &ddsc, &cacheItem->dfbBuffer);
     if( drc!=DFB_OK ) {
       logerr( "Image loader thread (p,%s): could not create data buffer (%s).",
-              dfbi, dfbi->uri, DirectFBErrorString(drc) );
-      dfbi->state = DfbImageError;
+              cacheItem, cacheItem->uri, DirectFBErrorString(drc) );
+      cacheItem->state = DfbtImageError;
      }
   }
-  if( dfbi->state == DfbImageLoading ) {
-    DFBResult drc = dfbi->dfbBuffer->CreateImageProvider( dfbi->dfbBuffer, &dfbi->dfbProvider );
-    dfbi->state = DfbImageComplete;
+  if( cacheItem->state == DfbtImageLoading ) {
+    DFBResult drc = cacheItem->dfbBuffer->CreateImageProvider( cacheItem->dfbBuffer, &cacheItem->dfbProvider );
+    cacheItem->state = DfbtImageComplete;
     if( drc!=DFB_OK ) {
       logerr( "Image loader thread (p,%s): could not create image provider (%s).",
-              dfbi, dfbi->uri, DirectFBErrorString(drc) );
-      dfbi->state = DfbImageError;
+              cacheItem, cacheItem->uri, DirectFBErrorString(drc) );
+      cacheItem->state = DfbtImageError;
     }
-    pthread_cond_signal( &dfbi->condIsComplete );
+    pthread_cond_signal( &cacheItem->condIsComplete );
   }
+
+/*------------------------------------------------------------------------*\
+    Trigger redraw
+\*------------------------------------------------------------------------*/
+  dfbtRedrawScreen( false );
 
 /*------------------------------------------------------------------------*\
     That's all ...
 \*------------------------------------------------------------------------*/
-  DBGMSG( "Image loader thread (%p,%s): terminated.", dfbi, dfbi->uri );
+  DBGMSG( "Image loader thread (%p,%s): terminated.", cacheItem, cacheItem->uri );
   return NULL;
 }
-
 
 
 /*=========================================================================*\
@@ -561,39 +638,39 @@ end:
 \*=========================================================================*/
 static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void *userp )
 {
-  size             *= nmemb;       // get real size in bytes
-  size_t     retVal = size;        // Ok
-  size_t     errVal = size+1;      // Signal error by size mismatch
-  DfbImage  *dfbi   = userp;
+  size                     *= nmemb;       // get real size in bytes
+  size_t          retVal    = size;        // Ok
+  size_t          errVal    = size+1;      // Signal error by size mismatch
+  ImageCacheItem *cacheItem = userp;
 
-  DBGMSG( "Image loader thread (%s): receiving %ld bytes", dfbi->uri, (long)size );
-  //DBGMEM( "Raw feed", buffer, size );
+  DBGMSG( "Image loader thread (%s): receiving %ld bytes",
+          cacheItem->uri, (long)size );
 
 /*------------------------------------------------------------------------*\
     Feed termination requested?
 \*------------------------------------------------------------------------*/
-  if( dfbi->state>DfbImageLoading )
+  if( cacheItem->state>DfbtImageLoading )
     return errVal;
-  dfbi->state = DfbImageLoading;
+  cacheItem->state = DfbtImageLoading;
 
 /*------------------------------------------------------------------------*\
     Try to create or expand buffer
 \*------------------------------------------------------------------------*/
-  if( dfbi->bufferData )
-    dfbi->bufferData = realloc( dfbi->bufferData, dfbi->bufferLen+size );
+  if( cacheItem->bufferData )
+    cacheItem->bufferData = realloc( cacheItem->bufferData, cacheItem->bufferLen+size );
   else
-    dfbi->bufferData = malloc( size );
+    cacheItem->bufferData = malloc( size );
 
-  if( !dfbi->bufferData ) {
-    logerr( "Image loader thread (%s): Out of memory!", dfbi->uri );
+  if( !cacheItem->bufferData ) {
+    logerr( "Image loader thread (%s): Out of memory!", cacheItem->uri );
     return errVal;
   }
 
 /*------------------------------------------------------------------------*\
     Append data to buffer
 \*------------------------------------------------------------------------*/
-  memcpy( dfbi->bufferData+dfbi->bufferLen, buffer, size );
-  dfbi->bufferLen += size;
+  memcpy( cacheItem->bufferData+cacheItem->bufferLen, buffer, size );
+  cacheItem->bufferLen += size;
 
 /*------------------------------------------------------------------------*\
     That's it

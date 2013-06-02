@@ -128,6 +128,7 @@ const char       *playlistItemGetId( PlaylistItem *pItem );
 PlaylistItemType  playlistItemGetType( PlaylistItem *pItem );
 json_t           *playlistItemGetJSON( PlaylistItem *pItem );
 json_t           *playlistItemGetStreamingRefs( PlaylistItem *pItem );
+json_t           *playlistItemGetAttribute( PlaylistItem *pItem, const char *attribute );
 json_t           *playlistItemGetModelAttribute( PlaylistItem *pItem, const char *attribute );
 double            playlistItemGetDuration( PlaylistItem *pItem );
 const char       *playlistItemGetImageUri( PlaylistItem *pItem );

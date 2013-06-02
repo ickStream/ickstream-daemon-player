@@ -80,7 +80,7 @@ struct _dfbtwidget {
 /*=========================================================================*\
        Global symbols 
 \*=========================================================================*/
-// none
+extern char *_dfbtResourcePath;
 
 
 /*=========================================================================*\
@@ -91,6 +91,9 @@ int  _dfbtWidgetDestruct( DfbtWidget *widget );
 
 void _dfbtTextDestruct( DfbtWidget *widget );
 void _dfbtTextDraw( DfbtWidget *widget );
+
+void _dfbtImageDestruct( DfbtWidget *widget );
+void _dfbtImageDraw( DfbtWidget *widget );
 
 
 #endif  /* __DFBTTOOLSINTERNAL_H */

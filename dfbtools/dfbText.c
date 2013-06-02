@@ -75,7 +75,6 @@ typedef struct {
   char          *text;
   IDirectFBFont *font;
   DFBColor       color;
-
 } DfbtTextData;
 
 
@@ -188,6 +187,7 @@ void _dfbtTextDestruct( DfbtWidget *widget )
 \*------------------------------------------------------------------------*/
   DFBRELEASE( textData->font );
   Sfree( textData->text );
+  Sfree( widget->data );
 
 /*------------------------------------------------------------------------*\
     That's all
