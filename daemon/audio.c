@@ -56,7 +56,7 @@ Remarks         : -
 #include <ctype.h>
 #include <strings.h>
 
-#include "utils.h"
+#include "ickutils.h"
 #include "codec.h"
 #include "fifo.h"
 #include "audio.h"

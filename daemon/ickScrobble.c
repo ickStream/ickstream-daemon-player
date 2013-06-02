@@ -56,7 +56,7 @@ Remarks         : -
 #include <pthread.h>
 #include <jansson.h>
 
-#include "utils.h"
+#include "ickutils.h"
 #include "player.h"
 #include "ickService.h"
 #include "ickCloud.h"

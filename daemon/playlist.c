@@ -57,7 +57,7 @@ Remarks         : -
 #include <jansson.h>
 #include <ickDiscovery.h>
 
-#include "utils.h"
+#include "ickutils.h"
 #include "playlist.h"
 
 

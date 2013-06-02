@@ -60,7 +60,7 @@ Remarks         : -
 #include <pthread.h>
 #include <pulse/pulseaudio.h>
 
-#include "utils.h"
+#include "ickutils.h"
 #include "audio.h"
 #include "fifo.h"
 #include "player.h"

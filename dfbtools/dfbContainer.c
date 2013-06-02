@@ -2,19 +2,19 @@
 
 Name            : -
 
-Source File     : audioNull.c
+Source File     : dfbContainer.c
 
-Description     : interface to null audio backand 
+Description     : container widget of dfb toolkit
 
 Comments        : -
 
-Called by       : audio module 
+Called by       : -
 
 Calls           : 
 
 Error Messages  : -
   
-Date            : 22.03.2013
+Date            : 01.06.2013
 
 Updates         : -
                   
@@ -50,228 +50,249 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef ICK_DEBUG
+// #undef ICK_DEBUG
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
 #include <stdbool.h>
 
+#include <directfb.h>
+#include "dfbTools.h"
+#include "dfbToolsInternal.h"
 #include "ickutils.h"
-#include "audio.h"
-#include "fifo.h"
 
 
 /*=========================================================================*\
-	Global symbols
+    Global symbols
 \*=========================================================================*/
 // none
 
 
 /*=========================================================================*\
-	Private symbols
+    Macro and type definitions
 \*=========================================================================*/
-// none  
+// none
 
 
 /*=========================================================================*\
-	Private prototypes
+    Private symbols
 \*=========================================================================*/
-static int    _backendGetDeviceList( char ***deviceListPtr, char ***descrListPtr );
-static int    _ifNew( AudioIf *aif ); 
-static int    _ifDelete( AudioIf *aif, AudioTermMode mode ); 
-static int    _ifPlay( AudioIf *aif, AudioFormat *format );
-static int    _ifStop( AudioIf *aif, AudioTermMode mode );
-
-static void  *_ifThread( void *arg );
+// none
 
 
 /*=========================================================================*\
-      Return descriptor for this backend 
+    Private prototypes
 \*=========================================================================*/
-AudioBackend *audioNullDescriptor( void )
+// none
+
+
+/*=========================================================================*\
+    Create a container
+\*=========================================================================*/
+DfbtWidget *dfbtContainer( int width, int height )
 {
-  static AudioBackend backend;
-  
-  // Set name	
-  backend.next           = NULL;
-  backend.name           = "null";
-  backend.init           = NULL;     // optional
-  backend.shutdown       = NULL;     // optional
-  backend.getDevices     = &_backendGetDeviceList;
-  backend.newIf          = &_ifNew; 
-  backend.deleteIf       = &_ifDelete;
-  backend.play           = &_ifPlay;
-  backend.stop           = &_ifStop;
-  backend.pause          = NULL;
+  DfbtWidget *widget;
+  DBGMSG( "dfbtContainer: \%dx%d", width, height );
 
-  return &backend;	
+/*------------------------------------------------------------------------*\
+    Create widget
+\*------------------------------------------------------------------------*/
+  widget = _dfbtNewWidget( DfbtContainer, width, height );
+  if( !widget )
+    return NULL;
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+  return widget;
 }
 
 
 /*=========================================================================*\
-      Get all backend devices
-        descrListPtr might be NULL;
+    Add a widget to a container
 \*=========================================================================*/
-static int _backendGetDeviceList( char ***deviceListPtr, char ***descrListPtr )
+int dfbtContainerAdd( DfbtWidget *container, DfbtWidget *new, int x, int y, DfbtAlign align )
 {
-  
+  IDirectFBFont *font;
+  int            asc;
+  DfbtWidget    *walk;
+
+  DBGMSG( "dfbtContainerAdd (%p): Adding widget %p at (%d,%d)",
+          container, new, x, y );
+
 /*------------------------------------------------------------------------*\
-    only one device
+    Check type
 \*------------------------------------------------------------------------*/
-  *deviceListPtr = calloc( 2, sizeof(void*) );
-  **deviceListPtr = NULL;
-  if( descrListPtr ) {
-    *descrListPtr  = calloc( 2, sizeof(void*) );
-    **descrListPtr  = strdup("Audio null device (fast motion)");
+  if( container->type!=DfbtScreen && container->type!=DfbtContainer ) {
+    logerr( "dfbtContainerAdd: called for wrong widget type %d",
+            container->type );
+    return -1;
   }
-  
-/*------------------------------------------------------------------------*\
-    return number of devices found with name
-\*------------------------------------------------------------------------*/
-  return 1;
-}
-
-
-/*=========================================================================*\
-    Open device and start thread
-\*=========================================================================*/
-static int _ifNew( AudioIf *aif )
-{
-  DBGMSG( "Audio Null (%s): new interface", aif->devName ); 
 
 /*------------------------------------------------------------------------*\
-    That's it
+    Adjust offset according to lignment
 \*------------------------------------------------------------------------*/
-  return 0;
-}
+  switch( align ) {
+    case DfbtAlignTopLeft:
+    case DfbtAlignTopCenter:
+    case DfbtAlignTopRight:
+      break;
 
+    case DfbtAlignCenterLeft:
+    case DfbtAlignCenterCenter:
+    case DfbtAlignCenterRight:
+      y -= new->size.h/2;
+      break;
 
-/*=========================================================================*\
-    Close device
-\*=========================================================================*/
-static int _ifDelete( AudioIf *aif, AudioTermMode mode )
-{
-  DBGMSG( "Audio Null (%s): deleting interface", aif->devName ); 
+    case DfbtAlignBottomLeft:
+    case DfbtAlignBottomCenter:
+    case DfbtAlignBottomRight:
+      y -= new->size.h;
+      break;
 
-/*------------------------------------------------------------------------*\
-    That's it
-\*------------------------------------------------------------------------*/
-  return 0;
-}
+    case DfbtAlignBaseLeft:
+    case DfbtAlignBaseCenter:
+    case DfbtAlignBaseRight:
+      font = dfbtTextGetFont( new );
+      if( !font ) {
+        logerr( "dfbtContainerAdd: text alignment for wrong widget type %d",
+                container->type );
+        return -1;
+      }
+      asc = 0;
+      font->GetAscender( font, &asc );
+      y -= asc;
+      break;
 
-
-/*=========================================================================*\
-    Attach a queue to device and start playing
-\*=========================================================================*/
-static int _ifPlay( AudioIf *aif, AudioFormat *format )
-{
-  DBGMSG( "Audio Null (%s): start playback", aif->devName ); 
-
-/*------------------------------------------------------------------------*\
-    Stop current playback
-\*------------------------------------------------------------------------*/
-  if( aif->state==AudioIfRunning ) {
-  	if( _ifStop(aif,AudioDrop) ) {
-      logerr( "Audio Null (%s): Could not stop running playback.", aif->devName );
+    default:
+      logerr( "dfbtContainerAdd: unknown alignment type %d", align );
       return -1;
-    }
-  }	
+  }
+  switch( align ) {
+    case DfbtAlignTopLeft:
+    case DfbtAlignCenterLeft:
+    case DfbtAlignBaseLeft:
+    case DfbtAlignBottomLeft:
+      break;
+
+    case DfbtAlignTopCenter:
+    case DfbtAlignCenterCenter:
+    case DfbtAlignBaseCenter:
+    case DfbtAlignBottomCenter:
+      x -= new->size.w/2;
+      break;
+
+    case DfbtAlignTopRight:
+    case DfbtAlignCenterRight:
+    case DfbtAlignBaseRight:
+    case DfbtAlignBottomRight:
+      x -= new->size.w;
+      break;
+
+  }
 
 /*------------------------------------------------------------------------*\
-    Check state
+    Increment retain counter for target
 \*------------------------------------------------------------------------*/
-  if( aif->state!=AudioIfInitialized ) {
-    logerr( "Audio Null (%s): Cannot start playback, wrong state: %d", aif->devName, aif->state );
-    return -1;
-  }
-  
+  dfbtRetain( new );
+
 /*------------------------------------------------------------------------*\
-    Fire up working thread
+    Add to content list
 \*------------------------------------------------------------------------*/
-  int rc = pthread_create( &aif->thread, NULL, _ifThread, aif );
-  if( rc ) {
-    logerr( "Audio Null (%s): Unable to start audio backend thread: %s", aif->devName, strerror(rc) );
-    return -1;
+  pthread_mutex_lock( &container->mutex );
+  if( !container->content )
+    container->content = new;
+  else {
+    for( walk=container->content; walk->next; walk=walk->next ) {
+      if( walk==new ) {
+        logerr( "dfbtContainerAdd: widget is already content element" );
+        pthread_mutex_unlock( &container->mutex );
+        return -1;
+      }
+    }
+    walk->next = new;
   }
-  	  
+
 /*------------------------------------------------------------------------*\
-    That's it
+    Set offset of element
+\*------------------------------------------------------------------------*/
+  new->offset.x = x;
+  new->offset.y = y;
+  pthread_mutex_unlock( &container->mutex );
+
+/*------------------------------------------------------------------------*\
+    That's all
 \*------------------------------------------------------------------------*/
   return 0;
 }
 
 
 /*=========================================================================*\
-    Stop playback
+    Remove one or all widgets from a container
 \*=========================================================================*/
-static int _ifStop( AudioIf *aif, AudioTermMode mode )
+int dfbtContainerRemove( DfbtWidget *container, DfbtWidget *widget )
 {
-  DBGMSG( "Audio Null (%s): %d", aif->devName, mode ); 
+  DfbtWidget  *walk;
+
+  DBGMSG( "dfbtContainerRemove (%p): removing widget %p", container, widget );
 
 /*------------------------------------------------------------------------*\
-    reset state to initialized, that's it
+    Check type
 \*------------------------------------------------------------------------*/
-  aif->state = AudioIfInitialized;
+  if( container->type!=DfbtScreen && container->type!=DfbtContainer ) {
+    logerr( "dfbtContainerAdd: called for wrong widget type %d",
+            container->type );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    Find and unlink target
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &container->mutex );
+  if( widget ) {
+    if( container->content==widget )
+      container->content = container->content->next;
+    else {
+      for( walk=container->content; walk->next; walk=walk->next ) {
+        if( walk->next==widget ) {
+          walk->next = widget->next;
+          break;
+        }
+      }
+      if( !walk ) {
+        logerr( "dfbtContainerRemove: widget is no content element" );
+        pthread_mutex_unlock( &container->mutex );
+        return -1;
+      }
+    }
+    dfbtRelease( widget );
+  }
+
+/*------------------------------------------------------------------------*\
+    Remove all
+\*------------------------------------------------------------------------*/
+  else {
+    for( walk=container->content; walk; walk=walk->next )
+      dfbtRelease( walk );
+    container->content = NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Need an redraw
+\*------------------------------------------------------------------------*/
+  container->needsUpdate = true;
+  pthread_mutex_unlock( &container->mutex );
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
   return 0;
 }
 
-
-/*=========================================================================*\
-       An audio backend thread 
-\*=========================================================================*/
-static void *_ifThread( void *arg )
-{
-  AudioIf *aif     = (AudioIf*)arg; 
-
-  DBGMSG( "Pulse NUll thread (%s): starting.", aif->devName );
-  PTHREADSETNAME( aif->backend->name );
-
-/*------------------------------------------------------------------------*\
-    Thread main loop  
-\*------------------------------------------------------------------------*/
-  aif->state = AudioIfRunning;
-  while( aif->state==AudioIfRunning ) {
-    int    rc;
-        
-    // Wait for data in fifo
-    rc = fifoLockWaitReadable( aif->fifoIn, 500 );
-    if( rc==ETIMEDOUT ) {
-      DBGMSG( "Audio Null thread: timout while waiting for fifo data." );	
-  	  continue;
-  	}
-    if( rc ) {
-      DBGMSG( "Audio Null thread: wait for fifo error, terminating: %s", strerror(rc) );
-  	  aif->state = AudioIfTerminatedError;
-  	  break; 	
-    }
-    
-    // How much data can be delivered
-    size_t bytes_readable = fifoGetSize( aif->fifoIn, FifoNextReadable );
-
-    // Do transfer the data
-    DBGMSG( "Audio Null thread: consuming %ld frames", (long)bytes_readable );
-
-    // Check out accepted data from fifo
-    fifoUnlockAfterRead( aif->fifoIn,bytes_readable ); 
-  	
-  }  // End of: Thread main loop
-   
-/*------------------------------------------------------------------------*\
-    Fulfilled external termination request without error...  
-\*------------------------------------------------------------------------*/
-  DBGMSG( "Audio Null thread: terminating due to state %d", aif->state );
-  if( aif->state==AudioIfTerminating )
-    aif->state = AudioIfTerminatedOk;   
-
-/*------------------------------------------------------------------------*\
-    That's it ...  
-\*------------------------------------------------------------------------*/
-  return NULL;
-}
 
 /*=========================================================================*\
                                     END OF FILE
 \*=========================================================================*/
+
+
+
 

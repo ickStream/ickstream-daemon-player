@@ -71,7 +71,7 @@ Remarks         : -
 #include <uuid/uuid.h>
 #endif
 
-#include "utils.h"
+#include "ickutils.h"
 #include "ickService.h"
 #include "ickMessage.h"
 #include "ickCloud.h"

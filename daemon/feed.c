@@ -59,11 +59,12 @@ Remarks         : -
 #include <string.h>
 #include <strings.h>
 #include <errno.h>
+#include <pthread.h>
 #include <signal.h>
 #include <curl/curl.h>
 
 #include "ickpd.h"
-#include "utils.h"
+#include "ickutils.h"
 #include "codec.h"
 #include "fifo.h"
 #include "feed.h"

@@ -71,7 +71,7 @@ Remarks         : -
 #include <ickDiscovery.h>
 
 #include "ickpd.h"
-#include "utils.h"
+#include "ickutils.h"
 #include "config.h"
 #include "persist.h"
 #include "hmi.h"

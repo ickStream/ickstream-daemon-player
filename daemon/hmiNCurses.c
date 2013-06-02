@@ -60,7 +60,7 @@ Remarks         : -
 #include <ncurses.h>
 #include <jansson.h>
 
-#include "utils.h"
+#include "ickutils.h"
 #include "playlist.h"
 #include "player.h"
 #include "ickService.h"

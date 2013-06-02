@@ -58,7 +58,7 @@ Remarks         : -
 #include <pthread.h>
 #include <alsa/asoundlib.h>
 
-#include "utils.h"
+#include "ickutils.h"
 #include "audio.h"
 #include "fifo.h"
 

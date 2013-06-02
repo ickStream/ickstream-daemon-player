@@ -61,7 +61,7 @@ Remarks         : -
 #include <jansson.h>
 #include <mpg123.h>
 
-#include "utils.h"
+#include "ickutils.h"
 #include "audio.h"
 #include "metaIcy.h"
 #include "codec.h"

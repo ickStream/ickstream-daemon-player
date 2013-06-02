@@ -1,10 +1,10 @@
 # --------------------------------------------------------------
 #
-# Description     : makefile for the ickstream player deamon
+# Description     : makefile for direct frame buffer toolkit
 #
 # Comments        : -
 #
-# Date            : 13.02.2013
+# Date            : 01.06.2013
 #
 # Updates         : -
 #
@@ -26,37 +26,40 @@ CFLAGS          = @cflags@ -DICKPD_GITVERSION=\"$(GITVERSION)\"
 LD              = $(CC)
 LDFLAGS         = @ldflags@
 MKDEPFLAGS      = -Y
+LIBDIR          = @libdir@
 
+# Name library of executable
+LIBNAME         = libdfbtools
+EXECUTABLE      = dfbtest
 
-# Where to finde the: ickstream p2p library
-ICKSTREAMDIR    = @icklibroot@
+# Source files for library
+LIBSRC          = dfbTools.c dfbContainer.c dfbText.c
+LIBOBJ          = $(LIBSRC:.c=.o)
 
-
-# Name of executable
-EXECUTABLE      = ickpd
-
-
-# Source files to process
-SRC             = utils.c config.c persist.c playlist.c player.c ickpd.c \
-                  audio.c audioNull.c fifo.c feed.c metaIcy.c\
-                  codec.c @extrasrcs@\
-                  ickDevice.c ickMessage.c ickService.c ickCloud.c ickScrobble.c
+# Source files for test
+SRC             = dfbtest.c
 OBJECTS         = $(SRC:.c=.o)
-
 
 # Includes and libraris
 INCLUDES        = @includes@
-LIBDIRS         = -L@libdir@ -L$(ICKSTREAMDIR)/lib
-LIBS            = -lickstreamp2p -lickutils -ljansson -lpthread -lz @extralibs@
+LIBS            = -lpthread @extralibs@
 
-
-# How to compile c source files
+# How to compile C source files
 %.o: %.c Makefile
 	$(CC) $(INCLUDES) $(CFLAGS) $(DEBUGFLAGS) -c $< -o $@
 
-all: $(EXECUTABLE)
+all: $(LIBDIR)/$(LIBNAME).a
 
 new: cleanall all
+
+
+# How to build the static library
+$(LIBDIR)/$(LIBNAME).a: $(LIBOBJ) 
+	@echo '*************************************************************'
+	@echo "Building library:"
+	mkdir -p $(LIBDIR)
+	ar cr $@ $?
+	ar ts >/dev/null $@
 
 # Build target
 $(EXECUTABLE): $(OBJECTS) Makefile

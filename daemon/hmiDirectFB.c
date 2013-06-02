@@ -55,10 +55,12 @@ Remarks         : -
 #include <jansson.h>
 #include <directfb.h>
 
-#include "utils.h"
+#include "ickutils.h"
 #include "playlist.h"
 #include "player.h"
 #include "ickService.h"
+#include "dfbTools.h"
+
 
 /*=========================================================================*\
 	Global symbols
@@ -70,15 +72,13 @@ Remarks         : -
        Macro and type definitions 
 \*=========================================================================*/
 #define DFB_ITEMS 7
-#define DFBRELEASE(a) ((a)->Release(a),(a)=NULL)
 
 /*=========================================================================*\
 	Private symbols
 \*=========================================================================*/
-static IDirectFB         *dfb;
-static IDirectFBSurface  *dfb_primary;
-static int                dfb_width;
-static int                dfb_height;
+
+
+static DFBRectangle       artRect;
 //static const char        *fontfile = ICK_DFBFONT;
 static const char        *fontfile = "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf";
 static IDirectFBFont     *font1;
@@ -86,7 +86,7 @@ static int                font1_height;
 static IDirectFBFont     *font2;
 static int                font2_height;
 
-static IDirectFBSurface  *dfb_items[DFB_ITEMS];
+static DfbtWidget        *wPlaylist;
 
 
 static PlaylistItem *currentItem;
@@ -95,7 +95,7 @@ static PlaylistItem *currentItem;
 /*=========================================================================*\
 	Private prototypes
 \*=========================================================================*/
-static IDirectFBSurface *dfb_item( PlaylistItem *item, int pos, int width, int height, bool isCursor );
+static DfbtWidget *wPlaylistItem( PlaylistItem *item, int pos, int width, int height, bool isCursor );
 
 
 /*=========================================================================*\
@@ -125,79 +125,67 @@ int hmiInit( int *argc, char *(*argv[]) )
 \*=========================================================================*/
 int hmiCreate( void )
 {
+  IDirectFB            *dfb;
+  DfbtWidget           *screen;
+  int                   width, height;
   DFBResult             drc;
-  DFBSurfaceDescription sdsc;
   DFBFontDescription    fdsc;
   DBGMSG( "Initializing HMI module..." );
 
 /*------------------------------------------------------------------------*\
-    Get main interface
+    Set some direct FB options
 \*------------------------------------------------------------------------*/
   DirectFBSetOption( "no-cursor", NULL );
   DirectFBSetOption ("bg-none", NULL);
   DirectFBSetOption ("no-init-layer", NULL);
 
-  drc = DirectFBCreate( &dfb );
-  if( drc!=DFB_OK ) {
-    logerr( "hmiInit: could not create direct fb (%s).", DirectFBErrorString(drc) );
-    return -1;
-  }
-
 /*------------------------------------------------------------------------*\
-    Get and clear main surface
+    Init direct frema buffer and build up screen
 \*------------------------------------------------------------------------*/
-  sdsc.flags = DSDESC_CAPS;
-  sdsc.caps  = DSCAPS_PRIMARY | DSCAPS_FLIPPING;
-  drc = dfb->CreateSurface( dfb, &sdsc, &dfb_primary ) ;
-  if( drc!=DFB_OK ) {
-    logerr( "hmiInit: could not create surface (%s).", DirectFBErrorString(drc) );
-    dfb->Release( dfb );
+  if( dfbtInit("../resources") )
     return -1;
-  }
-  drc = dfb_primary->GetSize( dfb_primary, &dfb_width, &dfb_height ) ;
-  if( drc!=DFB_OK ) {
-    logerr( "hmiInit: could not get size (%s).", DirectFBErrorString(drc) );
-    DFBRELEASE( dfb_primary );
-    DFBRELEASE( dfb );
-    return -1;
-  }
-  drc = dfb_primary->FillRectangle( dfb_primary, 0, 0, dfb_width, dfb_height ) ;
-  if( drc!=DFB_OK ) {
-    logerr( "hmiInit: could not fill screen (%s).", DirectFBErrorString(drc) );
-    DFBRELEASE( dfb_primary );
-    DFBRELEASE( dfb );
-    return -1;
-  }
-  dfb_primary->Flip( dfb_primary, NULL, 0 );
+  dfb = dfbtGetDdb();
+  screen = dfbtGetScreen();
+  dfbtGetSize( screen, &width, &height );
 
 /*------------------------------------------------------------------------*\
     Get fonts
 \*------------------------------------------------------------------------*/
   fdsc.flags      = DFDESC_HEIGHT | DFDESC_ATTRIBUTES;
-  fdsc.height     = 1 + 24*dfb_height/1024;
+  fdsc.height     = 1 + 24*height/1024;
   fdsc.attributes = DFFA_NONE;
   drc = dfb->CreateFont( dfb, fontfile, &fdsc, &font1 );
   if( drc!=DFB_OK ) {
     logerr( "hmiInit: could not find font %s (%s).", fontfile, DirectFBErrorString(drc) );
-    DFBRELEASE( dfb_primary );
-    DFBRELEASE( dfb );
     return -1;
   }
   font1->GetHeight( font1, &font1_height );
-  dfb_primary->SetFont( dfb_primary, font1 );
 
   fdsc.flags      = DFDESC_HEIGHT | DFDESC_ATTRIBUTES;
-  fdsc.height     = 1 + 48*dfb_height/1024;
+  fdsc.height     = 1 + 48*height/1024;
   fdsc.attributes = DFFA_NONE;
   drc = dfb->CreateFont( dfb, fontfile, &fdsc, &font2 );
   if( drc!=DFB_OK ) {
     logerr( "hmiInit: could not find font %s (%s).", fontfile, DirectFBErrorString(drc) );
     DFBRELEASE( font1 );
-    DFBRELEASE( dfb_primary );
-    DFBRELEASE( dfb );
     return -1;
   }
   font2->GetHeight( font2, &font2_height );
+
+/*------------------------------------------------------------------------*\
+    Define area for cover art
+\*------------------------------------------------------------------------*/
+  int border = height/100;
+  artRect.w = (DFB_ITEMS/2+1)*(height/DFB_ITEMS)-2*border;
+  artRect.h = artRect.w;
+  artRect.x = (width/2-artRect.w)/2;
+  artRect.y = border;
+
+/*------------------------------------------------------------------------*\
+    Create and add container for playlist elements
+\*------------------------------------------------------------------------*/
+  wPlaylist = dfbtContainer( width/2, height );
+  dfbtContainerAdd( screen, wPlaylist, width, 0, DfbtAlignTopRight );
 
 /*------------------------------------------------------------------------*\
     That's all
@@ -211,24 +199,23 @@ int hmiCreate( void )
 \*=========================================================================*/
 void hmiShutdown( void )
 {
-  int i;
   DBGMSG( "Shutting down HMI module..." );
 
 /*------------------------------------------------------------------------*\
-    Release surfaces of playback queue items
+    Get rid of global containers
 \*------------------------------------------------------------------------*/
-  for( i=0; i<DFB_ITEMS; i++ ) {
-    if( dfb_items[i] )
-      DFBRELEASE( dfb_items[i] );
-  }
+  dfbtRelease( wPlaylist );
 
 /*------------------------------------------------------------------------*\
     Release fonts and primary/super interfaces
 \*------------------------------------------------------------------------*/
   DFBRELEASE( font1 );
   DFBRELEASE( font2 );
-  DFBRELEASE( dfb_primary );
-  DFBRELEASE( dfb );
+
+/*------------------------------------------------------------------------*\
+    Shut down toolkit
+\*------------------------------------------------------------------------*/
+  dfbtShutdown();
 }
 
 
@@ -260,24 +247,27 @@ void hmiNewConfig( void )
 void hmiNewQueue( Playlist *plst )
 {
   int i;
-  int width  = dfb_width / 2;
-  int height = dfb_height / DFB_ITEMS;
-  int border = dfb_height/100;
+  DfbtWidget   *wItem;
+  int           width, height, border;
   PlaylistItem *item = playlistGetCursorItem( plst );
 
   DBGMSG( "hmiNewQueue: %p (%s).", item, item?playlistItemGetText(item):"<None>" );
   currentItem = item;
 
 /*------------------------------------------------------------------------*\
-    Release surfaces of playback queue items
+    Get geometry
 \*------------------------------------------------------------------------*/
-  for( i=0; i<DFB_ITEMS; i++ ) {
-    if( dfb_items[i] )
-      DFBRELEASE( dfb_items[i] );
-  }
+  dfbtGetSize( wPlaylist, &width, &height );
+  border = height/100;
+  height = height / DFB_ITEMS;
 
 /*------------------------------------------------------------------------*\
-    Create surfaces for playback queue items
+    Clear playlist container
+\*------------------------------------------------------------------------*/
+  dfbtContainerRemove( wPlaylist, NULL );
+
+/*------------------------------------------------------------------------*\
+    Create widgets for playback queue items
 \*------------------------------------------------------------------------*/
   playlistLock( plst );
   for( i=0; i<DFB_ITEMS; i++ ) {
@@ -286,26 +276,20 @@ void hmiNewQueue( Playlist *plst )
 
     if( theItem )
       playlistItemLock( theItem );
-    dfb_items[i] = dfb_item( theItem, pos, width-border, height-border, theItem==item );
+
+    wItem = wPlaylistItem( theItem, pos, width-border, height-border, theItem==item );
+    dfbtContainerAdd( wPlaylist, wItem, 0, i*height, DfbtAlignTopLeft );
+    dfbtRelease( wItem );
+
     if( theItem )
       playlistItemUnlock( theItem );
   }
   playlistUnlock( plst );
 
 /*------------------------------------------------------------------------*\
-    Show surfaces for playback queue items
+    Trigger redraw
 \*------------------------------------------------------------------------*/
-  dfb_primary->SetColor( dfb_primary, 0x0, 0x0, 0x0, 0x0 );
-  dfb_primary->FillRectangle( dfb_primary, dfb_width-width, 0, width, dfb_height );
-  for( i=0; i<DFB_ITEMS; i++ ) {
-    int x = dfb_width-width;
-    int y = i*height;
-    if( !dfb_items[i] )
-      continue;
-    dfb_primary->Blit( dfb_primary, dfb_items[i], NULL, x, y );
-  }
-  dfb_primary->Flip( dfb_primary, NULL, 0 );
-
+  dfbtRedrawScreen( false );
 }
 
 
@@ -404,90 +388,91 @@ void hmiNewPosition( double seekPos )
 
 
 /*=========================================================================*\
-      Get a direct fb surface for an playlist item
+      Get a direct fb toolkit container for a playlist item
 \*=========================================================================*/
-static IDirectFBSurface *dfb_item( PlaylistItem *item, int pos, int width, int height, bool isCursor )
+static DfbtWidget *wPlaylistItem( PlaylistItem *item, int pos, int width, int height, bool isCursor )
 {
-  DFBResult              drc;
-  DFBSurfaceDescription  sdsc;
-  IDirectFBSurface      *surf;
+  DfbtWidget            *container;
+  DfbtWidget            *wNum, *wTxt;
   json_t                *jObj;
   const char            *txt;
   char                   buffer[64];
-  int                    border = dfb_height/100;
+  int                    border = width/100;
   int                    txt_y  = 0;
   int                    txt_x  = height + border;
-  int                    w;
+  int                    a;
 
-  DBGMSG( "dfb_item: %p (%d - %s) %s", item, pos,
+                                 // A,    R,    G,    B
+  DFBColor               cWhite = { 0xFF, 0xFF, 0xFF, 0xFF };
+  DFBColor               cRed   = { 0xFF, 0x80, 0x00, 0x00 };
+  DFBColor               cBlue  = { 0xFF, 0x00, 0x00, 0x80 };
+  DFBColor               cGray  = { 0xFF, 0x20, 0x20, 0x20 };
+
+  DBGMSG( "wPlaylistItem: %p (%d - %s) %s", item, pos,
           item?playlistItemGetText(item):"<None>", isCursor?"<<<":"" );
 
 /*------------------------------------------------------------------------*\
-    Create new surface
+    Create new container
 \*------------------------------------------------------------------------*/
-  //sdsc.flags = DSDESC_CAPS | DSDESC_PIXELFORMAT | DSDESC_WIDTH | DSDESC_HEIGHT;
-  //sdsc.caps        = DSCAPS_PREMULTIPLIED;
-  sdsc.flags = DSDESC_PIXELFORMAT | DSDESC_WIDTH | DSDESC_HEIGHT;
-  dfb_primary->GetPixelFormat( dfb_primary, &sdsc.pixelformat );
-  sdsc.width       = width;
-  sdsc.height      = height;
-
-  drc= dfb->CreateSurface( dfb, &sdsc, &surf );
-  if( drc!=DFB_OK ) {
-    logerr( "dfb_item: could not get surface (%s).", DirectFBErrorString(drc) );
+  container = dfbtContainer( width, height );
+  if( !container )
     return NULL;
-  }
 
 /*------------------------------------------------------------------------*\
-    Clear background
+    Set background
 \*------------------------------------------------------------------------*/
   if( isCursor )
-    surf->SetColor( surf, 0x80, 0x00, 0x0, 0x80 );
+    dfbtSetBackground( container, &cRed );
   else if( item )
-    surf->SetColor( surf, 0x0, 0x0, 0x80, 0x80 );
+    dfbtSetBackground( container, &cBlue );
   else
-    surf->SetColor( surf, 0x10, 0x10, 0x10, 0x80 );
-  surf->FillRectangle( surf, 0, 0, width, height );
+    dfbtSetBackground( container, &cGray );
 
 /*------------------------------------------------------------------------*\
     No item data?
 \*------------------------------------------------------------------------*/
   if( !item )
-    return surf;
+    return container;
 
 /*------------------------------------------------------------------------*\
     Get and show Queue Position and title in one line
 \*------------------------------------------------------------------------*/
-  txt_y += font2_height;
-  surf->SetFont( surf, font1 );
-  sprintf( buffer, "%d.", pos+1 );
-  font1->GetStringWidth( font1, buffer, -1, &w );
-  txt_x += w;
-  surf->SetColor( surf, 0xFF, 0xFF, 0xFF, 0xFF );
-  surf->DrawString( surf, buffer, -1, txt_x, txt_y, DSTF_RIGHT );
-  txt_x += border;
+  sprintf( buffer, "%3d.", pos+1 );
+  wNum = dfbtText( buffer, font1, &cWhite );
 
   jObj = playlistItemGetModelAttribute( item, "name" );
   if( jObj && json_is_string(jObj) )
     txt = json_string_value( jObj );
   else
     txt = playlistItemGetText( item );
-  surf->SetFont( surf, font2 );
-  surf->SetColor( surf, 0xFF, 0xFF, 0xFF, 0xFF );
-  surf->DrawString( surf, txt, -1, txt_x, txt_y, DSTF_LEFT );
+  wTxt = dfbtText( txt, font2, &cWhite );
+
+  font1->GetMaxAdvance( font1, &a );
+  txt_x += 2*a;
+  font1->GetHeight( font2, &a );
+  txt_y += a;
+
+  dfbtContainerAdd( container, wNum, txt_x, txt_y, DfbtAlignBaseRight );
+  dfbtRelease( wNum );
+
+  txt_x += border;
+  dfbtContainerAdd( container, wTxt, txt_x, txt_y, DfbtAlignBaseLeft );
+  dfbtRelease( wTxt );
+
 
 /*------------------------------------------------------------------------*\
-    Show Album
+    Show album name
 \*------------------------------------------------------------------------*/
   jObj = playlistItemGetModelAttribute( item, "album" );
   if( jObj ) {
     jObj = json_object_get( jObj, "name" );
     if( jObj && json_is_string(jObj) ) {
       txt = json_string_value( jObj );
-      surf->SetFont( surf, font1 );
-      txt_y += font1_height;
-      surf->SetColor( surf, 0xFF, 0xFF, 0xFF, 0xFF );
-      surf->DrawString( surf, txt, -1, txt_x, txt_y, DSTF_LEFT );
+      wTxt = dfbtText( txt, font1, &cWhite );
+      font1->GetHeight( font1, &a );
+      txt_y += a;
+      dfbtContainerAdd( container, wTxt, txt_x, txt_y, DfbtAlignBaseLeft );
+      dfbtRelease( wTxt );
     }
   }
 
@@ -499,10 +484,11 @@ static IDirectFBSurface *dfb_item( PlaylistItem *item, int pos, int width, int h
     jObj = json_object_get( jObj, "name" );
     if( jObj && json_is_string(jObj) ) {
       txt = json_string_value( jObj );
-      surf->SetFont( surf, font1 );
-      txt_y += font1_height;
-      surf->SetColor( surf, 0x80, 0x80, 0x80, 0xFF );
-      surf->DrawString( surf, txt, -1, txt_x, txt_y, DSTF_LEFT );
+      wTxt = dfbtText( txt, font1, &cWhite );
+      font1->GetHeight( font1, &a );
+      txt_y += a;
+      dfbtContainerAdd( container, wTxt, txt_x, txt_y, DfbtAlignBaseLeft );
+      dfbtRelease( wTxt );
     }
   }
 
@@ -510,10 +496,11 @@ static IDirectFBSurface *dfb_item( PlaylistItem *item, int pos, int width, int h
     Show Artwork
 \*------------------------------------------------------------------------*/
 
+
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/
-  return surf;
+  return container;
 }
 
 /*=========================================================================*\

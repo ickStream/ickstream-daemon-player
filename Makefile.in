@@ -19,7 +19,7 @@
 
 SHELL=/bin/sh
 
-SUBDIRS = daemon 
+SUBDIRS = @makedirs@
 ARCVER  = $(shell TZ=UTC date '+%y%m%d%H%M%S')
 GITVER  = $(shell git rev-list HEAD --max-count=1)
 ARCNAME = ickpd

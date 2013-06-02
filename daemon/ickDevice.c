@@ -55,7 +55,7 @@ Remarks         : -
 #include <jansson.h>
 #include <ickDiscovery.h>
 
-#include "utils.h"
+#include "ickutils.h"
 #include "hmi.h"
 #include "ickDevice.h"
 #include "ickMessage.h"

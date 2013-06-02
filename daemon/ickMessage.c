@@ -59,7 +59,7 @@ Remarks         : -
 #include <ickDiscovery.h>
 #include <jansson.h>
 
-#include "utils.h"
+#include "ickutils.h"
 #include "hmi.h"
 #include "ickMessage.h"
 #include "ickCloud.h"

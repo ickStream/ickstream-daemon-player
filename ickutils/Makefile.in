@@ -1,10 +1,10 @@
 # --------------------------------------------------------------
 #
-# Description     : makefile for the ickstream player deamon
+# Description     : makefile ickstream utilities 
 #
 # Comments        : -
 #
-# Date            : 13.02.2013
+# Date            : 01.06.2013
 #
 # Updates         : -
 #
@@ -26,43 +26,35 @@ CFLAGS          = @cflags@ -DICKPD_GITVERSION=\"$(GITVERSION)\"
 LD              = $(CC)
 LDFLAGS         = @ldflags@
 MKDEPFLAGS      = -Y
+LIBDIR          = @libdir@
 
+# Name library of executable
+LIBNAME         = libickutils
 
-# Where to finde the: ickstream p2p library
-ICKSTREAMDIR    = @icklibroot@
-
-
-# Name of executable
-EXECUTABLE      = ickpd
-
-
-# Source files to process
-SRC             = utils.c config.c persist.c playlist.c player.c ickpd.c \
-                  audio.c audioNull.c fifo.c feed.c metaIcy.c\
-                  codec.c @extrasrcs@\
-                  ickDevice.c ickMessage.c ickService.c ickCloud.c ickScrobble.c
-OBJECTS         = $(SRC:.c=.o)
+# Source files for library
+LIBSRC          = utils.c
+LIBOBJ          = $(LIBSRC:.c=.o)
 
 
 # Includes and libraris
 INCLUDES        = @includes@
-LIBDIRS         = -L@libdir@ -L$(ICKSTREAMDIR)/lib
-LIBS            = -lickstreamp2p -lickutils -ljansson -lpthread -lz @extralibs@
 
-
-# How to compile c source files
+# How to compile C source files
 %.o: %.c Makefile
 	$(CC) $(INCLUDES) $(CFLAGS) $(DEBUGFLAGS) -c $< -o $@
 
-all: $(EXECUTABLE)
+all: $(LIBDIR)/$(LIBNAME).a
 
 new: cleanall all
 
-# Build target
-$(EXECUTABLE): $(OBJECTS) Makefile
+
+# How to build the static library
+$(LIBDIR)/$(LIBNAME).a: $(LIBOBJ) 
 	@echo '*************************************************************'
-	@echo "Linking executable:"
-	$(LD) $(LDFLAGS) $(LIBDIRS) $(OBJECTS) $(LIBS)  -o $@
+	@echo "Building library:"
+	mkdir -p $(LIBDIR)
+	ar cr $@ $?
+	ar ts >/dev/null $@
 
 
 # How to create dependencies

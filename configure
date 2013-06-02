@@ -54,7 +54,6 @@ while test $# -gt 0; do
       exit 1;
     fi 
     
-
   # unknown option
   else
     echo "$0: unknown parameter \"$1\""
@@ -93,9 +92,10 @@ CC="cc"
 CFLAGS="-Wall"
 LDFLAGS="-rdynamic"
 RANLIB="ranlib"
-INCLUDES=""
+INCLUDES="${PWD}/include"
 EXTRALIBS=""
 EXTRASRCS=""
+MAKEDIRS="ickutils daemon"
 
 case $systype-$reltype-$mchname in
 
@@ -243,9 +243,10 @@ if [ "$HMISRC" = "hmiDirectFB.c" ]; then
   DFBFLAGS=`directfb-config --cflags 2>/dev/null`
   if [ -n "$DFBFLAGS" ] && echo "#include <directfb.h>" | gcc -o /dev/null $DFBFLAGS -E -x c - 2>/dev/null; then
     echo "found `directfb-config --version`"
+    MAKEDIRS="dfbtools $MAKEDIRS"
     CFLAGS="$CFLAGS -DICK_DIRECTFB $DFBFLAGS"
     #don't need -L part:     EXTRALIBS="$EXTRALIBS `directfb-config --libs`"
-    EXTRALIBS="-ldirectfb -lfusion -ldirect -lfreetype $EXTRALIBS"
+    EXTRALIBS="-ldfbtools -ldirectfb -lfusion -ldirect -lfreetype $EXTRALIBS"
   else
     echo "please install libdirectfb and retry..."
     exit 1
@@ -294,6 +295,9 @@ echo 'Used compiler flags             :' $CFLAGS
 echo 'Used linker flags               :' $LDFLAGS
 echo 'Used extra sources              :' $EXTRASRCS
 echo 'Used extra libs                 :' $EXTRALIBS
+echo 'Running make in subdirs         :' $MAKEDIRS
+
+LIBDIR="$PWD/lib"
 
 
 # ----------------------------------------
@@ -311,11 +315,13 @@ sed -e 's,@cinfo@,$CONFIG_INFO,g' \\
     -e 's,@icklibroot@,$ICK_ROOT,g' \\
     -e 's,@pkgname@,$PKGNAME,g' \\
     -e 's,@ickpdroot@,$PWD,g' \\
+    -e 's,@libdir@,$LIBDIR,g' \\
     -e 's,@includes@,$CINCL,g' \\
     -e 's,@ranlib@,$RANLIB,g' \\
     -e 's,@cc@,$CC,g' \\
     -e 's,@extralibs@,$EXTRALIBS,g' \\
     -e 's,@extrasrcs@,$EXTRASRCS,g' \\
+    -e 's,@makedirs@,$MAKEDIRS,g' \\
     -e 's,@cflags@,$CFLAGS,g' \\
     -e 's,@makedepend@,$MAKEDEPEND,g' \\
     -e 's,@ldflags@,$LDFLAGS,g' \\
@@ -329,7 +335,7 @@ chmod +x scripts/config.status
 # ----------------------------------------
 # echo 'Running config.status : '
 ROOTDIR=$PWD
-for a in *.in `find daemon -name '*.in' -print`; do
+for a in *.in `find $MAKEDIRS -name '*.in' -print`; do
 #  echo -n "./`dirname $a` : "
   cd `dirname $a`
   $ROOTDIR/scripts/config.status `basename $a`

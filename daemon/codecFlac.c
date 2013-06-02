@@ -62,7 +62,7 @@ Remarks         : -
 #include <FLAC/format.h>
 #include <FLAC/stream_decoder.h>
 
-#include "utils.h"
+#include "ickutils.h"
 #include "audio.h"
 #include "metaIcy.h"
 #include "codec.h"
