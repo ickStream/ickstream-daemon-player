@@ -252,7 +252,7 @@ int dfbtContainerRemove( DfbtWidget *container, DfbtWidget *widget )
     if( container->content==widget )
       container->content = container->content->next;
     else {
-      for( walk=container->content; walk->next; walk=walk->next ) {
+      for( walk=container->content; walk&&walk->next; walk=walk->next ) {
         if( walk->next==widget ) {
           walk->next = widget->next;
           break;

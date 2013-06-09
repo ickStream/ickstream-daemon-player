@@ -128,9 +128,10 @@ static int    _curlTraceCallback( CURL *handle, curl_infotype type, char *data, 
 \*=========================================================================*/
 DfbtWidget *dfbtImage( int width, int height, const char *uri, bool isFile )
 {
-  ImageCacheItem *cacheItem;
-  DfbtWidget     *widget;
-  DfbtImageData  *imageData;
+  ImageCacheItem          *cacheItem;
+  DfbtWidget              *widget;
+  DfbtImageData           *imageData;
+  DFBSurfaceRenderOptions  ropts;
 
   DBGMSG( "dfbtImage: \"%s\"", uri );
 
@@ -149,6 +150,12 @@ DfbtWidget *dfbtImage( int width, int height, const char *uri, bool isFile )
   widget = _dfbtNewWidget( DfbtImage, width, height );
   if( !widget )
     return NULL;
+
+/*------------------------------------------------------------------------*\
+    Set render options for scaling
+\*------------------------------------------------------------------------*/
+  ropts = DSRO_SMOOTH_UPSCALE | DSRO_SMOOTH_DOWNSCALE;
+  widget->surface->SetRenderOptions( widget->surface, ropts );
 
 /*------------------------------------------------------------------------*\
     Allocate and init additional data
@@ -250,7 +257,6 @@ int dfbtImageWaitForComplete( DfbtWidget *widget, int timeout )
           cacheItem, cacheItem->uri, strerror(err) );
   return err;
 }
-
 
 
 /*=========================================================================*\

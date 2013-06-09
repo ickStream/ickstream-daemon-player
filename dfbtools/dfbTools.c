@@ -246,7 +246,11 @@ void dfbtRetain( DfbtWidget *widget )
 \*=========================================================================*/
 void dfbtRelease( DfbtWidget *widget )
 {
-  DBGMSG( "dfbtRelease (%p): refcount now %d", widget, widget->refCount-1 );
+  if( !widget ) {
+    DBGMSG( "dfbtRelease (%p): called with nil", widget );
+    return;
+  }
+  DBGMSG( "dfbtRelease (%p): type %d, refcount now %d", widget, widget->type, widget->refCount-1 );
 
 /*------------------------------------------------------------------------*\
     Lock item

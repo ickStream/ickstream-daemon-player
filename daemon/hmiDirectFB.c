@@ -55,6 +55,7 @@ Remarks         : -
 #include <jansson.h>
 #include <directfb.h>
 
+#include "hmi.h"
 #include "ickutils.h"
 #include "playlist.h"
 #include "player.h"
@@ -82,14 +83,22 @@ static DFBRectangle       artRect;
 //static const char        *fontfile = ICK_DFBFONT;
 static const char        *fontfile = "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf";
 static IDirectFBFont     *font1;
-static int                font1_height;
 static IDirectFBFont     *font2;
-static int                font2_height;
+static IDirectFBFont     *font3;
 
 static DfbtWidget        *wPlaylist;
-
+static DfbtWidget        *wArtwork;
+static DfbtWidget        *wStatus;
+static DfbtWidget        *wConfig;
 
 static PlaylistItem *currentItem;
+
+
+                          // A,    R,    G,    B
+static DFBColor cWhite   = { 0xFF, 0xFF, 0xFF, 0xFF };
+static DFBColor cRed     = { 0xFF, 0x80, 0x00, 0x00 };
+static DFBColor cBlue    = { 0xFF, 0x00, 0x00, 0x80 };
+static DFBColor cGray    = { 0xFF, 0x20, 0x20, 0x20 };
 
 
 /*=========================================================================*\
@@ -127,7 +136,6 @@ int hmiCreate( void )
 {
   IDirectFB            *dfb;
   DfbtWidget           *screen;
-  DfbtWidget           *wLogo;
   int                   width, height;
   DFBResult             drc;
   DFBFontDescription    fdsc;
@@ -160,7 +168,6 @@ int hmiCreate( void )
     logerr( "hmiInit: could not find font %s (%s).", fontfile, DirectFBErrorString(drc) );
     return -1;
   }
-  font1->GetHeight( font1, &font1_height );
 
   fdsc.flags      = DFDESC_HEIGHT | DFDESC_ATTRIBUTES;
   fdsc.height     = 1 + 48*height/1024;
@@ -171,24 +178,33 @@ int hmiCreate( void )
     DFBRELEASE( font1 );
     return -1;
   }
-  font2->GetHeight( font2, &font2_height );
+
+  fdsc.flags      = DFDESC_HEIGHT | DFDESC_ATTRIBUTES;
+  fdsc.height     = 1 + 16*height/1024;
+  fdsc.attributes = DFFA_NONE;
+  drc = dfb->CreateFont( dfb, fontfile, &fdsc, &font3 );
+  if( drc!=DFB_OK ) {
+    logerr( "hmiInit: could not find font %s (%s).", fontfile, DirectFBErrorString(drc) );
+    DFBRELEASE( font1 );
+    return -1;
+  }
 
 /*------------------------------------------------------------------------*\
     Define area for cover art
 \*------------------------------------------------------------------------*/
   int border = height/100;
-  artRect.w = (DFB_ITEMS/2+1)*(height/DFB_ITEMS)-2*border;
+  artRect.w = (DFB_ITEMS-2)*(height/DFB_ITEMS)-2*border;
   artRect.h = artRect.w;
   artRect.x = (width/2-artRect.w)/2;
   artRect.y = border;
 
 /*------------------------------------------------------------------------*\
-    Load logo
+    Load logo as default artwork
 \*------------------------------------------------------------------------*/
- wLogo = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
- if( wLogo ) {
-   dfbtContainerAdd( screen, wLogo, artRect.x, artRect.y, DfbtAlignTopLeft );
-   dfbtRelease( wLogo );
+ wArtwork = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
+ if( wArtwork ) {
+   // dfbtSetBackground( wArtwork, &cBlue );
+   dfbtContainerAdd( screen, wArtwork, artRect.x, artRect.y, DfbtAlignTopLeft );
  }
 
 /*------------------------------------------------------------------------*\
@@ -196,6 +212,20 @@ int hmiCreate( void )
 \*------------------------------------------------------------------------*/
   wPlaylist = dfbtContainer( width/2, height );
   dfbtContainerAdd( screen, wPlaylist, width, 0, DfbtAlignTopRight );
+
+/*------------------------------------------------------------------------*\
+    Create and add container for status elements
+\*------------------------------------------------------------------------*/
+  wStatus = dfbtContainer( width/2-2*border, height/DFB_ITEMS-border );
+  dfbtSetBackground( wStatus, &cRed );
+  dfbtContainerAdd( screen, wStatus, border, artRect.y+artRect.h+border, DfbtAlignTopLeft );
+
+/*------------------------------------------------------------------------*\
+    Create and add container for config elements
+\*------------------------------------------------------------------------*/
+  wConfig = dfbtContainer( width/2-2*border, height/DFB_ITEMS-border );
+  dfbtSetBackground( wConfig, &cGray );
+  dfbtContainerAdd( screen, wConfig, border, artRect.y+artRect.h+height/DFB_ITEMS+border, DfbtAlignTopLeft );
 
 /*------------------------------------------------------------------------*\
     That's all
@@ -216,12 +246,16 @@ void hmiShutdown( void )
     Get rid of global containers
 \*------------------------------------------------------------------------*/
   dfbtRelease( wPlaylist );
+  dfbtRelease( wArtwork );
+  dfbtRelease( wStatus );
+  dfbtRelease( wConfig );
 
 /*------------------------------------------------------------------------*\
     Release fonts and primary/super interfaces
 \*------------------------------------------------------------------------*/
   DFBRELEASE( font1 );
   DFBRELEASE( font2 );
+  DFBRELEASE( font3 );
 
 /*------------------------------------------------------------------------*\
     Shut down toolkit
@@ -235,21 +269,110 @@ void hmiShutdown( void )
 \*=========================================================================*/
 void hmiNewConfig( void )
 {
+  DfbtWidget      *wTxt;
+  char            *txt;
+  int              width, height, border;
+  int              txt_x, txt_y;
+  int              a;
+  size_t           len;
+
   ServiceListItem *service;
 
   DBGMSG( "hmiNewConfig: %s, \"%s\", \"%s\".",
       playerGetUUID(),  playerGetName(), playerGetToken()?"Cloud":"No Cloud" );
 
-  printf( "HMI Player id        : %s\n", playerGetUUID() );
-  printf( "HMI Player name      : \"%s\"\n", playerGetName() );
-  printf( "HMI Cloud status     : %s\n", playerGetToken()?"Registered":"Unregistered" );
+/*------------------------------------------------------------------------*\
+    Clear container
+\*------------------------------------------------------------------------*/
+  dfbtContainerRemove( wConfig, NULL );
+  dfbtGetSize( wConfig, &width, &height );
+  border = width/100;
+  txt_x  = 0;
+  txt_y  = 0;
+  font3->GetStringWidth( font3, "Services:__", -1, &txt_x );
+  txt_x  += border;
 
+/*------------------------------------------------------------------------*\
+    Show player name, id and registration status
+\*------------------------------------------------------------------------*/
+  font3->GetHeight( font3, &a );
+  txt_y += a;
+  wTxt = dfbtText( "Player:", font3, &cWhite );
+  dfbtContainerAdd( wConfig, wTxt, border, txt_y, DfbtAlignBaseLeft );
+  dfbtRelease( wTxt );
+  txt = malloc( 30+strlen(playerGetUUID())+strlen(playerGetName()) );
+  sprintf( txt, "\"%s\", %s (%s)", playerGetName(),
+           playerGetToken()?"registered":"unregistered", playerGetUUID() );
+  wTxt = dfbtText( txt, font3, &cWhite );
+  dfbtContainerAdd( wConfig, wTxt, txt_x, txt_y, DfbtAlignBaseLeft );
+  dfbtRelease( wTxt );
+  Sfree( txt );
+
+/*------------------------------------------------------------------------*\
+    Show content services
+\*------------------------------------------------------------------------*/
+  font3->GetHeight( font3, &a );
+  txt_y += a;
+  wTxt = dfbtText( "Content:", font3, &cWhite );
+  dfbtContainerAdd( wConfig, wTxt, border, txt_y, DfbtAlignBaseLeft );
+  dfbtRelease( wTxt );
+  len = 1;
   for( service=ickServiceFind(NULL,NULL,NULL,0); service;
-       service=ickServiceFind(service,NULL,NULL,0) )
-    printf( "HMI Service          : \"%s\" (%s)\n", ickServiceGetName(service),
-            ickServiceGetType(service)  );
+       service=ickServiceFind(service,NULL,NULL,0) ) {
+    if( strcmp(ickServiceGetType(service),"content") )
+      continue;
+    len += strlen( ickServiceGetName(service) )+2;
+  }
+  txt = malloc( len );
+  *txt = 0;
+  for( service=ickServiceFind(NULL,NULL,NULL,0); service;
+       service=ickServiceFind(service,NULL,NULL,0) ) {
+    if( strcmp(ickServiceGetType(service),"content") )
+      continue;
+    if( *txt )
+      strcat( txt, ", " );
+    strcat( txt, ickServiceGetName(service) );
+  }
+  wTxt = dfbtText( txt, font3, &cWhite );
+  dfbtContainerAdd( wConfig, wTxt, txt_x, txt_y, DfbtAlignBaseLeft );
+  dfbtRelease( wTxt );
+  Sfree( txt );
 
-  // Trigger redisplay of playlist since images might have become available
+/*------------------------------------------------------------------------*\
+    Show other services
+\*------------------------------------------------------------------------*/
+  font3->GetHeight( font3, &a );
+  txt_y += a;
+  wTxt = dfbtText( "Services:", font3, &cWhite );
+  dfbtContainerAdd( wConfig, wTxt, border, txt_y, DfbtAlignBaseLeft );
+  dfbtRelease( wTxt );
+  len = 1;
+  for( service=ickServiceFind(NULL,NULL,NULL,0); service;
+       service=ickServiceFind(service,NULL,NULL,0) ) {
+    if( !strcmp(ickServiceGetType(service),"content") )
+      continue;
+    len += strlen( ickServiceGetType(service) )+2;
+  }
+  txt = malloc( len );
+  *txt = 0;
+  for( service=ickServiceFind(NULL,NULL,NULL,0); service;
+       service=ickServiceFind(service,NULL,NULL,0) ) {
+    if( !strcmp(ickServiceGetType(service),"content") )
+      continue;
+    if( *txt )
+      strcat( txt, ", " );
+    strcat( txt, ickServiceGetType(service) );
+  }
+  wTxt = dfbtText( txt, font3, &cWhite );
+  dfbtContainerAdd( wConfig, wTxt, txt_x, txt_y, DfbtAlignBaseLeft );
+  dfbtRelease( wTxt );
+  Sfree( txt );
+
+/*------------------------------------------------------------------------*\
+    Trigger reconstruction of queue since images might have become
+    available through newly added content services
+    This also triggers a redraw
+\*------------------------------------------------------------------------*/
   hmiNewQueue( playerGetQueue() );
 }
 
@@ -260,7 +383,9 @@ void hmiNewConfig( void )
 void hmiNewQueue( Playlist *plst )
 {
   int i;
+  DfbtWidget   *screen = dfbtGetScreen();
   DfbtWidget   *wItem;
+  json_t       *jObj;
   int           width, height, border;
   PlaylistItem *item = playlistGetCursorItem( plst );
 
@@ -274,10 +399,32 @@ void hmiNewQueue( Playlist *plst )
   border = height/100;
   height = height / DFB_ITEMS;
 
+
 /*------------------------------------------------------------------------*\
-    Clear playlist container
+    Clear artwork and playlist container
 \*------------------------------------------------------------------------*/
+  if( wArtwork ) {
+    dfbtContainerRemove( screen, wArtwork );
+    dfbtRelease( wArtwork );
+    wArtwork = NULL;
+  }
   dfbtContainerRemove( wPlaylist, NULL );
+
+/*------------------------------------------------------------------------*\
+    Show Artwork
+\*------------------------------------------------------------------------*/
+  jObj = playlistItemGetAttribute( item, "image" );
+  if( jObj && json_is_string(jObj) ) {
+    char *uri = ickServiceResolveURI( json_string_value(jObj), "content" );
+    if( uri )
+      wArtwork = dfbtImage( artRect.w,  artRect.h, uri, false );
+  }
+  if( !wArtwork )
+    wArtwork = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
+  if( wArtwork ) {
+    // dfbtSetBackground( wArtwork, &cBlue );
+    dfbtContainerAdd( screen, wArtwork, artRect.x, artRect.y, DfbtAlignTopLeft );
+  }
 
 /*------------------------------------------------------------------------*\
     Create widgets for playback queue items
@@ -315,7 +462,7 @@ void hmiNewState( PlayerState state )
 
   char *stateStr = "Unknown";
   switch( state ) {
-    case PlayerStateStop:  stateStr = "Stopped"; break;	
+    case PlayerStateStop:  stateStr = "Stopped"; break;
     case PlayerStatePlay:  stateStr = "Playing"; break;
     case PlayerStatePause: stateStr = "Paused"; break;
   }
@@ -415,12 +562,6 @@ static DfbtWidget *wPlaylistItem( PlaylistItem *item, int pos, int width, int he
   int                    txt_y  = 0;
   int                    txt_x  = height + border;
   int                    a;
-
-                                 // A,    R,    G,    B
-  DFBColor               cWhite = { 0xFF, 0xFF, 0xFF, 0xFF };
-  DFBColor               cRed   = { 0xFF, 0x80, 0x00, 0x00 };
-  DFBColor               cBlue  = { 0xFF, 0x00, 0x00, 0x80 };
-  DFBColor               cGray  = { 0xFF, 0x20, 0x20, 0x20 };
 
   DBGMSG( "wPlaylistItem: %p (%d - %s) %s", item, pos,
           item?playlistItemGetText(item):"<None>", isCursor?"<<<":"" );
