@@ -86,10 +86,20 @@ static IDirectFBFont     *font1;
 static IDirectFBFont     *font2;
 static IDirectFBFont     *font3;
 
-static DfbtWidget        *wPlaylist;
-static DfbtWidget        *wArtwork;
-static DfbtWidget        *wStatus;
-static DfbtWidget        *wConfig;
+static DfbtWidget        *wPlaylist;       // strong
+static DfbtWidget        *wArtwork;        // strong
+static DfbtWidget        *wStatus;         // strong
+static DfbtWidget        *wConfig;         // strong
+static DfbtWidget        *wStateIcon;      // strong
+static DfbtWidget        *wRepeatIcon;     // strong
+static DfbtWidget        *wShuffleIcon;    // strong
+static DfbtWidget        *wSourceIcon;     // strong
+static DfbtWidget        *wFormatString1;  // strong
+static DfbtWidget        *wFormatString2;  // strong
+static DfbtWidget        *wVolumeIcon;     // strong
+static DfbtWidget        *wVolumeString;   // strong
+static DfbtWidget        *wPositionIcon;   // strong
+static DfbtWidget        *wPositionString; // strong
 
 static PlaylistItem *currentItem;
 
@@ -249,6 +259,16 @@ void hmiShutdown( void )
   dfbtRelease( wArtwork );
   dfbtRelease( wStatus );
   dfbtRelease( wConfig );
+  dfbtRelease( wStateIcon );
+  dfbtRelease( wRepeatIcon );
+  dfbtRelease( wShuffleIcon );
+  dfbtRelease( wSourceIcon );
+  dfbtRelease( wFormatString1 );
+  dfbtRelease( wFormatString2 );
+  dfbtRelease( wVolumeIcon );
+  dfbtRelease( wVolumeString );
+  dfbtRelease( wPositionIcon );
+  dfbtRelease( wPositionString );
 
 /*------------------------------------------------------------------------*\
     Release fonts and primary/super interfaces
@@ -386,7 +406,7 @@ void hmiNewQueue( Playlist *plst )
   DfbtWidget   *screen = dfbtGetScreen();
   DfbtWidget   *wItem;
   json_t       *jObj;
-  int           width, height, border;
+  int           width, height, border, size;
   PlaylistItem *item = playlistGetCursorItem( plst );
 
   DBGMSG( "hmiNewQueue: %p (%s).", item, item?playlistItemGetText(item):"<None>" );
@@ -399,14 +419,18 @@ void hmiNewQueue( Playlist *plst )
   border = height/100;
   height = height / DFB_ITEMS;
 
-
 /*------------------------------------------------------------------------*\
-    Clear artwork and playlist container
+    Clear artwork, source icon and playlist container
 \*------------------------------------------------------------------------*/
   if( wArtwork ) {
     dfbtContainerRemove( screen, wArtwork );
     dfbtRelease( wArtwork );
     wArtwork = NULL;
+  }
+  if( wSourceIcon ) {
+    dfbtContainerRemove( wStatus, wSourceIcon );
+    dfbtRelease( wSourceIcon );
+    wSourceIcon = NULL;
   }
   dfbtContainerRemove( wPlaylist, NULL );
 
@@ -417,7 +441,7 @@ void hmiNewQueue( Playlist *plst )
   if( jObj && json_is_string(jObj) ) {
     char *uri = ickServiceResolveURI( json_string_value(jObj), "content" );
     if( uri )
-      wArtwork = dfbtImage( artRect.w,  artRect.h, uri, false );
+      wArtwork = dfbtImage( artRect.w, artRect.h, uri, false );
   }
   if( !wArtwork )
     wArtwork = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
@@ -446,6 +470,26 @@ void hmiNewQueue( Playlist *plst )
   }
   playlistUnlock( plst );
 
+
+/*------------------------------------------------------------------------*\
+    Get geometry
+\*------------------------------------------------------------------------*/
+  dfbtGetSize( wStatus, &width, &height );
+  size = (height-2*border)/2;
+
+/*------------------------------------------------------------------------*\
+    Show Source Icon
+\*------------------------------------------------------------------------*/
+  switch( playlistItemGetType(item) ) {
+    case PlaylistItemTrack:
+      wSourceIcon = dfbtImage( size, size, "ickSourceTrack.png", true );
+      break;
+    case PlaylistItemStream:
+      wSourceIcon = dfbtImage( size, size, "ickSourceStream.png", true );
+      break;
+  }
+  dfbtContainerAdd( wStatus, wSourceIcon, width-3*border-2*size, border, DfbtAlignTopRight );
+
 /*------------------------------------------------------------------------*\
     Trigger redraw
 \*------------------------------------------------------------------------*/
@@ -458,16 +502,49 @@ void hmiNewQueue( Playlist *plst )
 \*=========================================================================*/
 void hmiNewState( PlayerState state )
 {
+  DfbtWidget   *screen = dfbtGetScreen();
+  int           width, height, border;
+
   DBGMSG( "hmiNewState: %d.", state );
 
-  char *stateStr = "Unknown";
-  switch( state ) {
-    case PlayerStateStop:  stateStr = "Stopped"; break;
-    case PlayerStatePlay:  stateStr = "Playing"; break;
-    case PlayerStatePause: stateStr = "Paused"; break;
+/*------------------------------------------------------------------------*\
+    Get geometry
+\*------------------------------------------------------------------------*/
+  dfbtGetSize( screen, &width, &height );
+  border = height/100;
+  dfbtGetSize( wStatus, &width, &height );
+  height -= 2*border;
+  width   = height;
+
+/*------------------------------------------------------------------------*\
+    Clear state icon
+\*------------------------------------------------------------------------*/
+  if( wStateIcon ) {
+    dfbtContainerRemove( wStatus, wStateIcon );
+    dfbtRelease( wStateIcon );
+    wStateIcon = NULL;
   }
 
-  printf( "HMI Playback state   : %s\n", stateStr );
+/*------------------------------------------------------------------------*\
+    Get and draw new icon
+\*------------------------------------------------------------------------*/
+  switch( state ) {
+    case PlayerStateStop:
+      wStateIcon = dfbtImage( width, height, "ickStateStop.png", true );
+      break;
+    case PlayerStatePlay:
+      wStateIcon = dfbtImage( width, height, "ickStatePlay.png", true );
+      break;
+    case PlayerStatePause:
+      wStateIcon = dfbtImage( width, height, "ickStatePause.png", true );
+      break;
+  }
+  dfbtContainerAdd( wStatus, wStateIcon, border, border, DfbtAlignTopLeft );
+
+/*------------------------------------------------------------------------*\
+    Trigger redraw
+\*------------------------------------------------------------------------*/
+  dfbtRedrawScreen( false );
 }
 
 
@@ -476,17 +553,61 @@ void hmiNewState( PlayerState state )
 \*=========================================================================*/
 void hmiNewRepeatMode( PlayerRepeatMode mode )
 {
+  DfbtWidget   *screen = dfbtGetScreen();
+  int           width, height, border;
+
   DBGMSG( "hmiNewRepeatMode: %d.", mode );
 
-  char *modeStr = "Unknown";
-  switch( mode ) {
-    case PlayerRepeatOff:     modeStr = "Off"; break;	
-    case PlayerRepeatItem:    modeStr = "Track"; break;
-    case PlayerRepeatQueue:   modeStr = "Queue"; break;
-    case PlayerRepeatShuffle: modeStr = "Shuffle"; break;
+/*------------------------------------------------------------------------*\
+    Get geometry
+\*------------------------------------------------------------------------*/
+  dfbtGetSize( screen, &width, &height );
+  border = height/100;
+  dfbtGetSize( wStatus, &width, &height );
+  height -= 2*border;
+  height /= 2;
+
+/*------------------------------------------------------------------------*\
+    Clear icons
+\*------------------------------------------------------------------------*/
+  if( wRepeatIcon ) {
+    dfbtContainerRemove( wStatus, wRepeatIcon );
+    dfbtRelease( wRepeatIcon );
+    wRepeatIcon = NULL;
+  }
+  if( wShuffleIcon ) {
+    dfbtContainerRemove( wStatus, wShuffleIcon );
+    dfbtRelease( wShuffleIcon );
+    wShuffleIcon = NULL;
   }
 
-  printf( "HMI Repeat mode      : %s\n", modeStr );
+/*------------------------------------------------------------------------*\
+    Get and draw new icons
+\*------------------------------------------------------------------------*/
+  switch( mode ) {
+    case PlayerRepeatOff:
+      break;
+    case PlayerRepeatItem:
+      wRepeatIcon = dfbtImage( height, height, "ickRepeatItem.png", true );
+      break;
+    case PlayerRepeatQueue:
+      wRepeatIcon = dfbtImage( height, height, "ickRepeatQueue.png", true );
+      break;
+    case PlayerRepeatShuffle:
+      wRepeatIcon  = dfbtImage( height, height, "ickRepeatQueue.png", true );
+      wShuffleIcon = dfbtImage( height, height, "ickShuffle.png", true );
+      break;
+  }
+
+  if( wRepeatIcon )
+    dfbtContainerAdd( wStatus, wRepeatIcon, width-border, border, DfbtAlignTopRight );
+  if( wShuffleIcon )
+    dfbtContainerAdd( wStatus, wShuffleIcon, width-2*border-height, border, DfbtAlignTopRight );
+
+/*------------------------------------------------------------------------*\
+    Trigger redraw
+\*------------------------------------------------------------------------*/
+  dfbtRedrawScreen( false );
 }
 
 
@@ -495,9 +616,59 @@ void hmiNewRepeatMode( PlayerRepeatMode mode )
 \*=========================================================================*/
 void hmiNewVolume( double volume, bool muted )
 {
+  DfbtWidget   *screen = dfbtGetScreen();
+  int           width, height, border, size, y, a;
+  char          buffer[64];
   DBGMSG( "hmiNewVolume: %.2lf (muted: %s).", volume, muted?"On":"Off" );
 
-  printf( "HMI Playback volume  : %.2lf (%s)\n", volume, muted?"muted":"not muted" );
+/*------------------------------------------------------------------------*\
+    Get geometry
+\*------------------------------------------------------------------------*/
+  dfbtGetSize( screen, &width, &height );
+  border = height/100;
+  dfbtGetSize( wStatus, &width, &height );
+  size = (height-2*border)/2;
+  font1->GetHeight( font1, &a );
+
+/*------------------------------------------------------------------------*\
+    Clear icon and string
+\*------------------------------------------------------------------------*/
+  if( wVolumeIcon ) {
+    dfbtContainerRemove( wStatus, wVolumeIcon );
+    dfbtRelease( wVolumeIcon );
+    wVolumeIcon = NULL;
+  }
+  if( wVolumeString ) {
+    dfbtContainerRemove( wStatus, wVolumeString );
+    dfbtRelease( wVolumeString );
+    wVolumeString = NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Show volume icon
+\*------------------------------------------------------------------------*/
+  if( muted )
+    wVolumeIcon = dfbtImage( size, size, "ickVolumeMuted.png", true );
+  else if( volume<1.0/3 )
+    wVolumeIcon = dfbtImage( size, size, "ickVolume1.png", true );
+  else if( volume<2.0/3 )
+    wVolumeIcon = dfbtImage( size, size, "ickVolume2.png", true );
+  else
+    wVolumeIcon = dfbtImage( size, size, "ickVolume3.png", true );
+  dfbtContainerAdd( wStatus, wVolumeIcon, width-3*border-2*size, height-border, DfbtAlignBottomRight );
+
+/*------------------------------------------------------------------------*\
+    Show volume string
+\*------------------------------------------------------------------------*/
+  sprintf( buffer, "%3d%%", (int)(volume*100+.5) );
+  wVolumeString = dfbtText( buffer, font1, &cWhite );
+  y = height-border-size/2;
+  dfbtContainerAdd( wStatus, wVolumeString, width-4*border-3*size, y, DfbtAlignCenterRight );
+
+/*------------------------------------------------------------------------*\
+    Trigger redraw
+\*------------------------------------------------------------------------*/
+  dfbtRedrawScreen( false );
 }
 
 
@@ -506,11 +677,51 @@ void hmiNewVolume( double volume, bool muted )
 \*=========================================================================*/
 void hmiNewFormat( AudioFormat *format )
 {
-  char buffer[64];
+  DfbtWidget   *screen = dfbtGetScreen();
+  int           width, height, border, size, y;
+  char          buffer[64];
 
   DBGMSG( "hmiNewFormat: %s.", audioFormatStr(NULL,format) );
 
-  printf( "HMI Playback format  : %s\n", audioFormatStr(buffer,format) );  
+/*------------------------------------------------------------------------*\
+    Get geometry
+\*------------------------------------------------------------------------*/
+  dfbtGetSize( screen, &width, &height );
+  border = height/100;
+  dfbtGetSize( wStatus, &width, &height );
+  size = (height-2*border)/2;
+
+/*------------------------------------------------------------------------*\
+    Clear strings
+\*------------------------------------------------------------------------*/
+  if( wFormatString1 ) {
+    dfbtContainerRemove( wStatus, wFormatString1 );
+    dfbtRelease( wFormatString1 );
+    wFormatString1 = NULL;
+  }
+  if( wFormatString2 ) {
+    dfbtContainerRemove( wStatus, wFormatString2 );
+    dfbtRelease( wFormatString2 );
+    wFormatString2 = NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Show new strings
+\*------------------------------------------------------------------------*/
+  if( audioFormatIsComplete(format) ) {
+    sprintf( buffer, "%d Hz", format->sampleRate );
+    wFormatString1 = dfbtText( buffer, font1, &cWhite );
+    y = height-border-size/2;
+    dfbtContainerAdd( wStatus, wFormatString1, width-border, y, DfbtAlignBottomRight );
+    sprintf( buffer, "%dx%d bit", format->channels, format->bitWidth );
+    wFormatString2 = dfbtText( buffer, font1, &cWhite );
+    dfbtContainerAdd( wStatus, wFormatString2, width-border, y, DfbtAlignTopRight );
+  }
+
+/*------------------------------------------------------------------------*\
+    Trigger redraw
+\*------------------------------------------------------------------------*/
+  dfbtRedrawScreen( false );
 }
 
 
@@ -519,30 +730,75 @@ void hmiNewFormat( AudioFormat *format )
 \*=========================================================================*/
 void hmiNewPosition( double seekPos )
 {
-  int h, m, s;
-  int d = 0;
-  char buf[20];
-
-  if( currentItem )
-    d = playlistItemGetDuration( currentItem );
+  DfbtWidget   *screen = dfbtGetScreen();
+  int           width, height, border;
+  char          buffer[64];
+  int           h, m, s;
+  int           d = 0;
+  char          percentStr[20];
 
   DBGMSG( "hmiNewPosition: %.2lf/%.2lf", seekPos, d );
 
-  if( seekPos>=0 && d>0 )
-    snprintf(buf,sizeof(buf)-1," (%3d%%)", (int)(seekPos*100/d+.5) );
-  else
-    *buf = 0;
+/*------------------------------------------------------------------------*\
+    Get geometry
+\*------------------------------------------------------------------------*/
+  dfbtGetSize( screen, &width, &height );
+  border = height/100;
+  dfbtGetSize( wStatus, &width, &height );
 
+/*------------------------------------------------------------------------*\
+    Clear string
+\*------------------------------------------------------------------------*/
+  if( wPositionString ) {
+    dfbtContainerRemove( wStatus, wPositionString );
+    dfbtRelease( wPositionString );
+    wPositionString = NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Do we have a duration?
+\*------------------------------------------------------------------------*/
+  *percentStr = '\0';
+  if( currentItem )
+    d = playlistItemGetDuration( currentItem );
+  if( seekPos>=0 && d>0 ) {
+    sprintf( percentStr, " (%3d%%)", (int)(seekPos*100.0/d+.5) );
+
+    h = (int)d/3600;
+    d -= h*3600;
+    m = (int)d/60;
+    d -= m*60;
+    s = (int)d;
+    if( h )
+      sprintf( percentStr, " / %d:%02d:%02d", h, m, s );
+    else
+      sprintf( percentStr, " / %d:%02d", m, s );
+
+  }
+
+/*------------------------------------------------------------------------*\
+    Build human readable time string
+\*------------------------------------------------------------------------*/
   h = (int)seekPos/3600;
   seekPos -= h*3600;
   m = (int)seekPos/60;
   seekPos -= m*60;
   s = (int)seekPos;
-
   if( h )
-    printf( "HMI Playback position: %d:%02d:%02d%s\n", h, m, s, buf );
+    sprintf( buffer, "%d:%02d:%02d%s", h, m, s, percentStr );
   else
-    printf( "HMI Playback position: %d:%02d%s\n", m, s, buf );
+    sprintf( buffer, "%d:%02d%s", m, s, percentStr );
+
+/*------------------------------------------------------------------------*\
+    Show string
+\*------------------------------------------------------------------------*/
+  wPositionString = dfbtText( buffer, font2, &cWhite );
+  dfbtContainerAdd( wStatus, wPositionString, height+border, height/2, DfbtAlignCenterLeft );
+
+/*------------------------------------------------------------------------*\
+    Trigger redraw
+\*------------------------------------------------------------------------*/
+  dfbtRedrawScreen( false );
 }
 
 
@@ -562,6 +818,7 @@ static DfbtWidget *wPlaylistItem( PlaylistItem *item, int pos, int width, int he
   int                    txt_y  = 0;
   int                    txt_x  = height + border;
   int                    a;
+  double                 d;
 
   DBGMSG( "wPlaylistItem: %p (%d - %s) %s", item, pos,
           item?playlistItemGetText(item):"<None>", isCursor?"<<<":"" );
@@ -603,8 +860,8 @@ static DfbtWidget *wPlaylistItem( PlaylistItem *item, int pos, int width, int he
   wTxt = dfbtText( txt, font2, &cWhite );
 
   font1->GetMaxAdvance( font1, &a );
-  txt_x += 2*a;
-  font1->GetHeight( font2, &a );
+  txt_x += 3*a;
+  font2->GetHeight( font2, &a );
   txt_y += a;
 
   dfbtContainerAdd( container, wNum, txt_x, txt_y, DfbtAlignBaseRight );
@@ -616,19 +873,36 @@ static DfbtWidget *wPlaylistItem( PlaylistItem *item, int pos, int width, int he
 
 
 /*------------------------------------------------------------------------*\
-    Show album name
+    Show album name and duration in one line
 \*------------------------------------------------------------------------*/
+  font1->GetHeight( font1, &a );
+  txt_y += a;
   jObj = playlistItemGetModelAttribute( item, "album" );
   if( jObj ) {
     jObj = json_object_get( jObj, "name" );
     if( jObj && json_is_string(jObj) ) {
       txt = json_string_value( jObj );
       wTxt = dfbtText( txt, font1, &cWhite );
-      font1->GetHeight( font1, &a );
-      txt_y += a;
       dfbtContainerAdd( container, wTxt, txt_x, txt_y, DfbtAlignBaseLeft );
       dfbtRelease( wTxt );
     }
+  }
+  d = playlistItemGetDuration( item );
+  if( d ) {
+    int h, m, s;
+    h = (int)d/3600;
+    d -= h*3600;
+    m = (int)d/60;
+    d -= m*60;
+    s = (int)d;
+    if( h )
+      sprintf( buffer, "(%d:%02d:%02d)", h, m, s );
+    else
+      sprintf( buffer, "(%d:%02d)", m, s );
+    font1->GetMaxAdvance( font1, &a );
+    wTxt = dfbtText( buffer, font1, &cWhite );
+    dfbtContainerAdd( container, wTxt, txt_x-border, txt_y, DfbtAlignBaseRight );
+    dfbtRelease( wTxt );
   }
 
 /*------------------------------------------------------------------------*\
