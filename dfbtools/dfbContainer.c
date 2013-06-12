@@ -129,6 +129,14 @@ int dfbtContainerAdd( DfbtWidget *container, DfbtWidget *new, int x, int y, Dfbt
   }
 
 /*------------------------------------------------------------------------*\
+    Nothing to do?
+\*------------------------------------------------------------------------*/
+  if( !new ) {
+    logerr( "dfbtContainerAdd: called with nil argument" );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
     Adjust offset according to lignment
 \*------------------------------------------------------------------------*/
   switch( align ) {

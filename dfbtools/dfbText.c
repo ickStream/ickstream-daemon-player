@@ -117,6 +117,8 @@ DfbtWidget *dfbtText( const char *text, IDirectFBFont *font, DFBColor *color )
             DirectFBErrorString(drc) );
     return NULL;
   }
+  if( !width )
+    width = 1;   // Avoid empty surface
   DBGMSG( "dfbtText: size is %dx%d ", width, height );
 
 /*------------------------------------------------------------------------*\
