@@ -82,7 +82,6 @@ char *_dfbtResourcePath;
 static IDirectFB         *dfb;
 static IDirectFBSurface  *primary;
 static DfbtWidget        *screen;
-static pthread_mutex_t    screenMutex = PTHREAD_MUTEX_INITIALIZER;
 
 
 /*=========================================================================*\
@@ -354,7 +353,7 @@ int dfbtRedrawScreen( bool force )
 \*------------------------------------------------------------------------*/
   else if( !_checkUpdates(screen) ) {
     DBGMSG( "dfbtRedrawScreen: no redraw necessary" );
-    return NULL;
+    return -1;
   }
 
 /*------------------------------------------------------------------------*\
@@ -404,7 +403,7 @@ DfbtWidget *_dfbtNewWidget( DfbtWidgetType type, int w, int h )
 /*------------------------------------------------------------------------*\
     else create new surface
 \*------------------------------------------------------------------------*/
-  {
+  else {
     //sdsc.flags = DSDESC_CAPS | DSDESC_PIXELFORMAT | DSDESC_WIDTH | DSDESC_HEIGHT;
     //sdsc.caps        = DSCAPS_PREMULTIPLIED;
     sdsc.flags = DSDESC_PIXELFORMAT | DSDESC_WIDTH | DSDESC_HEIGHT;
@@ -422,7 +421,9 @@ DfbtWidget *_dfbtNewWidget( DfbtWidgetType type, int w, int h )
 /*------------------------------------------------------------------------*\
     We want to use alpha blending
 \*------------------------------------------------------------------------*/
-  surf->SetBlittingFlags( surf, DSBLIT_BLEND_ALPHACHANNEL);
+  drc= surf->SetBlittingFlags( surf, DSBLIT_BLEND_ALPHACHANNEL);
+  if( drc!=DFB_OK )
+    logwarn( "_newWidget: could not set alpha blending (%s).", DirectFBErrorString(drc) );
 
 /*------------------------------------------------------------------------*\
     Create object

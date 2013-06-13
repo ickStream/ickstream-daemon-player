@@ -762,8 +762,13 @@ void hmiNewPosition( double seekPos )
   if( currentItem )
     d = playlistItemGetDuration( currentItem );
   if( seekPos>=0 && d>0 ) {
-    sprintf( percentStr, " (%3d%%)", (int)(seekPos*100.0/d+.5) );
+    int x, y;
 
+    // Calculate cursor position
+    dfbtGetOffset( wStatus, &x, &y );
+    x = seekPos*(width-2*border)/d + .5 + 2*border;
+
+    // Construct string component (total length)
     h = (int)d/3600;
     d -= h*3600;
     m = (int)d/60;
@@ -774,6 +779,23 @@ void hmiNewPosition( double seekPos )
     else
       sprintf( percentStr, " / %d:%02d", m, s );
 
+    // Load or reposition cursor
+    if( wPositionIcon )
+      dfbtContainerSetPosition( screen, wPositionIcon, x, y, DfbtAlignCenter );
+    else {
+      wPositionIcon = dfbtImage( 2*border, 2*border, "ickPositionCursor.png", true );
+      dfbtContainerAdd( screen, wPositionIcon, x, y, DfbtAlignCenter );
+    }
+  }
+
+/*------------------------------------------------------------------------*\
+    No duration!
+\*------------------------------------------------------------------------*/
+  else {
+    *percentStr = '\0';
+    dfbtContainerRemove( screen, wPositionIcon );
+    dfbtRelease( wPositionIcon );
+    wPositionIcon = NULL;
   }
 
 /*------------------------------------------------------------------------*\
@@ -817,7 +839,7 @@ static DfbtWidget *wPlaylistItem( PlaylistItem *item, int pos, int width, int he
   int                    border = width/100;
   int                    txt_y  = 0;
   int                    txt_x  = height + border;
-  int                    a;
+  int                    a, i;
   double                 d;
 
   DBGMSG( "wPlaylistItem: %p (%d - %s) %s", item, pos,
@@ -906,18 +928,34 @@ static DfbtWidget *wPlaylistItem( PlaylistItem *item, int pos, int width, int he
   }
 
 /*------------------------------------------------------------------------*\
-    Show Artist
+    Show Artists
 \*------------------------------------------------------------------------*/
-  jObj = playlistItemGetModelAttribute( item, "mainArtist" );
-  if( jObj ) {
-    jObj = json_object_get( jObj, "name" );
-    if( jObj && json_is_string(jObj) ) {
-      txt = json_string_value( jObj );
-      wTxt = dfbtText( txt, font1, &cWhite );
+  jObj = playlistItemGetModelAttribute( item, "mainArtists" );
+  if( jObj && json_is_array(jObj) ) {
+    char *str = NULL;
+    for( i=0; i<json_array_size(jObj); i++ ) {
+      json_t *jItem = json_array_get( jObj, i );
+      jItem = json_object_get( jItem, "name" );
+      if( jItem && json_is_string(jItem) ) {
+        txt  = json_string_value( jItem );
+        if( !str ) {
+          str = malloc( strlen(txt)+1 );
+          strcpy( str, txt );
+        }
+        else {
+          str = realloc( str, strlen(txt)+strlen(str)+3 );
+          strcat( str, ", " );
+          strcat( str, txt );
+        }
+      }
+    }
+    if( str ) {
+      wTxt = dfbtText( str, font1, &cWhite );
       font1->GetHeight( font1, &a );
       txt_y += a;
       dfbtContainerAdd( container, wTxt, txt_x, txt_y, DfbtAlignBaseLeft );
       dfbtRelease( wTxt );
+      Sfree( str );
     }
   }
 

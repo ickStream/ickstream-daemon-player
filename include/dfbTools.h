@@ -81,6 +81,7 @@ typedef enum {
   DfbtAlignTopRight,
   DfbtAlignCenterLeft,
   DfbtAlignCenterCenter,
+  DfbtAlignCenter = DfbtAlignCenterCenter,
   DfbtAlignCenterRight,
   DfbtAlignBaseLeft,
   DfbtAlignBaseCenter,
@@ -130,6 +131,9 @@ void              dfbtSetBackground( DfbtWidget *widget, DFBColor *color );
 DfbtWidget       *dfbtContainer( int width, int height );
 int               dfbtContainerAdd( DfbtWidget *container, DfbtWidget *new, int x, int y, DfbtAlign align  );
 int               dfbtContainerRemove( DfbtWidget *container, DfbtWidget *widget );
+DfbtWidget       *dfbtContainerFind( DfbtWidget *root, DfbtWidget *widget );
+int               dfbtContainerSetPosition( DfbtWidget *container, DfbtWidget *widget, int x, int y, DfbtAlign align );
+void              dfbtContainerMovePosition( DfbtWidget *container, DfbtWidget *widget, int dx, int dy );
 
 DfbtWidget       *dfbtText( const char *text, IDirectFBFont *font, DFBColor *color );
 IDirectFBFont    *dfbtTextGetFont( DfbtWidget *widget );

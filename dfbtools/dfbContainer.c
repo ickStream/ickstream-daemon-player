@@ -112,8 +112,6 @@ DfbtWidget *dfbtContainer( int width, int height )
 \*=========================================================================*/
 int dfbtContainerAdd( DfbtWidget *container, DfbtWidget *new, int x, int y, DfbtAlign align )
 {
-  IDirectFBFont *font;
-  int            asc;
   DfbtWidget    *walk;
 
   DBGMSG( "dfbtContainerAdd (%p): Adding widget %p at (%d,%d)",
@@ -137,7 +135,61 @@ int dfbtContainerAdd( DfbtWidget *container, DfbtWidget *new, int x, int y, Dfbt
   }
 
 /*------------------------------------------------------------------------*\
-    Adjust offset according to lignment
+    Already linked?
+\*------------------------------------------------------------------------*/
+#ifdef ICKDEBUG
+  if( dfbtContainerFind(dfbtGetScreen(),new) ) {
+    logerr( "dfbtContainerAdd: target already linked" );
+    return -1;
+  }
+#endif
+
+/*------------------------------------------------------------------------*\
+    Increment retain counter for target
+\*------------------------------------------------------------------------*/
+  dfbtRetain( new );
+
+/*------------------------------------------------------------------------*\
+    Set offset of element
+\*------------------------------------------------------------------------*/
+  if( dfbtContainerSetPosition(container,new,x,y,align) )
+    return -1;
+
+/*------------------------------------------------------------------------*\
+    Add to content list
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &container->mutex );
+  if( !container->content )
+    container->content = new;
+  else {
+    for( walk=container->content; walk->next; walk=walk->next ) {
+      if( walk==new ) {
+        logerr( "dfbtContainerAdd: widget is already content element" );
+        pthread_mutex_unlock( &container->mutex );
+        return -1;
+      }
+    }
+    walk->next = new;
+  }
+  pthread_mutex_unlock( &container->mutex );
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+  return 0;
+}
+
+
+/*=========================================================================*\
+    Reposition a widget in a container
+\*=========================================================================*/
+int dfbtContainerSetPosition( DfbtWidget *container, DfbtWidget *widget, int x, int y, DfbtAlign align )
+{
+  IDirectFBFont *font;
+  int            asc;
+
+/*------------------------------------------------------------------------*\
+    Adjust offset according to alignment
 \*------------------------------------------------------------------------*/
   switch( align ) {
     case DfbtAlignTopLeft:
@@ -148,22 +200,22 @@ int dfbtContainerAdd( DfbtWidget *container, DfbtWidget *new, int x, int y, Dfbt
     case DfbtAlignCenterLeft:
     case DfbtAlignCenterCenter:
     case DfbtAlignCenterRight:
-      y -= new->size.h/2;
+      y -= widget->size.h/2;
       break;
 
     case DfbtAlignBottomLeft:
     case DfbtAlignBottomCenter:
     case DfbtAlignBottomRight:
-      y -= new->size.h;
+      y -= widget->size.h;
       break;
 
     case DfbtAlignBaseLeft:
     case DfbtAlignBaseCenter:
     case DfbtAlignBaseRight:
-      font = dfbtTextGetFont( new );
+      font = dfbtTextGetFont( widget );
       if( !font ) {
         logerr( "dfbtContainerAdd: text alignment for wrong widget type %d",
-                container->type );
+                widget->type );
         return -1;
       }
       asc = 0;
@@ -186,51 +238,47 @@ int dfbtContainerAdd( DfbtWidget *container, DfbtWidget *new, int x, int y, Dfbt
     case DfbtAlignCenterCenter:
     case DfbtAlignBaseCenter:
     case DfbtAlignBottomCenter:
-      x -= new->size.w/2;
+      x -= widget->size.w/2;
       break;
 
     case DfbtAlignTopRight:
     case DfbtAlignCenterRight:
     case DfbtAlignBaseRight:
     case DfbtAlignBottomRight:
-      x -= new->size.w;
+      x -= widget->size.w;
       break;
-
   }
 
 /*------------------------------------------------------------------------*\
-    Increment retain counter for target
+    Set new offset of element
 \*------------------------------------------------------------------------*/
-  dfbtRetain( new );
+  widget->offset.x = x;
+  widget->offset.y = y;
 
 /*------------------------------------------------------------------------*\
-    Add to content list
+    Container needs redraw
 \*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &container->mutex );
-  if( !container->content )
-    container->content = new;
-  else {
-    for( walk=container->content; walk->next; walk=walk->next ) {
-      if( walk==new ) {
-        logerr( "dfbtContainerAdd: widget is already content element" );
-        pthread_mutex_unlock( &container->mutex );
-        return -1;
-      }
-    }
-    walk->next = new;
-  }
-
-/*------------------------------------------------------------------------*\
-    Set offset of element
-\*------------------------------------------------------------------------*/
-  new->offset.x = x;
-  new->offset.y = y;
-  pthread_mutex_unlock( &container->mutex );
-
-/*------------------------------------------------------------------------*\
-    That's all
-\*------------------------------------------------------------------------*/
+  dfbtSetNeedsUpdate( container );
   return 0;
+}
+
+
+/*=========================================================================*\
+    Move a widget in a container
+\*=========================================================================*/
+void dfbtContainerMovePosition( DfbtWidget *container, DfbtWidget *widget, int dx, int dy )
+{
+
+/*------------------------------------------------------------------------*\
+    Adjust offset of element
+\*------------------------------------------------------------------------*/
+  widget->offset.x += dx;
+  widget->offset.y += dy;
+
+/*------------------------------------------------------------------------*\
+    Container needs redraw
+\*------------------------------------------------------------------------*/
+  dfbtSetNeedsUpdate( container );
 }
 
 
@@ -247,7 +295,7 @@ int dfbtContainerRemove( DfbtWidget *container, DfbtWidget *widget )
     Check type
 \*------------------------------------------------------------------------*/
   if( container->type!=DfbtScreen && container->type!=DfbtContainer ) {
-    logerr( "dfbtContainerAdd: called for wrong widget type %d",
+    logerr( "dfbtContainerRemove: called for wrong widget type %d",
             container->type );
     return -1;
   }
@@ -295,6 +343,62 @@ int dfbtContainerRemove( DfbtWidget *container, DfbtWidget *widget )
 \*------------------------------------------------------------------------*/
   return 0;
 }
+
+
+/*=========================================================================*\
+    Find the container that owns a widget
+      return NULL, if widget is not linked or equal to root
+\*=========================================================================*/
+DfbtWidget *dfbtContainerFind( DfbtWidget *root, DfbtWidget *widget )
+{
+  DfbtWidget *walk;
+  DfbtWidget *result = NULL;
+
+  DBGMSG( "dfbtContainerFind (%p): find widget %p", root, widget );
+
+/*------------------------------------------------------------------------*\
+    Check type
+\*------------------------------------------------------------------------*/
+  if( root->type!=DfbtScreen && root->type!=DfbtContainer ) {
+    logerr( "dfbtContainerFind: called for wrong widget type %d",
+            root->type );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    NIll is contained nowhere
+\*------------------------------------------------------------------------*/
+  if( !widget ) {
+    logerr( "dfbtContainerFind: called for nil target" );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Check all members
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &root->mutex );
+  for( walk=root->content; walk&&!result; walk=walk->next ) {
+
+    // Check member
+    if( walk==widget )
+      result = root;
+
+    // Do recursion if member is a container
+    else if( walk->type==DfbtScreen  || walk->type==DfbtContainer )
+      result = dfbtContainerFind( walk, widget );
+
+  }
+  pthread_mutex_unlock( &root->mutex );
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+  if( result )
+    DBGMSG( "dfbtContainerFind (%p): widget %p found in %p", root, widget, result );
+  return result;
+}
+
+
 
 
 /*=========================================================================*\
