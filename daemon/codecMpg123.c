@@ -407,7 +407,9 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
     }
 
     // Reset Data in stream
+#if MPG123_API_VERSION>=36
     mpg123_meta_free( mh );
+#endif
   }
 
 /*------------------------------------------------------------------------*\
@@ -533,8 +535,10 @@ static enum mpg123_enc_enum _getMpg123Format( const AudioFormat *format )
       return MPG123_ENC_SIGNED_8;
     if( format->bitWidth==16 )
       return MPG123_ENC_SIGNED_16;
+#if MPG123_API_VERSION>=29
     if( format->bitWidth==24 )
       return MPG123_ENC_SIGNED_24;
+#endif
     if( format->bitWidth==32 )
       return MPG123_ENC_SIGNED_32;
     return 0;
@@ -547,8 +551,10 @@ static enum mpg123_enc_enum _getMpg123Format( const AudioFormat *format )
     return MPG123_ENC_UNSIGNED_8;
   if( format->bitWidth==16 )
     return MPG123_ENC_UNSIGNED_16;
+#if MPG123_API_VERSION>=29
   if( format->bitWidth==24 )
     return MPG123_ENC_UNSIGNED_24;
+#endif
   if( format->bitWidth==32 )
     return MPG123_ENC_UNSIGNED_32;
 
@@ -588,11 +594,13 @@ static int _translateMpg123Format( int encoding, AudioFormat *format )
       format->bitWidth = 16;
       break;
 
+#if MPG123_API_VERSION>=29
     case MPG123_ENC_SIGNED_24:
       format->isFloat = false;
       format->isSigned = true;
       format->bitWidth = 24;
       break;
+#endif
 
     case MPG123_ENC_SIGNED_32:
       format->isFloat = false;
@@ -612,11 +620,13 @@ static int _translateMpg123Format( int encoding, AudioFormat *format )
       format->bitWidth = 16;
       break;
 
+#if MPG123_API_VERSION>=29
     case MPG123_ENC_UNSIGNED_24:
       format->isFloat = false;
       format->isSigned = false;
       format->bitWidth = 24;
       break;
+#endif
 
     case MPG123_ENC_UNSIGNED_32:
       format->isFloat = false;
