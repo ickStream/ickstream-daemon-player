@@ -178,13 +178,14 @@ static int _backendInit( void )
   if( !pulseContext ) {
     logerr( "Pulse Audio: Can not create context" );
     pa_threaded_mainloop_free( pulseMainLoop );
-    pulseContext = NULL;
     return -1;
   }
   rc = pa_threaded_mainloop_start( pulseMainLoop );
   if( rc<0 ) {
     logerr( "Pulse Audio: Can not start threaded main loop: %s", pa_strerror(rc) );
     pa_threaded_mainloop_free( pulseMainLoop );
+    pa_context_unref( pulseContext );
+    pulseContext = NULL;
     return -1;
   }
 
@@ -196,9 +197,10 @@ static int _backendInit( void )
   pa_context_set_state_callback( pulseContext, &_paContextStateCb, &pulseContextState );
   rc = pa_context_connect( pulseContext, NULL, 0, NULL );
   if( rc<0 ) {
-    logerr( "Pulse Audio: Can not create context:%s", pa_strerror(rc) );
+    logerr( "Pulse Audio: Can not connect to server: %s", pa_strerror(rc) );
     pa_context_disconnect( pulseContext );
     pa_context_unref( pulseContext );
+    pa_threaded_mainloop_unlock( pulseMainLoop );
     pa_threaded_mainloop_stop( pulseMainLoop );
     pa_threaded_mainloop_free( pulseMainLoop );
     pulseContext = NULL;
@@ -229,10 +231,10 @@ static int _backendInit( void )
                 pa_strerror(pa_context_errno(pulseContext)));
         pa_context_disconnect( pulseContext );
         pa_context_unref( pulseContext );
-        pa_threaded_mainloop_stop( pulseMainLoop );
+        pa_threaded_mainloop_unlock( pulseMainLoop );
+
         pa_threaded_mainloop_free( pulseMainLoop );
         pulseContext = NULL;
-        pa_threaded_mainloop_unlock( pulseMainLoop );
         return -1;
 
       // Here we are
