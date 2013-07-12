@@ -106,10 +106,11 @@ int hmiInit( int *argc, char *(*argv[]) )
   return 0;
 }
 
+
 /*=========================================================================*\
       Create HMI
 \*=========================================================================*/
-int hmiInit( void )
+int hmiCreate( void )
 {
   pthread_t            thread;
   int                  rc;

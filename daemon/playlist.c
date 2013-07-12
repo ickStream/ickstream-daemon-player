@@ -606,9 +606,11 @@ PlaylistItem *playlistGetItemById( Playlist *plst, const char *id )
 
 
 /*=========================================================================*\
-       Add track to playlist or replace playlist
-         pos        - the position to add the tracks before (if <0: append to end)
+       Add items to playlist or replace playlist
+         pos        - the position to add the items before (if <0: append to end)
          resetFlag  - replace list (pos ignored)
+         jItems     - array with items, might be NULL
+       returns 0 on success
 \*=========================================================================*/
 int playlistAddItems( Playlist *plst, int pos, json_t *jItems, bool resetFlag )
 {
@@ -620,17 +622,23 @@ int playlistAddItems( Playlist *plst, int pos, json_t *jItems, bool resetFlag )
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
+    Reset playlist?
+\*------------------------------------------------------------------------*/
+  if( resetFlag )
+    playlistReset( plst );
+
+/*------------------------------------------------------------------------*\
+    Nothing to do?
+\*------------------------------------------------------------------------*/
+  if( !jItems || !json_array_size(jItems) )
+    return rc;
+
+/*------------------------------------------------------------------------*\
     Get anchor item (if any and not in reset mode)
 \*------------------------------------------------------------------------*/
   if( pos>=0 && !resetFlag )
     anchorItem = playlistGetItem( plst, pos );
 
-/*------------------------------------------------------------------------*\
-    Reset playlist?
-\*------------------------------------------------------------------------*/
-  if( resetFlag )
-    playlistReset( plst );
-    
 /*------------------------------------------------------------------------*\
     Loop over all items to add
 \*------------------------------------------------------------------------*/
