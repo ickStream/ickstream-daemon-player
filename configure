@@ -38,6 +38,10 @@ while test $# -gt 0; do
   elif test "$1" = "debug"; then
     debug=true
 
+  # static linking
+  elif test "$1" = "static"; then
+    linkstatic=true
+
   # suppress alsa
   elif test "$1" = "noalsa"; then
     noalsa=true
@@ -71,6 +75,7 @@ if ${help:-false}; then
   echo "Possible arguments:"
   echo "  help      - this help"
   echo "  debug     - build for debugging"
+  echo "  static    - link statically"
   echo "  hmi=X     - Use HMI X (one of Generic, NCurses)"
   echo "  noalsa    - Don't use alsa audio backend"
   echo "  nopulse   - Don't use pulse audio backend"
@@ -90,7 +95,11 @@ mchname=`uname -n`
 # generic parameters 
 CC="cc"
 CFLAGS="-Wall"
-LDFLAGS="-rdynamic"
+if ${linkstatic:-false}; then
+  LDFLAGS="-static"
+else
+  LDFLAGS="-rdynamic"
+fi
 RANLIB="ranlib"
 INCLUDES="${PWD}/include"
 EXTRALIBS=""
@@ -103,10 +112,9 @@ case $systype-$reltype-$mchname in
     echo "this seems to be a Linux machine, fine."
     if ${debug:-false}; then
       CFLAGS="-g -pipe -Wall -DICK_DEBUG"
-      LDFLAGS="-g -rdynamic"
+      LDFLAGS="-g $LDFLAGS"
     else
       CFLAGS="-pipe -Wall"
-      LDFLAGS="-rdynamic"
     fi
     ;;
 
@@ -204,7 +212,7 @@ fi
 
 # ----------------------------------------
 echo -n 'Check for pulse audio           : '
-if ${noaudio:-false}; then
+if ${nopulse:-false}; then
   echo "ignored"
 elif echo "#include <pulse/pulseaudio.h>" | gcc -o /dev/null -E -x c - 2>/dev/null; then
   CFLAGS="$CFLAGS -DICK_PULSEAUDIO"
