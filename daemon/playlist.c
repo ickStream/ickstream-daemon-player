@@ -231,7 +231,7 @@ void playlistDelete( Playlist *plst )
 /*------------------------------------------------------------------------*\
     Free all items and reset header
 \*------------------------------------------------------------------------*/
-  playlistReset( plst );
+  playlistReset( plst, true );
   
 /*------------------------------------------------------------------------*\
     Unlock and free header
@@ -262,8 +262,9 @@ void playlistUnlock( Playlist *plst )
 
 /*=========================================================================*\
        Reset a playlist: remove all entries
+         resetHeader - also reset name and ID
 \*=========================================================================*/
-void playlistReset( Playlist *plst )
+void playlistReset( Playlist *plst, bool resetHeader )
 {
   PlaylistItem *item, *next;
   DBGMSG( "playlistReset (%p)", plst );
@@ -289,8 +290,10 @@ void playlistReset( Playlist *plst )
 /*------------------------------------------------------------------------*\
     Free all header features
 \*------------------------------------------------------------------------*/
-  Sfree( plst->id );
-  Sfree( plst->name );
+  if( resetHeader ) {
+    Sfree( plst->id );
+    Sfree( plst->name );
+  }
 
 /*------------------------------------------------------------------------*\
     That's all
@@ -625,7 +628,7 @@ int playlistAddItems( Playlist *plst, int pos, json_t *jItems, bool resetFlag )
     Reset playlist?
 \*------------------------------------------------------------------------*/
   if( resetFlag )
-    playlistReset( plst );
+    playlistReset( plst, false );
 
 /*------------------------------------------------------------------------*\
     Nothing to do?
@@ -742,6 +745,7 @@ int playlistMoveItems( Playlist *plst, int pos, json_t *jItems )
 {
   PlaylistItem **pItems;             // Array of items to move
   int            pItemCnt;           // Elements in pItems 
+  PlaylistItem  *cItem;
   PlaylistItem  *anchorItem = NULL;  // Item to add list before
   int            i;
   int            rc = 0;
@@ -830,13 +834,18 @@ int playlistMoveItems( Playlist *plst, int pos, json_t *jItems )
   } /* for( i=0; i<json_array_size(jItems); i++ ) */
     
 /*------------------------------------------------------------------------*\
+    Save item under cursor, since unlinking it would forward the cursor
+\*------------------------------------------------------------------------*/
+  cItem = plst->_cursorItem;
+
+/*------------------------------------------------------------------------*\
     Unlink all identified items, but do not delete them
 \*------------------------------------------------------------------------*/
   for( i=0; i<pItemCnt; i++ )
     playlistUnlinkItem( plst, pItems[i] );
     
 /*------------------------------------------------------------------------*\
-    Reinsert the items at new position
+    Reinsert the items at new position (also invalidates cursor) and restore cursor item
 \*------------------------------------------------------------------------*/
   for( i=0; i<pItemCnt; i++ ) {
     if( anchorItem )
@@ -844,6 +853,7 @@ int playlistMoveItems( Playlist *plst, int pos, json_t *jItems )
     else 
       playlistAddItemAfter( plst, NULL, pItems[i] );
   }
+  plst->_cursorItem = cItem;
   
 /*------------------------------------------------------------------------*\
     Free temporary list of items to move and return

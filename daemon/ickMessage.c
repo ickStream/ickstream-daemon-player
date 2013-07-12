@@ -242,7 +242,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
   if( !strcasecmp(method,"getPlayerStatus") ) {
 
     // Expect no parameters
-    if( jParams ) {
+    if( jParams && json_object_size(jParams) ) {
       logerr( "ickMessage from %s contains parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Unexpected parameters in RPC header";
@@ -260,7 +260,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     Playlist *plst = playerGetQueue();
 
     // Expect no parameters
-    if( jParams ) {
+    if( jParams && json_object_size(jParams) ) {
       logerr( "ickMessage from %s contains parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Unexpected parameters in RPC header";
@@ -441,7 +441,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
   else if( !strcasecmp(method,"getVolume") ) {
 
     // Expect no parameters
-    if( jParams ) {
+    if( jParams && json_object_size(jParams) ) {
       logerr( "ickMessage from %s contains parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Unexpected parameters in RPC header";
@@ -609,23 +609,13 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
   }
 
 /*------------------------------------------------------------------------*\
-    Add tracks to playback queue or replace playback queue
+    Replace playback queue
 \*------------------------------------------------------------------------*/
-  else if( !strcasecmp(method,"addTracks") || 
-           !strcasecmp(method,"setTracks") ) {
+  else if( !strcasecmp(method,"setTracks") ) {
     Playlist *plst      = playerGetQueue();
-    bool      resetFlag = strcasecmp(method,"setTracks") ? false : true;
-    int       pos       = -1;        // Item to add list before
+    int       pos       = -1;        // New playlist position
     json_t   *jItems    = NULL;      // List of new items
     int       result    = 1;
-
-    // Expect parameters for addTracks
-    if( !jParams && !resetFlag ) {
-      logerr( "ickMessage from %s contains no parameters: %s", sourceUUID, message );
-      rpcErrCode    = RPC_INVALID_REQUEST;
-      rpcErrMessage = "Missing parameters in RPC header";
-      goto rpcError;
-    }
 
     // Interpret optional parameters
     if( jParams ) {
@@ -652,14 +642,17 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
       }
     }
 
-    // Add or replace tracks in playback queue
+    // Replace tracks in playback queue
     playlistLock( plst );
-    if( playlistAddItems(plst,pos,jItems,resetFlag) ) {
+    if( playlistAddItems(plst,pos,jItems,true) ) {
       logerr( "ickMessage from %s: could not add/set items in playlist: %s",
                sourceUUID, message );
-      playlistUnlock( plst );
       result = 0;
     }
+
+    // Set cursor position
+    if( pos>=0 )
+      playlistSetCursorPos( plst, pos );
 
     // Playback queue has changed
     playlistChanged = true;
@@ -674,6 +667,68 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
 
     playlistUnlock( plst );
   }
+
+  /*------------------------------------------------------------------------*\
+      Add tracks to playback queue
+  \*------------------------------------------------------------------------*/
+    else if( !strcasecmp(method,"addTracks") ) {
+      Playlist *plst      = playerGetQueue();
+      int       pos       = -1;        // Item to add list before
+      json_t   *jItems    = NULL;      // List of new items
+      int       result    = 1;
+
+      // Expect parameters
+      if( !jParams  ) {
+        logerr( "ickMessage from %s contains no parameters: %s", sourceUUID, message );
+        rpcErrCode    = RPC_INVALID_REQUEST;
+        rpcErrMessage = "Missing parameters in RPC header";
+        goto rpcError;
+      }
+
+      // Get optional explicit position
+      jObj = json_object_get( jParams, "playlistPos" );
+      if( jObj && json_is_integer(jObj) )
+        pos    = json_integer_value( jObj );
+      else if( jObj ) {
+        logerr( "ickMessage from %s contains non integer field \"playlistPos\": %s", sourceUUID, message );
+        rpcErrCode    = RPC_INVALID_PARAMS;
+        rpcErrMessage = "Parameter \"playlistPos\": wrong type (no integer)";
+        goto rpcError;
+      }
+
+      // Get mandatory list of new items
+      jItems = json_object_get( jParams, "items" );
+      if( !jItems || !json_is_array(jItems) ) {
+        logerr( "ickMessage from %s: contains non array field \"items\": %s",
+                 sourceUUID, message );
+        rpcErrCode    = RPC_INVALID_PARAMS;
+        rpcErrMessage = "Parameter \"items\": missing or of wrong type";
+        goto rpcError;
+      }
+
+      // Add tracks to playback queue
+      playlistLock( plst );
+      if( playlistAddItems(plst,pos,jItems,false) ) {
+        logerr( "ickMessage from %s: could not add/set items in playlist: %s",
+                 sourceUUID, message );
+        playlistUnlock( plst );
+        result = 0;
+      }
+
+      // Playback queue has changed
+      playlistChanged = true;
+
+      // Playlist cursor might have changed
+      playerStateChanged = true;
+
+      // report result
+      jResult = json_pack( "{sbsi}",
+                           "result", result,
+                           "playlistPos", playlistGetCursorPos(plst) );
+
+      playlistUnlock( plst );
+    }
+
 
 /*------------------------------------------------------------------------*\
     Remove tracks from playback queue
@@ -987,7 +1042,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     const char *hwid;
 
     // Expect no parameters
-    if( jParams ) {
+    if( jParams && json_object_size(jParams) ) {
       logerr( "ickMessage from %s contains parameters: %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Unexpected parameters in RPC header";
@@ -1052,6 +1107,8 @@ rpcError:
     ickMessageNotifyPlaylist( NULL );
     hmiNewQueue( playerGetQueue() );
   }
+  DBGMSG( "ickMessage from %s: need to update player state: %s",
+            sourceUUID, playerStateChanged?"Yes":"No" );
   if( playerStateChanged )
     ickMessageNotifyPlayerState( NULL );
 

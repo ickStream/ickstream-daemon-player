@@ -84,6 +84,8 @@ Remarks         : -
 #include "player.h"
 #include "hmi.h"
 
+// #define ICKRAWMETA
+
 /*=========================================================================*\
 	Global symbols
 \*=========================================================================*/
@@ -312,7 +314,7 @@ void playerResetQueue( void )
 {
   DBGMSG( "playerResetQueue" );
   playlistLock( playerQueue );
-  playlistReset( playerQueue );
+  playlistReset( playerQueue, true );
   playlistUnlock( playerQueue );
 }
 
@@ -1234,6 +1236,7 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
     }
 
     // Change and distribute meta data of current item
+#ifdef ICKRAWMETA
     else {
       json_t *jRawMeta = json_object_get( playlistItemGetJSON(item), "rawMeta" );
       if( !jRawMeta ) {
@@ -1243,6 +1246,8 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
       json_object_set_new( jRawMeta, "icyHeader", jIcyHdr );
       ickMessageNotifyPlayerState( NULL );
     }
+#endif
+
   }
 
 /*------------------------------------------------------------------------*\
@@ -1261,7 +1266,9 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
   }
   codecSetIcyInterval( codecInst, audioFeedGetIcyInterval(feed) );
   codecSetFormatCallback( codecInst, &_codecNewFormatCallback, format );
+#ifdef ICKRAWMETA
   codecSetMetaCallback( codecInst, &_codecMetaCallback, item );
+#endif
   if( codecStartInstance(codecInst) ) {
     logerr( "_playItem (%s \"%s\"): Could not start codec.",
                 playlistItemGetType(item)==PlaylistItemStream?"Stream":"Track",

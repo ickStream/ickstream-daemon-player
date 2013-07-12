@@ -95,7 +95,7 @@ Playlist     *playlistFromJSON( json_t *jObj );
 void          playlistDelete( Playlist *plst );
 void          playlistLock( Playlist *plst );
 void          playlistUnlock( Playlist *plst );
-void          playlistReset( Playlist *plst );
+void          playlistReset( Playlist *plst, bool resetHeader );
 void          playlistSetId( Playlist *plst, const char *id );
 void          playlistSetName( Playlist *plst, const char *name );
 const char   *playlistGetId( Playlist *plst );
