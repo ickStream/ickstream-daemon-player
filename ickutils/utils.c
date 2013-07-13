@@ -525,6 +525,24 @@ char *strIso88591toUtf8( const char *str, ssize_t len )
 }
 
 
+/*========================================================================*\
+   Init a thread
+\*========================================================================*/
+int ickMutexInit( pthread_mutex_t *mutex )
+{
+  pthread_mutexattr_t  attr;
+  pthread_mutexattr_init( &attr );
+
+#if defined ICK_DEBUG && defined ICK_HASMUTEXERRORCHECK
+  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
+#endif
+
+  return pthread_mutex_init( mutex, &attr );
+}
+
+
+
+
 
 /*========================================================================*\
    Log memory usage (by this code only)

@@ -62,6 +62,7 @@ Remarks         : -
 \*=========================================================================*/
 #include "stdio.h"
 #include "syslog.h"
+#include "pthread.h"
 #include <jansson.h>
 
 
@@ -128,6 +129,8 @@ const char *json_rpcerrstr( json_t *jError );
 long        getAndIncrementCounter( void );
 int         strcmpprefix( const char *str, const char *prefix );
 char       *strIso88591toUtf8( const char *str, ssize_t len );
+int         ickMutexInit( pthread_mutex_t *mutex );
+
 
 void   logSetStreamLevel( int prio );
 void   logSetSyslogLevel( int prio );

@@ -114,7 +114,6 @@ int hmiCreate( void )
 {
   pthread_t            thread;
   int                  rc;
-  pthread_mutexattr_t  attr;
 
   DBGMSG( "Initializing HMI module..." );
 
@@ -141,9 +140,7 @@ int hmiCreate( void )
 /*------------------------------------------------------------------------*\
     Init mutex
 \*------------------------------------------------------------------------*/
-  pthread_mutexattr_init( &attr );
-  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
-  pthread_mutex_init( &mutex, &attr );
+  ickMutexInit( &mutex );
 
 /*------------------------------------------------------------------------*\
     Create pipe and redirect stderr

@@ -118,7 +118,6 @@ static int _playlistCheckList( const char *file, int line, Playlist *plst );
 Playlist *playlistNew( void )
 {
   Playlist *plst;
-  pthread_mutexattr_t attr;
 
 /*------------------------------------------------------------------------*\
     Create header
@@ -136,9 +135,7 @@ Playlist *playlistNew( void )
 /*------------------------------------------------------------------------*\
     Init mutex in errr check mode
 \*------------------------------------------------------------------------*/
-  pthread_mutexattr_init( &attr );
-  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
-  pthread_mutex_init( &plst->mutex, &attr );
+  ickMutexInit( &plst->mutex );
  
 /*------------------------------------------------------------------------*\
     That's all
@@ -1138,7 +1135,6 @@ void playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem )
 PlaylistItem *playlistItemFromJSON( json_t *jItem )
 {
   PlaylistItem        *item;
-  pthread_mutexattr_t attr;
 
 /*------------------------------------------------------------------------*\
     Allocate header
@@ -1150,11 +1146,9 @@ PlaylistItem *playlistItemFromJSON( json_t *jItem )
   }
 
 /*------------------------------------------------------------------------*\
-    Init mutex in recursive mode
+    Init mutex
 \*------------------------------------------------------------------------*/
-  pthread_mutexattr_init( &attr );
-  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
-  pthread_mutex_init( &item->mutex, &attr );
+  ickMutexInit( &item->mutex );
 
 /*------------------------------------------------------------------------*\
     Keep instance of JSON object

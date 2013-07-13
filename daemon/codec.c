@@ -183,7 +183,6 @@ Codec *codecFind( const char *type, AudioFormat *format, Codec *codec )
 CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, int fd, Fifo *fifo )
 {
   CodecInstance       *instance;
-  pthread_mutexattr_t  attr;
 
   DBGMSG( "codecNewInstance (%s): creating new instance.", codec->name );
 
@@ -208,9 +207,7 @@ CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, 
 /*------------------------------------------------------------------------*\
     Init mutex and conditions
 \*------------------------------------------------------------------------*/
-  pthread_mutexattr_init( &attr );
-  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
-  pthread_mutex_init( &instance->mutex, &attr );
+  ickMutexInit( &instance->mutex );
   pthread_cond_init( &instance->condEndOfTrack, NULL );
 
 /*------------------------------------------------------------------------*\

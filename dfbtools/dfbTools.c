@@ -389,7 +389,6 @@ DfbtWidget *_dfbtNewWidget( DfbtWidgetType type, int w, int h )
   DFBSurfaceDescription  sdsc;
   IDirectFBSurface      *surf;
   DfbtWidget            *widget;
-  pthread_mutexattr_t    attr;
 
   DBGMSG( "_newWidget: type %d, size %dx%d", type, w, h );
 
@@ -443,9 +442,7 @@ DfbtWidget *_dfbtNewWidget( DfbtWidgetType type, int w, int h )
 /*------------------------------------------------------------------------*\
     Init mutex
 \*------------------------------------------------------------------------*/
-  pthread_mutexattr_init( &attr );
-  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
-  pthread_mutex_init( &widget->mutex, &attr );
+  ickMutexInit( &widget->mutex );
 
 /*------------------------------------------------------------------------*\
     That's it

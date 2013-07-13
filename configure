@@ -130,6 +130,11 @@ case $systype-$reltype-$mchname in
 
 esac
 
+# ----------------------------------------
+if echo "#include <pthread.h> \n int a=PTHREAD_MUTEX_ERRORCHECK;" | gcc -o /dev/null -c -x c -; then
+  CFLAGS="$CFLAGS -DICK_HASMUTEXERRORCHECK"
+fi
+
 
 # ----------------------------------------
 echo -n 'Check for makedepend            : '

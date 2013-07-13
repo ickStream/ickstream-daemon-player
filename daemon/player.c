@@ -84,7 +84,7 @@ Remarks         : -
 #include "player.h"
 #include "hmi.h"
 
-// #define ICKRAWMETA
+// #define ICK_RAWMETA
 
 /*=========================================================================*\
 	Global symbols
@@ -145,7 +145,9 @@ static int        _playItem( PlaylistItem *item, AudioFormat *format );
 static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, AudioFormat *format, int timeout );
 static int        _audioFeedCallback( AudioFeed *feed, void* usrData );
 static int        _codecNewFormatCallback( CodecInstance *instance, void *userData );
+#ifdef ICK_RAWMETA
 static void       _codecMetaCallback( CodecInstance *instance, CodecMetaType mType, json_t *jMeta, void *userData );
+#endif
 
 
 /*=========================================================================*\
@@ -153,7 +155,6 @@ static void       _codecMetaCallback( CodecInstance *instance, CodecMetaType mTy
 \*=========================================================================*/
 int playerInit( void )
 {
-  pthread_mutexattr_t  attr;
   DBGMSG( "Initializing player module..." );
   
 /*------------------------------------------------------------------------*\
@@ -193,9 +194,7 @@ int playerInit( void )
 /*------------------------------------------------------------------------*\
     Init mutex
 \*------------------------------------------------------------------------*/
-  pthread_mutexattr_init( &attr );
-  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
-  pthread_mutex_init( &playerMutex, &attr );
+  ickMutexInit( &playerMutex );
 
 /*------------------------------------------------------------------------*\
     Inform HMI and set timestamp 
@@ -1236,7 +1235,7 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
     }
 
     // Change and distribute meta data of current item
-#ifdef ICKRAWMETA
+#ifdef ICK_RAWMETA
     else {
       json_t *jRawMeta = json_object_get( playlistItemGetJSON(item), "rawMeta" );
       if( !jRawMeta ) {
@@ -1266,7 +1265,7 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
   }
   codecSetIcyInterval( codecInst, audioFeedGetIcyInterval(feed) );
   codecSetFormatCallback( codecInst, &_codecNewFormatCallback, format );
-#ifdef ICKRAWMETA
+#ifdef ICK_RAWMETA
   codecSetMetaCallback( codecInst, &_codecMetaCallback, item );
 #endif
   if( codecStartInstance(codecInst) ) {
@@ -1637,10 +1636,12 @@ static int _codecNewFormatCallback( CodecInstance *instance, void *userData )
 
   // Did format change?
   if( audioFormatIsComplete(backendFormat) && audioFormatCompare(backendFormat,newFormat) ) {
+#ifdef ICK_DEBUG
     char buffer[30];
     DBGMSG( "_codecFormatCallback (%p,%s): Format changed from %s to %s.",
             instance, instance->codec->name,
             audioFormatStr(buffer,backendFormat), audioFormatStr(NULL,newFormat) );
+#endif
     // Fixme.
   }
 
@@ -1655,6 +1656,7 @@ static int _codecNewFormatCallback( CodecInstance *instance, void *userData )
 /*=========================================================================*\
     Handle callbacks from codec meta data detection
 \*=========================================================================*/
+#ifdef ICK_RAWMETA
 static void _codecMetaCallback( CodecInstance *instance, CodecMetaType mType, json_t *jMeta, void *userData )
 {
   PlaylistItem *item     = userData;
@@ -1697,7 +1699,7 @@ static void _codecMetaCallback( CodecInstance *instance, CodecMetaType mType, js
   // Inform controller
   ickMessageNotifyPlayerState( NULL );
 }
-
+#endif
 
 
 /*=========================================================================*\

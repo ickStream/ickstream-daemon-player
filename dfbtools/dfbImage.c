@@ -323,7 +323,6 @@ void _dfbtImageDraw( DfbtWidget *widget )
 static ImageCacheItem *_cacheGetImage( const char *uri, bool isfile )
 {
   ImageCacheItem      *cacheItem;
-  pthread_mutexattr_t  attr;
 
   DBGMSG( "_chacheGetImage: \"%s\"", uri );
 
@@ -399,9 +398,7 @@ static ImageCacheItem *_cacheGetImage( const char *uri, bool isfile )
 /*------------------------------------------------------------------------*\
     Init mutex and conditions
 \*------------------------------------------------------------------------*/
-  pthread_mutexattr_init( &attr );
-  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
-  pthread_mutex_init( &cacheItem->mutex, &attr );
+  ickMutexInit( &cacheItem->mutex );
   pthread_cond_init( &cacheItem->condIsComplete, NULL );
 
 /*------------------------------------------------------------------------*\

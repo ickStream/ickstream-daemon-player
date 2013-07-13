@@ -121,7 +121,6 @@ static int    _curlTraceCallback( CURL *handle, curl_infotype type, char *data, 
 AudioFeed *audioFeedCreate( const char *uri, const char *oAuthToken, int flags, AudioFeedCallback callback, void *usrData )
 {
   AudioFeed           *feed;
-  pthread_mutexattr_t  attr;
   int                  rc;
 
   DBGMSG( "audioFeedCreate: \"%s\", flags=%d, callback=%p", uri, flags, callback );
@@ -151,9 +150,7 @@ AudioFeed *audioFeedCreate( const char *uri, const char *oAuthToken, int flags, 
 /*------------------------------------------------------------------------*\
     Init mutex and conditions
 \*------------------------------------------------------------------------*/
-  pthread_mutexattr_init( &attr );
-  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
-  pthread_mutex_init( &feed->mutex, &attr );
+  ickMutexInit( &feed->mutex );
   pthread_cond_init( &feed->condIsConnected, NULL );
 
 /*------------------------------------------------------------------------*\

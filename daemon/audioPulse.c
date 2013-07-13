@@ -402,7 +402,6 @@ static void _paSinklistCb( pa_context *ctx, const pa_sink_info *list, int eol, v
 static int _ifNew( AudioIf *aif )
 {
   PulseData *ifData;
-  pthread_mutexattr_t attr;
 
   DBGMSG( "Pulse Audio (%s): new interface", aif->devName );
 
@@ -433,9 +432,7 @@ static int _ifNew( AudioIf *aif )
 /*------------------------------------------------------------------------*\
     Init mutex and conditions
 \*------------------------------------------------------------------------*/
-  pthread_mutexattr_init( &attr );
-  pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
-  pthread_mutex_init( &ifData->mutex, &attr );
+  ickMutexInit( &ifData->mutex );
   pthread_cond_init( &ifData->condIsWritable, NULL );
 
 /*------------------------------------------------------------------------*\
