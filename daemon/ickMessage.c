@@ -17,6 +17,7 @@ Error Messages  : -
 Date            : 20.02.2013
 
 Updates         : 03.04.2013 implemented JSON-RPC error handling  //MAF
+                  21.07.2013 switched to new API                  //MAF
 
 Author          : //MAF 
 
@@ -269,9 +270,9 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
 
     // Get positions
     playlistLock( plst );
-    jResult = json_pack( "{sisf}",
-                         "playlistPos", playlistGetCursorPos(plst),
-                         "seekPos",     playerGetSeekPos() );
+    jResult = json_pack( "{si sf}",
+                         "playbackQueuePos", playlistGetCursorPos(plst),
+                         "seekPos",          playerGetSeekPos() );
     playlistUnlock( plst );
   }
 
@@ -293,25 +294,25 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     }
 
     // Get optionally requested position or use cursor for current track as default
-    jObj = json_object_get( jParams, "playlistPos" );
+    jObj = json_object_get( jParams, "playbackQueuePos" );
     if( !jObj )
       pos = playlistGetCursorPos( plst );
     else if( json_is_integer(jObj) )
       pos = json_integer_value( jObj );
     else {
-      logerr( "ickMessage from %s contains non integer field \"playlistPos\": %s", sourceUUID, message );
+      logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
-      rpcErrMessage = "Parameter \"playlistPos\": wrong type (no integer)";
+      rpcErrMessage = "Parameter \"playbackQueuePos\": wrong type (no integer)";
       goto rpcError;
     }
 
     // Construct result
     jResult   = json_pack( "{sssi}",
-                           "playlistId",  playlistGetId(plst),
-                           "playlistPos", pos );
+                           "playlistId",       playlistGetId(plst),
+                           "playbackQueuePos", pos );
     
     // Add info about current track (if any)
-    pItem = playlistGetItem( plst, pos );
+    pItem = playlistGetItem( plst, PlaylistMapped, pos );
     if( pItem ) {
       playlistItemLock( pItem );
       json_object_set( jResult, "track", playlistItemGetJSON(pItem) );
@@ -324,8 +325,8 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
 /*------------------------------------------------------------------------*\
     Set repeat mode
 \*------------------------------------------------------------------------*/
-  else if( !strcasecmp(method,"setRepeatMode") ) {
-    PlayerRepeatMode   mode;
+  else if( !strcasecmp(method,"setPlaybackQueueMode") ) {
+    PlayerPlaybackMode   mode;
 
     // Expect parameters
     if( !jParams ) {
@@ -336,15 +337,15 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     }
 
     // Get mandatory mode
-    jObj = json_object_get( jParams, "repeatMode" );
+    jObj = json_object_get( jParams, "playbackQueueMode" );
     if( !jObj || !json_is_string(jObj) )  {
-      logerr( "ickMessage from %s: missing field \"repeatMode\": %s",
+      logerr( "ickMessage from %s: missing field \"playbackQueueMode\": %s",
                        sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"repeatMode\": missing or of wrong type";
       goto rpcError;
     }
-    mode = playerRepeatModeFromStr( json_string_value(jObj) );
+    mode = playerPlaybackModeFromStr( json_string_value(jObj) );
     if( mode<0 ) {
       logerr( "ickMessage from %s: unknown repeat mode: %s",
                        sourceUUID, json_string_value(jObj) );
@@ -354,11 +355,11 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     }
 
     // Set and broadcast player mode to account for skipped tracks
-    playerSetRepeatMode( mode, true );
+    playerSetPlaybackMode( mode, true );
 
     // report current state
     jResult = json_pack( "{ss}",
-                         "repeatMode", playerRepeatModeToStr(playerGetRepeatMode()) );
+                         "playbackQueueMode", playerPlaybackModeToStr(playerGetPlaybackMode()) );
   }
 
 /*------------------------------------------------------------------------*\
@@ -377,12 +378,12 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     }
 
     // Get mandatory position
-    jObj = json_object_get( jParams, "playlistPos" );
+    jObj = json_object_get( jParams, "playbackQueuePos" );
     if( !jObj || !json_is_integer(jObj) )  {
-      logerr( "ickMessage from %s: missing field \"playlistPos\": %s", 
+      logerr( "ickMessage from %s: missing field \"playbackQueuePos\": %s",
                        sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
-      rpcErrMessage = "Parameter \"playlistPos\": missing or of wrong type";
+      rpcErrMessage = "Parameter \"playbackQueuePos\": missing or of wrong type";
       goto rpcError;
     }
     offset = json_integer_value( jObj );
@@ -398,7 +399,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     // report current state
     playlistLock( plst );
     jResult = json_pack( "{si}",
-                         "playlistPos", playlistGetCursorPos(plst) );
+                         "playbackQueuePos", playlistGetCursorPos(plst) );
     playlistUnlock( plst );
   }
 
@@ -510,10 +511,11 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
 /*------------------------------------------------------------------------*\
     Get playback queue
 \*------------------------------------------------------------------------*/
-  else if( !strcasecmp(method,"getPlaylist") ) {
-    Playlist *plst   = playerGetQueue();
-    int       offset;
-    int       count;
+  else if( !strcasecmp(method,"getPlaybackQueue") ) {
+    Playlist        *plst   = playerGetQueue();
+    int              offset;
+    int              count;
+    PlaylistSortType order  = PlaylistMapped;
 
     // Lock playlist and get defaults
     playlistLock( plst );
@@ -522,6 +524,18 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
 
     // Interpret parameters, if any
     if( jParams ) {
+
+      // Get optional ordering
+      jObj = json_object_get( jParams, "originalOrder" );
+      if( jObj && json_is_boolean(jObj) )
+         order = json_is_true(jObj) ? PlaylistOriginal : PlaylistMapped;
+      else if( jObj ) {
+        logerr( "ickMessage from %s contains non boolean field \"originalOrder\": %s", sourceUUID, message );
+        rpcErrCode    = RPC_INVALID_PARAMS;
+        rpcErrMessage = "Parameter \"originalOrder\": wrong type (no boolean)";
+        playlistUnlock( plst );
+        goto rpcError;
+      }
 
       // Get optional explicit offset
       jObj = json_object_get( jParams, "offset" );
@@ -549,7 +563,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     }
 
     // Compile JSON projection of list and unlock
-    jResult = playlistGetJSON( plst, offset, count ); 
+    jResult = playlistGetJSON( plst, order, offset, count );
     playlistUnlock( plst );
   }
 
@@ -621,13 +635,13 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     if( jParams ) {
 
       // Get optional explicit position
-      jObj = json_object_get( jParams, "playlistPos" );
+      jObj = json_object_get( jParams, "playbackQueuePos" );
       if( jObj && json_is_integer(jObj) )
         pos    = json_integer_value( jObj );
       else if( jObj ) {
-        logerr( "ickMessage from %s contains non integer field \"playlistPos\": %s", sourceUUID, message );
+        logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %s", sourceUUID, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
-        rpcErrMessage = "Parameter \"playlistPos\": wrong type (no integer)";
+        rpcErrMessage = "Parameter \"playbackQueuePos\": wrong type (no integer)";
         goto rpcError;
       }
 
@@ -644,7 +658,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
 
     // Replace tracks in playback queue
     playlistLock( plst );
-    if( playlistAddItems(plst,pos,jItems,true) ) {
+    if( playlistAddItems(plst,0,0,jItems,true) ) {
       logerr( "ickMessage from %s: could not add/set items in playlist: %s",
                sourceUUID, message );
       result = 0;
@@ -661,9 +675,9 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     playerStateChanged = true;
 
     // report result 
-    jResult = json_pack( "{sbsi}",
+    jResult = json_pack( "{sb si}",
                          "result", result,
-                         "playlistPos", playlistGetCursorPos(plst) );
+                         "playbackQueuePos", playlistGetCursorPos(plst) );
 
     playlistUnlock( plst );
   }
@@ -673,7 +687,8 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
   \*------------------------------------------------------------------------*/
     else if( !strcasecmp(method,"addTracks") ) {
       Playlist *plst      = playerGetQueue();
-      int       pos       = -1;        // Item to add list before
+      int       mPos      = -1;        // Position in mapped list to add list before
+      int       oPos      = -1;        // Position in original list to add list before
       json_t   *jItems    = NULL;      // List of new items
       int       result    = 1;
 
@@ -686,13 +701,13 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
       }
 
       // Get optional explicit position
-      jObj = json_object_get( jParams, "playlistPos" );
+      jObj = json_object_get( jParams, "playbackQueuePos" );
       if( jObj && json_is_integer(jObj) )
-        pos    = json_integer_value( jObj );
+        mPos = json_integer_value( jObj );
       else if( jObj ) {
-        logerr( "ickMessage from %s contains non integer field \"playlistPos\": %s", sourceUUID, message );
+        logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %s", sourceUUID, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
-        rpcErrMessage = "Parameter \"playlistPos\": wrong type (no integer)";
+        rpcErrMessage = "Parameter \"playbackQueuePos\": wrong type (no integer)";
         goto rpcError;
       }
 
@@ -706,9 +721,25 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
         goto rpcError;
       }
 
+      // What to modify?
+      switch( playerGetPlaybackMode() ) {
+        case PlaybackShuffle:
+        case PlaybackRepeatShuffle:
+          // append to end of playback queue
+          oPos = -1;
+          break;
+
+        case PlaybackQueue:
+        case PlaybackRepeatQueue:
+        case PlaybackRepeatItem:
+        case PlaybackDynamic:
+          oPos = mPos;
+          break;
+      }
+
       // Add tracks to playback queue
       playlistLock( plst );
-      if( playlistAddItems(plst,pos,jItems,false) ) {
+      if( playlistAddItems(plst,oPos,mPos,jItems,false) ) {
         logerr( "ickMessage from %s: could not add/set items in playlist: %s",
                  sourceUUID, message );
         playlistUnlock( plst );
@@ -724,7 +755,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
       // report result
       jResult = json_pack( "{sbsi}",
                            "result", result,
-                           "playlistPos", playlistGetCursorPos(plst) );
+                           "playbackQueuePos", playlistGetCursorPos(plst) );
 
       playlistUnlock( plst );
     }
@@ -772,9 +803,9 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     playerStateChanged = true;
 
     // report result 
-    jResult = json_pack( "{sbsi}",
+    jResult = json_pack( "{sb si}",
                          "result", result,
-                         "playlistPos", playlistGetCursorPos(plst) );
+                         "playbackQueuePos", playlistGetCursorPos(plst) );
     playlistUnlock( plst );
   }
 
@@ -782,10 +813,11 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     Move tracks within playback queue
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"moveTracks") ) {
-    Playlist      *plst    = playerGetQueue();
-    json_t        *jItems;
-    int            pos     = -1;        // Item to add list before
-    int            result  = 1;
+    Playlist        *plst    = playerGetQueue();
+    json_t          *jItems;
+    int              pos     = -1;                // Item to add list before
+    PlaylistSortType order   = PlaylistOriginal;
+    int              result  = 1;
 
     // Expect parameters
     if( !jParams ) {
@@ -796,13 +828,13 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     }
 
     // Get optional explicit position
-    jObj = json_object_get( jParams, "playlistPos" );
+    jObj = json_object_get( jParams, "playbackQueuePos" );
     if( jObj && json_is_integer(jObj) )
       pos = json_integer_value( jObj );
     else if( jObj ) {
-      logerr( "ickMessage from %s contains non integer field \"playlistPos\": %s", sourceUUID, message );
+      logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
-      rpcErrMessage = "Parameter \"playlistPos\": wrong type (no integer)";
+      rpcErrMessage = "Parameter \"playbackQueuePos\": wrong type (no integer)";
       goto rpcError;
     }
     
@@ -816,14 +848,34 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
       goto rpcError;
     }
 
-    // Move tracks within playlist
+    // Lock playlist
     playlistLock( plst );
-    if( playlistMoveItems(plst,pos,jItems) ) {
+
+    // What to modify?
+    switch( playerGetPlaybackMode() ) {
+      case PlaybackShuffle:
+      case PlaybackRepeatShuffle:
+        order = PlaylistMapped;
+        break;
+
+      case PlaybackQueue:
+      case PlaybackRepeatQueue:
+      case PlaybackRepeatItem:
+      case PlaybackDynamic:
+        order = PlaylistOriginal;
+        break;
+    }
+
+    // Move tracks within playlist
+    if( playlistMoveItems(plst,order,pos,jItems) ) {
       logerr( "ickMessage from %s: could not move items in playlist: %s", 
                sourceUUID, message );
-      playlistUnlock( plst );
       result = 0;
     }
+
+    // Sync mapping to changes of original playlist
+    if( order==PlaylistOriginal )
+      playlistResetMapping( plst );
 
     // Playback queue has changed
     playlistChanged = true;
@@ -834,8 +886,9 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     // report result 
     jResult = json_pack( "{sbsi}",
                          "result", result,
-                         "playlistPos", playlistGetCursorPos(plst) );
+                         "playbackQueuePos", playlistGetCursorPos(plst) );
 
+    // Unlock playlist
     playlistUnlock( plst );
   } 
 
@@ -892,9 +945,9 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     }
 
     // report result
-    jResult = json_pack( "{sbsi}",
+    jResult = json_pack( "{sb si}",
                          "result", result,
-                         "playlistPos", playlistGetCursorPos(plst) );
+                         "playbackQueuePos", playlistGetCursorPos(plst) );
 
     playlistUnlock( plst );
   }
@@ -922,13 +975,13 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     pos = playlistGetCursorPos( plst );
 
     // Get optional explicit position
-    jObj = json_object_get( jParams, "playlistPos" );
+    jObj = json_object_get( jParams, "playbackQueuePos" );
     if( jObj && json_is_integer(jObj) )
       pos = json_integer_value( jObj );
     else if( jObj ) {
-      logerr( "ickMessage from %s contains non integer field \"playlistPos\": %s", sourceUUID, message );
+      logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
-      rpcErrMessage = "Parameter \"playlistPos\": wrong type (no integer)";
+      rpcErrMessage = "Parameter \"playbackQueuePos\": wrong type (no integer)";
       playlistUnlock( plst );
       goto rpcError;
     }
@@ -957,7 +1010,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     }
 
     // Address item of interest
-    pItem = playlistGetItem( plst, pos );
+    pItem = playlistGetItem( plst, PlaylistMapped, pos );
     if( !pItem ) {
       logwarn( "ickMessage from %s: no item found at queue position %d: %s",
                sourceUUID, pos, message );
@@ -1179,7 +1232,7 @@ void ickMessageNotifyPlayerState( const char *szDeviceId )
 /*------------------------------------------------------------------------*\
     Get player state
 \*------------------------------------------------------------------------*/
-  jMsg = _jPlayerStatus();     
+  jMsg = _jPlayerStatus();
 
 /*------------------------------------------------------------------------*\
     Set up message
@@ -1188,7 +1241,7 @@ void ickMessageNotifyPlayerState( const char *szDeviceId )
                     "jsonrpc", "2.0", 
                     "method", "playerStatusChanged",
                     "params", jMsg );
-                   
+
 /*------------------------------------------------------------------------*\
     Broadcast and clean up
 \*------------------------------------------------------------------------*/
@@ -1217,25 +1270,25 @@ json_t *_jPlayerStatus( void )
   cursorPos = playlistGetCursorPos( plst );
   pChange   = playlistGetLastChange( plst );
   aChange   = playerGetLastChange( );
-  jResult   = json_pack( "{sbsfsisfsbsssf}",
-                           "playing",     playerGetState()==PlayerStatePlay,
-                           "seekPos",     playerGetSeekPos(),
-                           "playlistPos", cursorPos,
-                           "volumeLevel", playerGetVolume(), 
-                           "muted",       playerGetMuting(),
-                           "repeatMode",  playerRepeatModeToStr(playerGetRepeatMode()),
-                           "lastChanged", MAX(aChange,pChange) );
+  jResult   = json_pack( "{sb sf si sf sb ss sf}",
+                         "playing",           playerGetState()==PlayerStatePlay,
+                         "seekPos",           playerGetSeekPos(),
+                         "playbackQueuePos",  cursorPos,
+                         "volumeLevel",       playerGetVolume(),
+                         "muted",             playerGetMuting(),
+                         "playbackQueueMode", playerPlaybackModeToStr(playerGetPlaybackMode()),
+                         "lastChanged",       MAX(aChange,pChange) );
 
 /*------------------------------------------------------------------------*\
     Add info about current track (if any)
 \*------------------------------------------------------------------------*/
-  pItem = playlistGetItem( plst, cursorPos );
+  pItem = playlistGetItem( plst, PlaylistMapped, cursorPos );
   if( pItem ) {
     playlistItemLock( pItem );
     json_object_set( jResult, "track", playlistItemGetJSON(pItem) );
     playlistItemUnlock( pItem );
   }
-    
+
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/

@@ -120,7 +120,7 @@ static const char         *accessToken;
 static double              playerVolume;
 static bool                playerMuted;
 static Playlist           *playerQueue;
-static PlayerRepeatMode    playerRepeatMode = PlayerRepeatOff;
+static PlayerPlaybackMode  playerPlaybackMode = PlaybackQueue;
 static AudioFormat         defaultAudioFormat;
 
 // transient
@@ -180,7 +180,7 @@ int playerInit( void )
 /*------------------------------------------------------------------------*\
     Get repeat mode
 \*------------------------------------------------------------------------*/
-  playerRepeatMode = persistGetInteger( "PlayerRepeatMode" );
+  playerPlaybackMode = persistGetInteger( "PlayerPlaybackMode" );
 
 /*------------------------------------------------------------------------*\
     Get default audio format
@@ -202,7 +202,7 @@ int playerInit( void )
   hmiNewQueue( playerQueue );
   hmiNewState( playerState );
   hmiNewVolume( playerVolume, playerMuted );
-  hmiNewRepeatMode( playerRepeatMode );
+  hmiNewPlaybackMode( playerPlaybackMode );
   lastChange = srvtime( );
 
 /*------------------------------------------------------------------------*\
@@ -230,7 +230,7 @@ void playerShutdown( void )
 \*------------------------------------------------------------------------*/
   playlistLock( playerQueue );
   persistSetInteger( "PlayerQueuePosition", playlistGetCursorPos(playerQueue) );
-  persistSetJSON_new( "PlayerQueue", playlistGetJSON(playerQueue,0,0) );
+  persistSetJSON_new( "PlayerQueue", playlistGetJSON(playerQueue,PlaylistHybrid,0,0) );
   playlistUnlock( playerQueue );
 
 /*------------------------------------------------------------------------*\
@@ -257,40 +257,46 @@ void playerShutdown( void )
 /*=========================================================================*\
       Get an ickstream protocol string from repeat mode
 \*=========================================================================*/
-const char *playerRepeatModeToStr( PlayerRepeatMode mode )
+const char *playerPlaybackModeToStr( PlayerPlaybackMode mode )
 {
-  DBGMSG( "playerRepeatModeToStr: mode %d", mode );
+  DBGMSG( "playerPlaybackModeToStr: mode %d", mode );
 
   // Translate
   switch( mode ) {
-    case PlayerRepeatOff:     return "REPEAT_OFF";
-    case PlayerRepeatItem:    return "REPEAT_ITEM";
-    case PlayerRepeatQueue:   return "REPEAT_PLAYLIST";
-    case PlayerRepeatShuffle: return "REPEAT_PLAYLIST_AND_SHUFFLE";
+    case PlaybackQueue:         return "QUEUE";
+    case PlaybackShuffle:       return "QUEUE_SHUFFLE";
+    case PlaybackRepeatQueue:   return "QUEUE_REPEAT";
+    case PlaybackRepeatItem:    return "QUEUE_REPEAT_ITEM";
+    case PlaybackRepeatShuffle: return "QUEUE_REPEAT_SHUFFLE";
+    case PlaybackDynamic:       return "QUEUE_DYNAMIC";
   }
 
   // Not known or unsupported
-  logerr( "Repeat mode %d unknown or not supported by ickstream protocol.");
-  return "REPEAT_OFF";
+  logerr( "Playback queue mode %d unknown or not supported by ickstream protocol.");
+  return "QUEUE";
 }
 
 
 /*=========================================================================*\
-      Get repeat mode form ickstream protocol string
+      Get playback mode form ickstream protocol string
 \*=========================================================================*/
-PlayerRepeatMode playerRepeatModeFromStr( const char *str )
+PlayerPlaybackMode playerPlaybackModeFromStr( const char *str )
 {
-  DBGMSG( "playerRepeatModeFromStr: \"%s\"", str );
+  DBGMSG( "playerPlaybackModeFromStr: \"%s\"", str );
 
   // Translate
-  if( !strcmp(str,"REPEAT_OFF") )
-    return PlayerRepeatOff;
-  if( !strcmp(str,"REPEAT_ITEM") )
-    return PlayerRepeatItem;
-  if( !strcmp(str,"REPEAT_PLAYLIST") )
-    return PlayerRepeatQueue;
-  if( !strcmp(str,"REPEAT_PLAYLIST_AND_SHUFFLE") )
-    return PlayerRepeatShuffle;
+  if( !strcmp(str,"QUEUE") )
+    return PlaybackQueue;
+  if( !strcmp(str,"QUEUE_SHUFFLE") )
+    return PlaybackShuffle;
+  if( !strcmp(str,"QUEUE_REPEAT") )
+    return PlaybackRepeatQueue;
+  if( !strcmp(str,"QUEUE_REPEAT_ITEM") )
+    return PlaybackRepeatItem;
+  if( !strcmp(str,"QUEUE_REPEAT_SHUFFLE") )
+    return PlaybackRepeatShuffle;
+  if( !strcmp(str,"QUEUE_DYNAMIC") )
+    return PlaybackDynamic;
 
   // Not known or unsupported
   return -1;
@@ -341,10 +347,10 @@ PlayerState playerGetState( void )
 /*=========================================================================*\
       Get repeat mode 
 \*=========================================================================*/
-PlayerRepeatMode playerGetRepeatMode( void )
+PlayerPlaybackMode playerGetPlaybackMode( void )
 {
-  DBGMSG( "playerGetRepeatMode: %d", playerRepeatMode );
-  return playerRepeatMode;
+  DBGMSG( "playerGetPlaybackMode: %d", playerPlaybackMode );
+  return playerPlaybackMode;
 }
 
 
@@ -848,21 +854,27 @@ static int _playerSetVolume( double volume, bool muted )
 /*=========================================================================*\
       Set repeat mode 
 \*=========================================================================*/
-int playerSetRepeatMode( PlayerRepeatMode mode, bool broadcast )
+int playerSetPlaybackMode( PlayerPlaybackMode mode, bool broadcast )
 {
-  loginfo( "Setting repeat mode to %d", mode );
+  loginfo( "Setting playback mode to %d", mode );
 
 /*------------------------------------------------------------------------*\
     Store new state 
 \*------------------------------------------------------------------------*/
-  playerRepeatMode = mode;  
-  persistSetInteger( "PlayerRepeatMode", mode );
+  playerPlaybackMode = mode;
+  persistSetInteger( "PlayerPlaybackMode", mode );
+
+/*------------------------------------------------------------------------*\
+    reset mapping if necessary
+\*------------------------------------------------------------------------*/
+  if( PlaybackQueue && mode!=PlaybackShuffle && mode!=PlaybackRepeatShuffle )
+    playlistResetMapping( PlaybackQueue );
 
 /*------------------------------------------------------------------------*\
     Update timestamp and broadcast new player state
 \*------------------------------------------------------------------------*/
   lastChange = srvtime( );
-  hmiNewRepeatMode( mode );
+  hmiNewPlaybackMode( mode );
   if( broadcast )
     ickMessageNotifyPlayerState( NULL );
 
@@ -1109,7 +1121,7 @@ static void *_playbackThread( void *arg )
       break;
 
     // Repeat track or reconnect stream?
-    if( playerRepeatMode==PlayerRepeatItem ||
+    if( playerPlaybackMode==PlaybackRepeatItem ||
         playlistItemGetType(item)==PlaylistItemStream )
       continue;
 
@@ -1121,14 +1133,14 @@ static void *_playbackThread( void *arg )
       continue;
 
     // repeat at end of list
-    if( playerRepeatMode==PlayerRepeatQueue ) {
+    if( playerPlaybackMode==PlaybackRepeatQueue ) {
       playlistLock( playerQueue );
       item = playlistSetCursorPos( playerQueue, 0 );
       playlistUnlock( playerQueue );
     }
 
     // repeat at end of list with shuffling
-    else if( playerRepeatMode==PlayerRepeatShuffle ) {
+    else if( playerPlaybackMode==PlaybackRepeatShuffle ) {
       playlistLock( playerQueue );
       playlistShuffle( playerQueue, 0, playlistGetLength(playerQueue)-1, false );
       item = playlistSetCursorPos( playerQueue, 0 );

@@ -405,7 +405,6 @@ void hmiNewQueue( Playlist *plst )
   int i;
   DfbtWidget   *screen = dfbtGetScreen();
   DfbtWidget   *wItem;
-  json_t       *jObj;
   int           width, height, border, size;
   PlaylistItem *item = playlistGetCursorItem( plst );
 
@@ -434,14 +433,17 @@ void hmiNewQueue( Playlist *plst )
   }
   dfbtContainerRemove( wPlaylist, NULL );
 
+
 /*------------------------------------------------------------------------*\
     Show Artwork
 \*------------------------------------------------------------------------*/
-  jObj = playlistItemGetAttribute( item, "image" );
-  if( jObj && json_is_string(jObj) ) {
-    char *uri = ickServiceResolveURI( json_string_value(jObj), "content" );
-    if( uri )
-      wArtwork = dfbtImage( artRect.w, artRect.h, uri, false );
+  if( item ) {
+    json_t *jObj = playlistItemGetAttribute( item, "image" );
+    if( jObj && json_is_string(jObj) ) {
+      char *uri = ickServiceResolveURI( json_string_value(jObj), "content" );
+      if( uri )
+        wArtwork = dfbtImage( artRect.w, artRect.h, uri, false );
+    }
   }
   if( !wArtwork )
     wArtwork = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
@@ -450,18 +452,19 @@ void hmiNewQueue( Playlist *plst )
     dfbtContainerAdd( screen, wArtwork, artRect.x, artRect.y, DfbtAlignTopLeft );
   }
 
+
 /*------------------------------------------------------------------------*\
     Create widgets for playback queue items
 \*------------------------------------------------------------------------*/
   playlistLock( plst );
   for( i=0; i<DFB_ITEMS; i++ ) {
     int           pos     = playlistGetCursorPos(plst)-DFB_ITEMS/2 + i;
-    PlaylistItem *theItem = playlistGetItem( plst, pos );
+    PlaylistItem *theItem = playlistGetItem( plst, PlaylistMapped, pos );
 
     if( theItem )
       playlistItemLock( theItem );
 
-    wItem = wPlaylistItem( theItem, pos, width-border, height-border, theItem==item );
+    wItem = wPlaylistItem( theItem, pos, width-border, height-border, item && theItem==item );
     dfbtContainerAdd( wPlaylist, wItem, 0, i*height, DfbtAlignTopLeft );
     dfbtRelease( wItem );
 
@@ -469,7 +472,6 @@ void hmiNewQueue( Playlist *plst )
       playlistItemUnlock( theItem );
   }
   playlistUnlock( plst );
-
 
 /*------------------------------------------------------------------------*\
     Get geometry
@@ -480,15 +482,17 @@ void hmiNewQueue( Playlist *plst )
 /*------------------------------------------------------------------------*\
     Show Source Icon
 \*------------------------------------------------------------------------*/
-  switch( playlistItemGetType(item) ) {
-    case PlaylistItemTrack:
-      wSourceIcon = dfbtImage( size, size, "ickSourceTrack.png", true );
-      break;
-    case PlaylistItemStream:
-      wSourceIcon = dfbtImage( size, size, "ickSourceStream.png", true );
-      break;
+  if( item ) {
+    switch( playlistItemGetType(item) ) {
+      case PlaylistItemTrack:
+        wSourceIcon = dfbtImage( size, size, "ickSourceTrack.png", true );
+        break;
+      case PlaylistItemStream:
+        wSourceIcon = dfbtImage( size, size, "ickSourceStream.png", true );
+        break;
+    }
+    dfbtContainerAdd( wStatus, wSourceIcon, width-3*border-2*size, border, DfbtAlignTopRight );
   }
-  dfbtContainerAdd( wStatus, wSourceIcon, width-3*border-2*size, border, DfbtAlignTopRight );
 
 /*------------------------------------------------------------------------*\
     Trigger redraw
@@ -549,14 +553,14 @@ void hmiNewState( PlayerState state )
 
 
 /*=========================================================================*\
-      Player repeat mode has changed
+      Player playback mode has changed
 \*=========================================================================*/
-void hmiNewRepeatMode( PlayerRepeatMode mode )
+void hmiNewPlaybackMode( PlayerPlaybackMode mode )
 {
   DfbtWidget   *screen = dfbtGetScreen();
   int           width, height, border;
 
-  DBGMSG( "hmiNewRepeatMode: %d.", mode );
+  DBGMSG( "hmiNewPlaybackMode: %d.", mode );
 
 /*------------------------------------------------------------------------*\
     Get geometry
@@ -585,16 +589,28 @@ void hmiNewRepeatMode( PlayerRepeatMode mode )
     Get and draw new icons
 \*------------------------------------------------------------------------*/
   switch( mode ) {
-    case PlayerRepeatOff:
+    case PlaybackQueue:
       break;
-    case PlayerRepeatItem:
+
+    case PlaybackShuffle:
+      wShuffleIcon = dfbtImage( height, height, "ickShuffle.png", true );
+      break;
+
+    case PlaybackRepeatItem:
       wRepeatIcon = dfbtImage( height, height, "ickRepeatItem.png", true );
       break;
-    case PlayerRepeatQueue:
+
+    case PlaybackRepeatQueue:
       wRepeatIcon = dfbtImage( height, height, "ickRepeatQueue.png", true );
       break;
-    case PlayerRepeatShuffle:
+
+    case PlaybackRepeatShuffle:
       wRepeatIcon  = dfbtImage( height, height, "ickRepeatQueue.png", true );
+      wShuffleIcon = dfbtImage( height, height, "ickShuffle.png", true );
+      break;
+
+    case PlaybackDynamic:
+      wRepeatIcon  = dfbtImage( height, height, "ickRepeatItem.png", true );
       wShuffleIcon = dfbtImage( height, height, "ickShuffle.png", true );
       break;
   }

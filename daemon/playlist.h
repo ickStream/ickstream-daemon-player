@@ -79,6 +79,13 @@ typedef enum {
   PlaylistItemStream
 } PlaylistItemType;
 
+typedef enum {
+  PlaylistOriginal,   // Original sorting
+  PlaylistMapped,     // Mapped sorting
+  PlaylistHybrid,     // Include mapping in JSON (for playlistGetJSON)
+  PlaylistBoth        // Address both lists (internal for unlinking)
+} PlaylistSortType;
+
 
 /*=========================================================================*\
     Global symbols 
@@ -96,6 +103,7 @@ void          playlistDelete( Playlist *plst );
 void          playlistLock( Playlist *plst );
 void          playlistUnlock( Playlist *plst );
 void          playlistReset( Playlist *plst, bool resetHeader );
+void          playlistResetMapping( Playlist *plst );
 void          playlistSetId( Playlist *plst, const char *id );
 void          playlistSetName( Playlist *plst, const char *name );
 const char   *playlistGetId( Playlist *plst );
@@ -106,23 +114,23 @@ int           playlistGetCursorPos( Playlist *plst );
 PlaylistItem *playlistSetCursorPos( Playlist *plst, int pos );
 PlaylistItem *playlistIncrCursorItem( Playlist *plst );
 
-json_t       *playlistGetJSON( Playlist *plst, int offset, int count );
-PlaylistItem *playlistGetItem( Playlist *plst, int pos );
+json_t       *playlistGetJSON( Playlist *plst, PlaylistSortType order, int offset, int count );
+PlaylistItem *playlistGetItem( Playlist *plst, PlaylistSortType order, int pos );
+int           playlistGetItemPos( Playlist *plst, PlaylistSortType order, PlaylistItem *item );
 PlaylistItem *playlistGetItemById( Playlist *plst, const char *id );
 PlaylistItem *playlistGetCursorItem( Playlist *plst );
-int           playlistAddItems( Playlist *plst, int pos, json_t *jItems, bool resetFlag );
+int           playlistAddItems( Playlist *plst, int oPos, int mPos, json_t *jItems, bool resetFlag );
 int           playlistDeleteItems( Playlist *plst, json_t *jItems );
-int           playlistMoveItems( Playlist *plst, int pos, json_t *jItems );
+int           playlistMoveItems( Playlist *plst, PlaylistSortType order, int pos, json_t *jItems );
 PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool moveCursorToStart );
 bool          playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistItem *pItem2 );
-void          playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem, PlaylistItem *newItem );
-void          playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem, PlaylistItem *newItem );
-void          playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem );
 
 PlaylistItem     *playlistItemFromJSON( json_t *jItem );
 void              playlistItemDelete( PlaylistItem *pItem );
 void              playlistItemLock( PlaylistItem *item );
 void              playlistItemUnlock( PlaylistItem *item );
+PlaylistItem     *playlistItemGetNext( PlaylistItem *item, PlaylistSortType order );
+PlaylistItem     *playlistItemGetPrevious( PlaylistItem *item, PlaylistSortType order );
 const char       *playlistItemGetText( PlaylistItem *pItem );
 const char       *playlistItemGetId( PlaylistItem *pItem );
 PlaylistItemType  playlistItemGetType( PlaylistItem *pItem );

@@ -67,11 +67,14 @@ typedef enum {
 } PlayerState;
 
 typedef enum {
-  PlayerRepeatOff,
-  PlayerRepeatItem,
-  PlayerRepeatQueue,
-  PlayerRepeatShuffle
-} PlayerRepeatMode;
+  PlaybackQueue,
+  PlaybackShuffle,
+  PlaybackRepeatQueue,
+  PlaybackRepeatItem,
+  PlaybackRepeatShuffle,
+  PlaybackDynamic
+} PlayerPlaybackMode;
+
 
 /*=========================================================================*\
        Global symbols 
@@ -83,39 +86,37 @@ typedef enum {
        Prototypes 
 \*=========================================================================*/
 
-int                playerInit( void );
-void               playerShutdown( void );
-const char        *playerRepeatModeToStr( PlayerRepeatMode );
-PlayerRepeatMode   playerRepeatModeFromStr( const char *str );
-Playlist          *playerGetQueue( void );
-void               playerResetQueue( void );
-PlayerState        playerGetState( void );
-PlayerRepeatMode   playerGetRepeatMode( void );
-double             playerGetLastChange( void );
-const AudioFormat *playerGetDefaultAudioFormat( void );
-const char        *playerGetHWID( void );
-const char        *playerGetIpAddress( void );
-const char        *playerGetUUID( void );
-const char        *playerGetName( void );
-const char        *playerGetInterface( void );
-const char        *playerGetAudioDevice( void );
-const char        *playerGetModel( void );
-const char        *playerGetToken( void );
-double             playerGetVolume( void ); 
-bool               playerGetMuting( void );
-double             playerGetSeekPos( void );
-int                playerSetDefaultAudioFormat( const char *format );
-void               playerSetUUID( const char *name );
-void               playerSetInterface( const char *name );
-void               playerSetAudioDevice( const char *name );
-void               playerSetModel( const char *name );
-void               playerSetToken( const char *token );
-void               playerSetName( const char *name, bool broadcast );
-double             playerSetVolume( double volume, bool muted, bool broadcast );
-int                playerSetRepeatMode( PlayerRepeatMode state, bool broadcast );
-int                playerSetState( PlayerState state, bool broadcast );
-
-
+int                 playerInit( void );
+void                playerShutdown( void );
+const char         *playerPlaybackModeToStr( PlayerPlaybackMode );
+PlayerPlaybackMode  playerPlaybackModeFromStr( const char *str );
+Playlist           *playerGetQueue( void );
+void                playerResetQueue( void );
+PlayerState         playerGetState( void );
+PlayerPlaybackMode  playerGetPlaybackMode( void );
+double              playerGetLastChange( void );
+const AudioFormat  *playerGetDefaultAudioFormat( void );
+const char         *playerGetHWID( void );
+const char         *playerGetIpAddress( void );
+const char         *playerGetUUID( void );
+const char         *playerGetName( void );
+const char         *playerGetInterface( void );
+const char         *playerGetAudioDevice( void );
+const char         *playerGetModel( void );
+const char         *playerGetToken( void );
+double              playerGetVolume( void );
+bool                playerGetMuting( void );
+double              playerGetSeekPos( void );
+int                 playerSetDefaultAudioFormat( const char *format );
+void                playerSetUUID( const char *name );
+void                playerSetInterface( const char *name );
+void                playerSetAudioDevice( const char *name );
+void                playerSetModel( const char *name );
+void                playerSetToken( const char *token );
+void                playerSetName( const char *name, bool broadcast );
+double              playerSetVolume( double volume, bool muted, bool broadcast );
+int                 playerSetPlaybackMode( PlayerPlaybackMode state, bool broadcast );
+int                 playerSetState( PlayerState state, bool broadcast );
 
 
 #endif  /* __PLAYER_H */

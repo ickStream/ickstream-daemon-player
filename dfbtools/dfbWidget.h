@@ -69,6 +69,7 @@ struct _dfbwidget {
   IDirectFB               *surf;               // strong, might be null
   struct _dfbwidget       *next;               // weak
   struct _dfbwidget       *content;            // weak
+  struct _dfbwidget       *parent;             // weak
   void                    *widgetdata;         // strong
 };
 typedef struct _dfbwidget DfbWidget;

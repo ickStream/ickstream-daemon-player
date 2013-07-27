@@ -73,6 +73,7 @@ struct _dfbtwidget {
   IDirectFBSurface        *surface;            // strong, might be null
   DfbtWidget              *next;               // strong
   DfbtWidget              *content;            // strong
+  DfbtWidget              *parent;             // strong
   pthread_mutex_t          mutex;
   void                    *data;
 };

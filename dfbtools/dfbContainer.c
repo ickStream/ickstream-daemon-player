@@ -138,8 +138,21 @@ int dfbtContainerAdd( DfbtWidget *container, DfbtWidget *new, int x, int y, Dfbt
     Already linked?
 \*------------------------------------------------------------------------*/
 #ifdef ICKDEBUG
-  if( dfbtContainerFind(dfbtGetScreen(),new) ) {
+  if( new->parent ) {
+ // if( dfbtContainerFind(dfbtGetScreen(),new) ) {
     logerr( "dfbtContainerAdd: target already linked" );
+    return -1;
+  }
+#endif
+
+
+/*------------------------------------------------------------------------*\
+    Avoid loops
+\*------------------------------------------------------------------------*/
+#ifdef ICKDEBUG
+  if( (new->type==DfbtScreen||new->type==DfbtContainer) && dfbtContainerFind(new,container) ) {
+ // if( dfbtContainerFind(dfbtGetScreen(),new) ) {
+    logerr( "dfbtContainerAdd: would create loop reference to self" );
     return -1;
   }
 #endif
@@ -171,6 +184,7 @@ int dfbtContainerAdd( DfbtWidget *container, DfbtWidget *new, int x, int y, Dfbt
     }
     walk->next = new;
   }
+  new->parent = container;
   pthread_mutex_unlock( &container->mutex );
 
 /*------------------------------------------------------------------------*\
@@ -320,6 +334,7 @@ int dfbtContainerRemove( DfbtWidget *container, DfbtWidget *widget )
         return -1;
       }
     }
+    widget->parent = NULL;
     dfbtRelease( widget );
   }
 
@@ -327,8 +342,12 @@ int dfbtContainerRemove( DfbtWidget *container, DfbtWidget *widget )
     Remove all
 \*------------------------------------------------------------------------*/
   else {
-    for( walk=container->content; walk; walk=walk->next )
+    DfbtWidget *next = NULL;
+    for( walk=container->content; walk; walk=next ) {
+      next = walk->next;
+      walk->parent = NULL;
       dfbtRelease( walk );
+    }
     container->content = NULL;
   }
 

@@ -388,16 +388,18 @@ void hmiNewState( PlayerState state )
 /*=========================================================================*\
       Player repeat mode has changed
 \*=========================================================================*/
-void hmiNewRepeatMode( PlayerRepeatMode mode )
+void hmiNewPlaybackMode( PlayerPlaybackMode mode )
 {
-  DBGMSG( "hmiNewRepeatMode: %d.", mode );
+  DBGMSG( "hmiNewPlaybackMode: %d.", mode );
 
   char *modeStr = "Unknown";
   switch( mode ) {
-    case PlayerRepeatOff:     modeStr = "Off"; break;	
-    case PlayerRepeatItem:    modeStr = "Track"; break;
-    case PlayerRepeatQueue:   modeStr = "Queue"; break;
-    case PlayerRepeatShuffle: modeStr = "Shuffle"; break;
+    case PlaybackQueue:         modeStr = "Queue"; break;
+    case PlaybackShuffle:       modeStr = "Shuffle"; break;
+    case PlaybackRepeatQueue:   modeStr = "Repeat Queue"; break;
+    case PlaybackRepeatItem:    modeStr = "Repeat Item"; break;
+    case PlaybackRepeatShuffle: modeStr = "Repeat and Shuffle"; break;
+    case PlaybackDynamic:       modeStr = "Dynamic Playlist"; break;
   }
 
   pthread_mutex_lock( &mutex );

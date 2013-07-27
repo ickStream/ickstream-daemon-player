@@ -265,6 +265,10 @@ void dfbtRelease( DfbtWidget *widget )
     if( widget->content )
       dfbtContainerRemove( widget, NULL );
 
+    if( widget->parent ) {
+      logerr( "dfbtRelease: object with parent reference reached reference count zero" );
+    }
+
     // Now call the actual object destructor
     _dfbtWidgetDestruct( widget );
   }
