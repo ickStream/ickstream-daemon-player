@@ -1,0 +1,8 @@
+.ickpd_persist*
+Makefile
+*.bak
+*.o
+*.a
+.cproject
+.project
+.settings
