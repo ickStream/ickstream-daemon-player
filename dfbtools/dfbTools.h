@@ -2,9 +2,9 @@
 
 Name            : -
 
-Source File     : dfbImages.h
+Source File     : dfbImage.h
 
-Description     : Main include file for dfbImages.c
+Description     : Main include file for dfbImage.c
 
 Comments        : -
 
@@ -46,13 +46,13 @@ Remarks         : -
 \************************************************************************/
 
 
-#ifndef __DFBWIDGET_H
-#define __DFBWIDGET_H
+#ifndef __DFBTTOOLS_H
+#define __DFBTTOOLS_H
 
 /*=========================================================================*\
 	Includes needed by definitions from this file
 \*=========================================================================*/
-#include "dfbtools.h"
+#include <stdbool.h>
 #include <directfb.h>
 
 
@@ -60,19 +60,45 @@ Remarks         : -
        Macro and type definitions 
 \*=========================================================================*/
 
-// An generic widget
-struct _dfbwidget {
-  DfbWidgetType            type;
-  DFBRectangle             size;               // x, y relative to parent
-  DFBColor                 background;
-  IDirectFB               *dfb;                // weak
-  IDirectFB               *surf;               // strong, might be null
-  struct _dfbwidget       *next;               // weak
-  struct _dfbwidget       *content;            // weak
-  struct _dfbwidget       *parent;             // weak
-  void                    *widgetdata;         // strong
-};
-typedef struct _dfbwidget DfbWidget;
+#define DFBRELEASE(a) ((a)->Release(a),(a)=NULL)
+
+// A toolkit widget
+struct _dfbtwidget;
+typedef struct _dfbtwidget DfbtWidget;
+
+// Types of widgets
+typedef enum {
+  DfbtScreen = 1,
+  DfbtContainer,
+  DfbtImage,
+  DfbtText
+} DfbtWidgetType;
+
+// Types of Alignment
+typedef enum {
+  DfbtAlignTopLeft,
+  DfbtAlignTopCenter,
+  DfbtAlignTopRight,
+  DfbtAlignCenterLeft,
+  DfbtAlignCenterCenter,
+  DfbtAlignCenter = DfbtAlignCenterCenter,
+  DfbtAlignCenterRight,
+  DfbtAlignBaseLeft,
+  DfbtAlignBaseCenter,
+  DfbtAlignBaseRight,
+  DfbtAlignBottomLeft,
+  DfbtAlignBottomCenter,
+  DfbtAlignBottomRight,
+} DfbtAlign;
+
+// State of images
+typedef enum {
+  DfbtImageInitialized,
+  DfbtImageConnecting,
+  DfbtImageLoading,
+  DfbtImageComplete,
+  DfbtImageError
+} DfbtImageState;
 
 
 // Signature for function pointer
@@ -88,21 +114,38 @@ typedef struct _dfbwidget DfbWidget;
 /*=========================================================================*\
        Prototypes 
 \*=========================================================================*/
-void      dfbImageSetResourcePath( const char *path );
-DfbImage *dfbImageGet( IDirectFB *dfb, const char *uri, bool isfile );
-void      dfbImageRelease( DfbImage *dfbi );
-void      dfbImageClearBuffer(void );
-void      dfbImageLock( DfbImage *dfbi );
-void      dfbImageUnlock( DfbImage *dfbi );
-int       dfbImageLaockWaitForComplete( DfbImage *dfbi, int timeout );
+int               dfbtInit( const char *resourcePath );
+void              dfbtShutdown( void );
+IDirectFB        *dfbtGetDdb( void );
+DfbtWidget       *dfbtGetScreen( void );
+int               dfbtRedrawScreen( bool force );
 
-const char             *dfbImageGetId( DfbImage *dfbi );
-const char             *dfbImageGetName( DfbImage *dfbi );
-DfbImageState           dfbImageGetState( DfbImage *dfbi );
-IDirectFBImageProvider *dfbImageGetProvider( const DfbImage *dfbi );
+void              dfbtRetain( DfbtWidget *widget );
+void              dfbtRelease( DfbtWidget *widget );
 
+void              dfbtSetName( DfbtWidget *widget, const char *name );
+const char       *dfbtGetName( DfbtWidget *widget );
+void              dfbtGetSize( DfbtWidget *widget, int *width, int *height );
+void              dfbtGetOffset( DfbtWidget *widget, int *x, int *y );
+void              dfbtSetNeedsUpdate( DfbtWidget *widget );
+void              dfbtSetBackground( DfbtWidget *widget, DFBColor *color );
 
-#endif  /* __DFBWIDGET_H */
+DfbtWidget       *dfbtContainer( int width, int height );
+int               dfbtContainerAdd( DfbtWidget *container, DfbtWidget *new, int x, int y, DfbtAlign align  );
+int               dfbtContainerRemove( DfbtWidget *container, DfbtWidget *widget );
+DfbtWidget       *dfbtContainerFind( DfbtWidget *root, DfbtWidget *widget );
+int               dfbtContainerSetPosition( DfbtWidget *container, DfbtWidget *widget, int x, int y, DfbtAlign align );
+void              dfbtContainerMovePosition( DfbtWidget *container, DfbtWidget *widget, int dx, int dy );
+
+DfbtWidget       *dfbtText( const char *text, IDirectFBFont *font, DFBColor *color );
+IDirectFBFont    *dfbtTextGetFont( DfbtWidget *widget );
+
+DfbtWidget       *dfbtImage( int width, int height, const char *uri, bool isFile );
+const char       *dfbtImageGetUri( DfbtWidget *widget );
+DfbtImageState    dfbtImageGetState( DfbtWidget *widget );
+int               dfbtImageWaitForComplete( DfbtWidget *widget, int timeout );
+
+#endif  /* __DFBTTOOLS_H */
 
 
 /*========================================================================*\

@@ -59,7 +59,7 @@ all: $(EXECUTABLE)
 new: cleanall all
 
 # Build target
-$(EXECUTABLE): $(OBJECTS) Makefile
+$(EXECUTABLE): $(OBJECTS) Makefile @deplibs@
 	@echo '*************************************************************'
 	@echo "Linking executable:"
 	$(LD) $(LDFLAGS) $(LIBDIRS) $(OBJECTS) $(LIBS)  -o $@

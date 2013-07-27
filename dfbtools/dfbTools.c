@@ -148,6 +148,7 @@ int dfbtInit( const char *resourcePath )
     return -1;
   }
   screen->surface = primary;
+  dfbtSetName( screen, "Screen" );
 
 /*------------------------------------------------------------------------*\
     First draw
@@ -201,6 +202,27 @@ DfbtWidget *dfbtGetScreen( void )
 }
 
 
+
+/*=========================================================================*\
+    Set name of widget
+\*=========================================================================*/
+void dfbtSetName( DfbtWidget *widget, const char *name )
+{
+  pthread_mutex_lock( &widget->mutex );
+  Sfree( widget->name );
+  if( name )
+    widget->name = strdup( name );
+  pthread_mutex_unlock( &widget->mutex );
+}
+
+/*=========================================================================*\
+    Get name of widget
+\*=========================================================================*/
+const char *dfbtGetName( DfbtWidget *widget )
+{
+  return widget->name;
+}
+
 /*=========================================================================*\
     Get size of widget
 \*=========================================================================*/
@@ -232,7 +254,10 @@ void dfbtGetOffset( DfbtWidget *widget, int *x, int *y )
 \*=========================================================================*/
 void dfbtRetain( DfbtWidget *widget )
 {
-  DBGMSG( "dfbtRetain (%p): refcount now %d", widget, widget->refCount+1 );
+  DBGMSG( "dfbtRetain (%p): type %d, refcount now %d, (%d,%d) - %dx%d \"%s\"",
+            widget, widget->type, widget->refCount+1,
+            widget->offset.x, widget->offset.y,
+            widget->size.w, widget->size.h, widget->name );
 
   pthread_mutex_lock( &widget->mutex );
   widget->refCount++;
@@ -249,7 +274,10 @@ void dfbtRelease( DfbtWidget *widget )
     DBGMSG( "dfbtRelease (%p): called with nil", widget );
     return;
   }
-  DBGMSG( "dfbtRelease (%p): type %d, refcount now %d", widget, widget->type, widget->refCount-1 );
+  DBGMSG( "dfbtRelease (%p): type %d, refcount now %d, (%d,%d) - %dx%d \"%s\"",
+            widget, widget->type, widget->refCount-1,
+            widget->offset.x, widget->offset.y,
+            widget->size.w, widget->size.h, widget->name );
 
 /*------------------------------------------------------------------------*\
     Lock item
@@ -292,7 +320,10 @@ void dfbtSetNeedsUpdate( DfbtWidget *widget )
 {
   DfbtWidget  *walk;
 
-  DBGMSG( "dfbtSetNeedsUpdate (%p): ", widget );
+  DBGMSG( "dfbtSetNeedsUpdate (%p): type %d, (%d,%d) - %dx%d \"%s\"",
+          widget, widget->type,
+          widget->offset.x, widget->offset.y,
+          widget->size.w, widget->size.h, widget->name );
 
 /*------------------------------------------------------------------------*\
     Lock item
@@ -326,8 +357,8 @@ void dfbtSetNeedsUpdate( DfbtWidget *widget )
 \*=========================================================================*/
 void dfbtSetBackground( DfbtWidget *widget, DFBColor *color )
 {
-  DBGMSG( "dfbtSetBackground (%p): %02x,%02x,%02x,%02x", widget,
-          color->r, color->g, color->b, color->a );
+  DBGMSG( "dfbtSetBackground (%p): %02x,%02x,%02x,%02x \"%s\"", widget,
+          color->r, color->g, color->b, color->a, widget->name );
 
   pthread_mutex_lock( &widget->mutex );
   memcpy( &widget->background, color, sizeof(DFBColor) );
@@ -383,9 +414,8 @@ int dfbtRedrawScreen( bool force )
 }
 
 
-
 /*=========================================================================*\
-    Get or Create an image instance
+    Create a widget instance
 \*=========================================================================*/
 DfbtWidget *_dfbtNewWidget( DfbtWidgetType type, int w, int h )
 {
@@ -460,7 +490,10 @@ DfbtWidget *_dfbtNewWidget( DfbtWidgetType type, int w, int h )
 \*=========================================================================*/
 int _dfbtWidgetDestruct( DfbtWidget *widget )
 {
-  DBGMSG( "_dfbtWidgetDelete (%p): type %d", widget, widget->type );
+  DBGMSG( "_dfbtWidgetDestruct (%p): type %d, (%d,%d) - %dx%d \"%s\"",
+          widget, widget->type,
+          widget->offset.x, widget->offset.y,
+          widget->size.w, widget->size.h, widget->name );
 
 /*------------------------------------------------------------------------*\
     Call type dependent destructors
@@ -501,6 +534,7 @@ int _dfbtWidgetDestruct( DfbtWidget *widget )
 /*------------------------------------------------------------------------*\
     Release object
 \*------------------------------------------------------------------------*/
+  Sfree( widget->name );
   Sfree( widget );
 
 /*------------------------------------------------------------------------*\
@@ -517,7 +551,10 @@ static bool _checkUpdates( DfbtWidget *widget )
 {
   DfbtWidget  *walk;
 
-  DBGMSG( "_checkUpdates (%p): ", widget );
+  DBGMSG( "_checkUpdates (%p): type %d, (%d,%d) - %dx%d \"%s\"",
+          widget, widget->type,
+          widget->offset.x, widget->offset.y,
+          widget->size.w, widget->size.h, widget->name );
 
 /*------------------------------------------------------------------------*\
     Lock this item.
@@ -552,10 +589,10 @@ static int _redraw( DfbtWidget *widget, IDirectFBSurface *surf )
   DFBResult    drc;
   DfbtWidget  *walk;
 
-  DBGMSG( "_redraw (%p): type %d, (%d,%d) - %dx%d",
+  DBGMSG( "_redraw (%p): type %d, (%d,%d) - %dx%d \"%s\"",
           widget, widget->type,
           widget->offset.x, widget->offset.y,
-          widget->size.w, widget->size.h );
+          widget->size.w, widget->size.h, widget->name );
 
 /*------------------------------------------------------------------------*\
     Lock this item.

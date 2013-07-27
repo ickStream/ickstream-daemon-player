@@ -85,6 +85,10 @@ fi
 
 
 # ----------------------------------------
+LIBDIR="$PWD/lib"
+DEPLIBS="$LIBDIR/libickutils.a"
+
+# ----------------------------------------
 echo
 echo -n 'Determine system type           : '
 systype=`uname -s`
@@ -177,7 +181,7 @@ else
   echo $_ICK_ROOT
 fi
 ICK_ROOT=$_ICK_ROOT
-
+DEPLIBS="$DEPLIBS $ICK_ROOT/lib/libickstreamp2p.a"
 
 # ----------------------------------------
 echo -n 'Check for cURL                  : '
@@ -264,6 +268,7 @@ if [ "$HMISRC" = "hmiDirectFB.c" ]; then
     echo "please install libdirectfb and retry..."
     exit 1
   fi
+  DEPLIBS="$DEPLIBS $LIBDIR/libdfbtools.a"
 fi
 
 # ----------------------------------------
@@ -310,7 +315,6 @@ echo 'Used extra sources              :' $EXTRASRCS
 echo 'Used extra libs                 :' $EXTRALIBS
 echo 'Running make in subdirs         :' $MAKEDIRS
 
-LIBDIR="$PWD/lib"
 
 
 # ----------------------------------------
@@ -333,6 +337,7 @@ sed -e 's,@cinfo@,$CONFIG_INFO,g' \\
     -e 's,@ranlib@,$RANLIB,g' \\
     -e 's,@cc@,$CC,g' \\
     -e 's,@extralibs@,$EXTRALIBS,g' \\
+    -e 's,@deplibs@,$DEPLIBS,g' \\
     -e 's,@extrasrcs@,$EXTRASRCS,g' \\
     -e 's,@makedirs@,$MAKEDIRS,g' \\
     -e 's,@cflags@,$CFLAGS,g' \\

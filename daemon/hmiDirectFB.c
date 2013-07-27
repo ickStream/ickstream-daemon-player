@@ -222,6 +222,7 @@ int hmiCreate( void )
 \*------------------------------------------------------------------------*/
   wPlaylist = dfbtContainer( width/2, height );
   dfbtContainerAdd( screen, wPlaylist, width, 0, DfbtAlignTopRight );
+  dfbtSetName( wPlaylist, "Playlist Window" );
 
 /*------------------------------------------------------------------------*\
     Create and add container for status elements
@@ -229,6 +230,7 @@ int hmiCreate( void )
   wStatus = dfbtContainer( width/2-2*border, height/DFB_ITEMS-border );
   dfbtSetBackground( wStatus, &cRed );
   dfbtContainerAdd( screen, wStatus, border, artRect.y+artRect.h+border, DfbtAlignTopLeft );
+  dfbtSetName( wStatus, "Status Window" );
 
 /*------------------------------------------------------------------------*\
     Create and add container for config elements
@@ -236,6 +238,7 @@ int hmiCreate( void )
   wConfig = dfbtContainer( width/2-2*border, height/DFB_ITEMS-border );
   dfbtSetBackground( wConfig, &cGray );
   dfbtContainerAdd( screen, wConfig, border, artRect.y+artRect.h+height/DFB_ITEMS+border, DfbtAlignTopLeft );
+  dfbtSetName( wConfig, "Config Window" );
 
 /*------------------------------------------------------------------------*\
     That's all
@@ -867,6 +870,7 @@ static DfbtWidget *wPlaylistItem( PlaylistItem *item, int pos, int width, int he
   container = dfbtContainer( width, height );
   if( !container )
     return NULL;
+  dfbtSetName( container, "PlaylistItem" );
 
 /*------------------------------------------------------------------------*\
     Set background

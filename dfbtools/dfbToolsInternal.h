@@ -64,6 +64,7 @@ Remarks         : -
 // A toolkit widget
 struct _dfbtwidget {
   DfbtWidgetType           type;
+  char                    *name;
   int                      refCount;
   bool                     needsUpdate;
   DFBPoint                 offset;             // relative to container

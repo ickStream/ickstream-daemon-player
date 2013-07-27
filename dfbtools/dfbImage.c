@@ -112,7 +112,7 @@ static ImageCacheItem   *cacheList;
 /*=========================================================================*\
     Private prototypes
 \*=========================================================================*/
-static ImageCacheItem *_cacheGetImage( const char *uri, bool isfile );
+static ImageCacheItem *_cacheGetImage( const char *theuri, bool isfile );
 void _cacheItemRelease( ImageCacheItem *dfbi );
 
 
@@ -168,6 +168,11 @@ DfbtWidget *dfbtImage( int width, int height, const char *uri, bool isFile )
   }
   imageData->cacheItem  = cacheItem;
   widget->data          = imageData;
+
+/*------------------------------------------------------------------------*\
+    Default name
+\*------------------------------------------------------------------------*/
+  dfbtSetName( widget, uri );
 
 /*------------------------------------------------------------------------*\
     That's all
@@ -323,24 +328,37 @@ void _dfbtImageDraw( DfbtWidget *widget )
 static ImageCacheItem *_cacheGetImage( const char *uri, bool isfile )
 {
   ImageCacheItem      *cacheItem;
+  char                *theuri;
 
   DBGMSG( "_chacheGetImage: \"%s\"", uri );
+
+/*------------------------------------------------------------------------*\
+    Create full path for non-absolute file names
+\*------------------------------------------------------------------------*/
+  if( isfile && _dfbtResourcePath && *uri!='/' ) {
+    theuri = malloc( strlen(_dfbtResourcePath)+strlen(uri)+2 );
+    sprintf( theuri, "%s/%s", _dfbtResourcePath, uri );
+  }
+  else
+    theuri = strdup( uri );
 
 /*------------------------------------------------------------------------*\
     Already in cache?
 \*------------------------------------------------------------------------*/
   pthread_mutex_lock( &cacheMutex );
   for( cacheItem=cacheList; cacheItem; cacheItem=cacheItem->next )
-    if( !strcmp(uri,cacheItem->uri) )
+    if( !strcmp(theuri,cacheItem->uri) )
       break;
   if( cacheItem ) {
     cacheItem->refCounter++;
     pthread_mutex_unlock( &cacheMutex );
     DBGMSG( "_cacheGetImage (%p): \"%s\" found in cache, now %d references",
-            cacheItem, uri, cacheItem->refCounter );
+            cacheItem, theuri, cacheItem->refCounter );
     cacheItem->lastaccess = srvtime();
+    free( theuri );
     return cacheItem;
   }
+  DBGMSG( "_cacheGetImage (%s): no cache hit, will load...", theuri );
   pthread_mutex_unlock( &cacheMutex );
 
 /*------------------------------------------------------------------------*\
@@ -349,20 +367,12 @@ static ImageCacheItem *_cacheGetImage( const char *uri, bool isfile )
   cacheItem = calloc( 1, sizeof(ImageCacheItem) );
   if( !cacheItem ) {
     logerr( "_cacheGetImage (%s): out of memory!", uri );
+    free( theuri );
     return NULL;
   }
   cacheItem->refCounter = 1;
   cacheItem->state      = DfbtImageInitialized;
-
-/*------------------------------------------------------------------------*\
-    Create full path for non-absolute file names
-\*------------------------------------------------------------------------*/
-  if( isfile && _dfbtResourcePath && *uri!='/' ) {
-    cacheItem->uri = malloc( strlen(_dfbtResourcePath)+strlen(uri)+2 );
-    sprintf( cacheItem->uri, "%s/%s", _dfbtResourcePath, uri );
-  }
-  else
-    cacheItem->uri = strdup( uri );
+  cacheItem->uri        = theuri;   // already dupped
 
 /*------------------------------------------------------------------------*\
     Files: Try to read directly
@@ -405,8 +415,7 @@ static ImageCacheItem *_cacheGetImage( const char *uri, bool isfile )
     Link entry to list
 \*------------------------------------------------------------------------*/
   pthread_mutex_lock( &cacheMutex );
-  if( cacheList )
-    cacheList->next = cacheItem;
+  cacheItem->next = cacheList;
   cacheList = cacheItem;
   pthread_mutex_unlock( &cacheMutex );
 

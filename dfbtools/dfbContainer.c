@@ -101,6 +101,11 @@ DfbtWidget *dfbtContainer( int width, int height )
     return NULL;
 
 /*------------------------------------------------------------------------*\
+    Default name
+\*------------------------------------------------------------------------*/
+  dfbtSetName( widget, "Container" );
+
+/*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/
   return widget;
@@ -114,8 +119,8 @@ int dfbtContainerAdd( DfbtWidget *container, DfbtWidget *new, int x, int y, Dfbt
 {
   DfbtWidget    *walk;
 
-  DBGMSG( "dfbtContainerAdd (%p): Adding widget %p at (%d,%d)",
-          container, new, x, y );
+  DBGMSG( "dfbtContainerAdd (%p-%s): Adding widget %p-%s at (%d,%d)",
+          container, container->name, new, new->name, x, y );
 
 /*------------------------------------------------------------------------*\
     Check type
@@ -202,6 +207,9 @@ int dfbtContainerSetPosition( DfbtWidget *container, DfbtWidget *widget, int x, 
   IDirectFBFont *font;
   int            asc;
 
+  DBGMSG( "dfbtContainerSetPosition (%p-%s): in container %p-%s to (%d,%d), align %d",
+           widget, widget->name, container, container->name, x, y, align );
+
 /*------------------------------------------------------------------------*\
     Adjust offset according to alignment
 \*------------------------------------------------------------------------*/
@@ -282,6 +290,8 @@ int dfbtContainerSetPosition( DfbtWidget *container, DfbtWidget *widget, int x, 
 \*=========================================================================*/
 void dfbtContainerMovePosition( DfbtWidget *container, DfbtWidget *widget, int dx, int dy )
 {
+  DBGMSG( "dfbtContainerMovePosition (%p-%s): in container %p-%s by (%d,%d)",
+           widget, widget->name, container, container->name, dx, dy );
 
 /*------------------------------------------------------------------------*\
     Adjust offset of element
@@ -303,7 +313,8 @@ int dfbtContainerRemove( DfbtWidget *container, DfbtWidget *widget )
 {
   DfbtWidget  *walk;
 
-  DBGMSG( "dfbtContainerRemove (%p): removing widget %p", container, widget );
+  DBGMSG( "dfbtContainerRemove (%p-%s): removing widget %p-%s",
+           container, container->name, widget, widget?widget->name:"All" );
 
 /*------------------------------------------------------------------------*\
     Check type
@@ -373,7 +384,8 @@ DfbtWidget *dfbtContainerFind( DfbtWidget *root, DfbtWidget *widget )
   DfbtWidget *walk;
   DfbtWidget *result = NULL;
 
-  DBGMSG( "dfbtContainerFind (%p): find widget %p", root, widget );
+  DBGMSG( "dfbtContainerFind (%p-%s): find widget %p-%s",
+           root, root->name, widget, widget->name );
 
 /*------------------------------------------------------------------------*\
     Check type
@@ -413,7 +425,8 @@ DfbtWidget *dfbtContainerFind( DfbtWidget *root, DfbtWidget *widget )
     That's all
 \*------------------------------------------------------------------------*/
   if( result )
-    DBGMSG( "dfbtContainerFind (%p): widget %p found in %p", root, widget, result );
+    DBGMSG( "dfbtContainerFind (%p-%s): widget %p-%s found in %p-%s",
+            root, root->name, widget, widget->name, result, result->name );
   return result;
 }
 
