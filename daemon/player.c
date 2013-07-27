@@ -852,11 +852,18 @@ static int _playerSetVolume( double volume, bool muted )
 
 
 /*=========================================================================*\
-      Set repeat mode 
+      Set repeat mode
 \*=========================================================================*/
 int playerSetPlaybackMode( PlayerPlaybackMode mode, bool broadcast )
 {
+  bool playlistChanged = false;
   loginfo( "Setting playback mode to %d", mode );
+
+/*------------------------------------------------------------------------*\
+    Store new state
+\*------------------------------------------------------------------------*/
+  if( playerPlaybackMode==mode )
+    return 0;
 
 /*------------------------------------------------------------------------*\
     Store new state 
@@ -865,18 +872,43 @@ int playerSetPlaybackMode( PlayerPlaybackMode mode, bool broadcast )
   persistSetInteger( "PlayerPlaybackMode", mode );
 
 /*------------------------------------------------------------------------*\
-    reset mapping if necessary
+    Modify mapping if necessary
 \*------------------------------------------------------------------------*/
-  if( PlaybackQueue && mode!=PlaybackShuffle && mode!=PlaybackRepeatShuffle )
-    playlistResetMapping( PlaybackQueue );
+  switch( playerPlaybackMode ) {
+    case PlaybackShuffle:
+      if( playerQueue ) {
+        int startPos = 0*playlistGetCursorPos( playerQueue );
+        int endPos   = playlistGetLength( playerQueue )-1;
+        playlistShuffle( playerQueue, startPos, endPos, true );
+        playlistChanged = true;
+      }
+      break;
+
+    case PlaybackRepeatShuffle:
+      break;
+
+    case PlaybackQueue:
+    case PlaybackRepeatQueue:
+    case PlaybackRepeatItem:
+    case PlaybackDynamic:
+      if( playerQueue ) {
+        playlistResetMapping( playerQueue );
+        playlistChanged = true;
+      }
+      break;
+  }
 
 /*------------------------------------------------------------------------*\
     Update timestamp and broadcast new player state
 \*------------------------------------------------------------------------*/
   lastChange = srvtime( );
   hmiNewPlaybackMode( mode );
+  if( playlistChanged )
+    hmiNewQueue( playerQueue );
   if( broadcast )
     ickMessageNotifyPlayerState( NULL );
+  if( broadcast && playlistChanged )
+    ickMessageNotifyPlaylist( NULL );
 
 /*=========================================================================*\
       return new mode 
