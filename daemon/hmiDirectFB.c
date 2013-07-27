@@ -439,12 +439,14 @@ void hmiNewQueue( Playlist *plst )
   }
   dfbtContainerRemove( wPlaylist, NULL );
 
+  /*
   wArtwork = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
   if( wArtwork )
     dfbtContainerAdd( screen, wArtwork, artRect.x, artRect.y, DfbtAlignTopLeft );
 
   dfbtRedrawScreen( false );
   return;
+  */
 
 /*------------------------------------------------------------------------*\
     Show Artwork

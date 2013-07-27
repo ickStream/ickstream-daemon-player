@@ -499,7 +499,7 @@ const char *playerGetIpAddress( void )
 /*------------------------------------------------------------------------*\
     That's it
 \*------------------------------------------------------------------------*/
-  logerr( "playerGetIpAddress (%s): addrStr.", deviceIf, addrStr );
+  DBGMSG( "playerGetIpAddress (%s): addrStr.", deviceIf, addrStr );
   return addrStr;
 }
 
