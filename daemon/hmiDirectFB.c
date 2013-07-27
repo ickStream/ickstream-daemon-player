@@ -163,6 +163,7 @@ int hmiCreate( void )
 \*------------------------------------------------------------------------*/
   if( dfbtInit("../resources") )
     return -1;
+
   dfb = dfbtGetDdb();
   screen = dfbtGetScreen();
   dfbtGetSize( screen, &width, &height );
@@ -211,11 +212,11 @@ int hmiCreate( void )
 /*------------------------------------------------------------------------*\
     Load logo as default artwork
 \*------------------------------------------------------------------------*/
- wArtwork = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
- if( wArtwork ) {
+  wArtwork = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
+  if( wArtwork ) {
    // dfbtSetBackground( wArtwork, &cBlue );
    dfbtContainerAdd( screen, wArtwork, artRect.x, artRect.y, DfbtAlignTopLeft );
- }
+  }
 
 /*------------------------------------------------------------------------*\
     Create and add container for playlist elements
@@ -396,6 +397,7 @@ void hmiNewConfig( void )
     available through newly added content services
     This also triggers a redraw
 \*------------------------------------------------------------------------*/
+//  dfbtRedrawScreen( false );
   hmiNewQueue( playerGetQueue() );
 }
 
@@ -413,6 +415,7 @@ void hmiNewQueue( Playlist *plst )
 
   DBGMSG( "hmiNewQueue: %p (%s).", item, item?playlistItemGetText(item):"<None>" );
   currentItem = item;
+
 
 /*------------------------------------------------------------------------*\
     Get geometry
@@ -436,6 +439,12 @@ void hmiNewQueue( Playlist *plst )
   }
   dfbtContainerRemove( wPlaylist, NULL );
 
+  wArtwork = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
+  if( wArtwork )
+    dfbtContainerAdd( screen, wArtwork, artRect.x, artRect.y, DfbtAlignTopLeft );
+
+  dfbtRedrawScreen( false );
+  return;
 
 /*------------------------------------------------------------------------*\
     Show Artwork
@@ -545,8 +554,12 @@ void hmiNewState( PlayerState state )
     case PlayerStatePause:
       wStateIcon = dfbtImage( width, height, "ickStatePause.png", true );
       break;
+    default:
+      logerr( "hmiNewState: unknown sate %d." );
+      break;
   }
-  dfbtContainerAdd( wStatus, wStateIcon, border, border, DfbtAlignTopLeft );
+  if( wStateIcon )
+    dfbtContainerAdd( wStatus, wStateIcon, border, border, DfbtAlignTopLeft );
 
 /*------------------------------------------------------------------------*\
     Trigger redraw
@@ -639,6 +652,7 @@ void hmiNewVolume( double volume, bool muted )
   int           width, height, border, size, y, a;
   char          buffer[64];
   DBGMSG( "hmiNewVolume: %.2lf (muted: %s).", volume, muted?"On":"Off" );
+
 
 /*------------------------------------------------------------------------*\
     Get geometry

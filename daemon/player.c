@@ -1399,17 +1399,17 @@ if( playlistItemGetType(item)==PlaylistItemStream &&
     logerr( "_playItem (%s): Could not scrobble track.", playlistItemGetText(item)  );
 
 /*------------------------------------------------------------------------*\
-    Get rid of feed
-\*------------------------------------------------------------------------*/
-  if( feed && audioFeedDelete(feed,true) )
-    logerr( "_playItem (%s): Could not delete feeder instance.", playlistItemGetText(item)  );
-
-/*------------------------------------------------------------------------*\
     Get rid of codec instance
 \*------------------------------------------------------------------------*/
   codecInstance = NULL;
   if( codecDeleteInstance(codecInst,true) )
     logerr( "_playItem (%s): Could not delete codec instance.", playlistItemGetText(item)  );
+
+/*------------------------------------------------------------------------*\
+    Get rid of feed
+\*------------------------------------------------------------------------*/
+  if( feed && audioFeedDelete(feed,true) )
+    logerr( "_playItem (%s): Could not delete feeder instance.", playlistItemGetText(item)  );
 
 /*------------------------------------------------------------------------*\
     That's it

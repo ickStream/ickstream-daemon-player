@@ -70,7 +70,11 @@ Remarks         : -
 /*=========================================================================*\
     Macro and type definitions
 \*=========================================================================*/
-// none
+
+// Enable or disable consistency checks (performance)
+#ifdef ICK_DEBUG
+#define CONSISTENCYCHECKING
+#endif
 
 
 /*=========================================================================*\
@@ -82,7 +86,12 @@ Remarks         : -
 /*=========================================================================*\
     Private prototypes
 \*=========================================================================*/
-// none
+#ifdef CONSISTENCYCHECKING
+#define CHKLIST( p ) _containerCheckList( __FILE__, __LINE__, (p) );
+static int _containerCheckList( const char *file, int line, DfbtWidget *widget );
+#else
+#define CHKLIST( p ) {}
+#endif
 
 
 /*=========================================================================*\
@@ -174,9 +183,11 @@ int dfbtContainerAdd( DfbtWidget *container, DfbtWidget *new, int x, int y, Dfbt
     return -1;
 
 /*------------------------------------------------------------------------*\
-    Add to content list
+    Append to content list
 \*------------------------------------------------------------------------*/
   pthread_mutex_lock( &container->mutex );
+  new->parent = container;
+  new->next   = NULL;
   if( !container->content )
     container->content = new;
   else {
@@ -189,12 +200,12 @@ int dfbtContainerAdd( DfbtWidget *container, DfbtWidget *new, int x, int y, Dfbt
     }
     walk->next = new;
   }
-  new->parent = container;
   pthread_mutex_unlock( &container->mutex );
 
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/
+  CHKLIST( container );
   return 0;
 }
 
@@ -280,7 +291,8 @@ int dfbtContainerSetPosition( DfbtWidget *container, DfbtWidget *widget, int x, 
 /*------------------------------------------------------------------------*\
     Container needs redraw
 \*------------------------------------------------------------------------*/
-  dfbtSetNeedsUpdate( container );
+  // dfbtSetNeedsUpdate( container );
+  container->needsUpdate = true;
   return 0;
 }
 
@@ -303,6 +315,7 @@ void dfbtContainerMovePosition( DfbtWidget *container, DfbtWidget *widget, int d
     Container needs redraw
 \*------------------------------------------------------------------------*/
   dfbtSetNeedsUpdate( container );
+  container->needsUpdate = true;
 }
 
 
@@ -315,6 +328,7 @@ int dfbtContainerRemove( DfbtWidget *container, DfbtWidget *widget )
 
   DBGMSG( "dfbtContainerRemove (%p-%s): removing widget %p-%s",
            container, container->name, widget, widget?widget->name:"All" );
+  CHKLIST( container );
 
 /*------------------------------------------------------------------------*\
     Check type
@@ -331,7 +345,7 @@ int dfbtContainerRemove( DfbtWidget *container, DfbtWidget *widget )
   pthread_mutex_lock( &container->mutex );
   if( widget ) {
     if( container->content==widget )
-      container->content = container->content->next;
+      container->content = widget->next;
     else {
       for( walk=container->content; walk&&walk->next; walk=walk->next ) {
         if( walk->next==widget ) {
@@ -340,12 +354,14 @@ int dfbtContainerRemove( DfbtWidget *container, DfbtWidget *widget )
         }
       }
       if( !walk ) {
-        logerr( "dfbtContainerRemove: widget is no content element" );
+        logerr( "dfbtContainerRemove (%s): widget \"%s\" is no content element",
+                 container->name, widget->name );
         pthread_mutex_unlock( &container->mutex );
         return -1;
       }
     }
     widget->parent = NULL;
+    widget->next   = NULL;
     dfbtRelease( widget );
   }
 
@@ -355,22 +371,24 @@ int dfbtContainerRemove( DfbtWidget *container, DfbtWidget *widget )
   else {
     DfbtWidget *next = NULL;
     for( walk=container->content; walk; walk=next ) {
-      next = walk->next;
+      next         = walk->next;
       walk->parent = NULL;
+      walk->next   = NULL;
       dfbtRelease( walk );
     }
     container->content = NULL;
   }
+  pthread_mutex_unlock( &container->mutex );
 
 /*------------------------------------------------------------------------*\
-    Need an redraw
+    Need a redraw
 \*------------------------------------------------------------------------*/
   container->needsUpdate = true;
-  pthread_mutex_unlock( &container->mutex );
 
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/
+  CHKLIST( container );
   return 0;
 }
 
@@ -431,6 +449,51 @@ DfbtWidget *dfbtContainerFind( DfbtWidget *root, DfbtWidget *widget )
 }
 
 
+/*=========================================================================*\
+    Find the container that owns a widget
+      return NULL, if widget is not linked or equal to root
+\*=========================================================================*/
+#ifdef CONSISTENCYCHECKING
+
+static int _containerCheckList( const char *file, int line, DfbtWidget *widget )
+{
+  DfbtWidget *walk;
+  int         i;
+
+  _mylog( file, line, LOG_DEBUG, "dfbtContainerCheck (%p): type %d, (%d,%d) - %dx%d \"%s\"",
+          widget, widget->type,
+          widget->offset.x, widget->offset.y,
+          widget->size.w, widget->size.h, widget->name );
+
+/*------------------------------------------------------------------------*\
+    No content?
+\*------------------------------------------------------------------------*/
+  if( !widget->content ) {
+    _mylog( file, line, LOG_DEBUG, "dfbtContainerCheck (%p): no content", widget );
+    return;
+  }
+
+/*------------------------------------------------------------------------*\
+    Check all members
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &widget->mutex );
+  for( i=0,walk=widget->content; walk; i++,walk=walk->next ) {
+    _mylog( file, line, LOG_DEBUG, "dfbtContainerCheck (%p): Member #%d: %p type %d, ref %d, (%d,%d) - %dx%d \"%s\"",
+            widget, i, walk, walk->type, walk->refCount,
+            walk->offset.x, walk->offset.y,
+            walk->size.w, walk->size.h, walk->name );
+    if( !walk->refCount )
+      _mylog( file, line, LOG_ERR, "dfbtContainerCheck (%s): contains element with zero ref count \"%s\"",
+               widget->name, walk->name );
+  }
+  pthread_mutex_unlock( &widget->mutex );
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+}
+
+#endif
 
 
 /*=========================================================================*\

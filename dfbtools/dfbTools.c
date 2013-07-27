@@ -302,9 +302,11 @@ void dfbtRelease( DfbtWidget *widget )
   }
 
 /*------------------------------------------------------------------------*\
-    Unlock item
+    Unlock item if still around
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &widget->mutex );
+  else
+      pthread_mutex_unlock( &widget->mutex );
+
 
 /*------------------------------------------------------------------------*\
     That's all
@@ -523,8 +525,12 @@ int _dfbtWidgetDestruct( DfbtWidget *widget )
 /*------------------------------------------------------------------------*\
     Release surface
 \*------------------------------------------------------------------------*/
-  if( widget->type!=DfbtScreen )
-    DFBRELEASE( widget->surface );
+  if( widget->type!=DfbtScreen ) {
+    DFBResult drc = widget->surface->Release( widget->surface );
+    if( drc!=DFB_OK )
+      logerr( "_dfbtWidgetDestruct (%s, %d): could not release surface (%s).",
+               widget->name, widget->type, DirectFBErrorString(drc) );
+  }
 
 /*------------------------------------------------------------------------*\
     Delete mutex
