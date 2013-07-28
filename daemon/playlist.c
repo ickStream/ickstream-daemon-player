@@ -602,7 +602,7 @@ json_t *playlistGetJSON( Playlist *plst, PlaylistSortType order, int offset, int
   PlaylistItem *pItem;
   int           i;
 
-  DBGMSG( "playlistGetJSON (%p): order: %s offset:%d count:%d",
+  DBGMSG( "playlistGetJSON (%p): order=%s offset=%d count=%d",
            plst, playlistSortTypeToStr(order), offset, count );
   CHKLIST( plst );
 
@@ -999,7 +999,7 @@ int playlistMoveItems( Playlist *plst, PlaylistSortType order, int pos, json_t *
   int            i;
   int            rc = 0;
 
-  DBGMSG( "playlistMoveItems (%p): order: %s before: %d",
+  DBGMSG( "playlistMoveItems (%p): order=%s before=%d",
            plst, playlistSortTypeToStr(order), pos );
   CHKLIST( plst );
 
@@ -1278,7 +1278,7 @@ bool playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistItem *pIte
 \*=========================================================================*/
 const char *playlistSortTypeToStr( PlaylistSortType order )
 {
-  DBGMSG( "playlistSortTypeToStr: order %d", order );
+  DBGMSG( "playlistSortTypeToStr: order=%d", order );
 
   // Translate
   switch( order ) {
@@ -1324,7 +1324,7 @@ PlaylistSortType playlistSortTypeFromStr( const char *str )
 static void _playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem,
                                     PlaylistSortType order, PlaylistItem *newItem )
 {
-  DBGMSG( "_playlistAddItemBefore(%p): order: %s anchor: %p new: %p",
+  DBGMSG( "_playlistAddItemBefore (%p): order=%s anchor=%p new=%p",
            plst, playlistSortTypeToStr(order), anchorItem, newItem );
 
 /*------------------------------------------------------------------------*\
@@ -1402,7 +1402,7 @@ static void _playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem,
 static void _playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem,
                                     PlaylistSortType order, PlaylistItem *newItem )
 {
-  DBGMSG( "_playlistAddItemAfter(%p-%s): order: %s anchor: %p new: %p",
+  DBGMSG( "_playlistAddItemAfter (%p): order=%s anchor=%p new=%p",
            plst, playlistSortTypeToStr(order), anchorItem, newItem );
 
 /*------------------------------------------------------------------------*\
@@ -1558,7 +1558,7 @@ PlaylistItem *playlistItemFromJSON( json_t *jItem )
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/
-  DBGMSG( "playlistItemFromJSON: %p id:%s (%s)",
+  DBGMSG( "playlistItemFromJSON: %p \"%s\" (id=%s)",
                      item, item->text, item->id );
   return item;
 }
@@ -1594,7 +1594,7 @@ void playlistItemDelete( PlaylistItem *pItem )
 \*=========================================================================*/
 void playlistItemLock( PlaylistItem *item )
 {
-  DBGMSG( "playlistItem(%p): lock", item );
+  DBGMSG( "playlistItem (%p): lock", item );
   pthread_mutex_lock( &item->mutex );
 }
 
@@ -1604,7 +1604,7 @@ void playlistItemLock( PlaylistItem *item )
 \*=========================================================================*/
 void playlistItemUnlock( PlaylistItem *item )
 {
-  DBGMSG( "playlistItem(%p): unlock", item );
+  DBGMSG( "playlistItem (%p): unlock", item );
   pthread_mutex_unlock( &item->mutex );
 }
 
@@ -1614,7 +1614,7 @@ void playlistItemUnlock( PlaylistItem *item )
 \*=========================================================================*/
 PlaylistItem *playlistItemGetNext( PlaylistItem *item, PlaylistSortType order )
 {
-  DBGMSG( "playlistItem(%p): getNext(%s)", item, playlistSortTypeToStr(order) );
+  DBGMSG( "playlistItem (%p): getNext (%s)", item, playlistSortTypeToStr(order) );
 
 /*------------------------------------------------------------------------*\
     Need valid input
@@ -1651,7 +1651,7 @@ PlaylistItem *playlistItemGetNext( PlaylistItem *item, PlaylistSortType order )
 \*=========================================================================*/
 PlaylistItem *playlistItemGetPrevious( PlaylistItem *item, PlaylistSortType order )
 {
-  DBGMSG( "playlistItem(%p): getPrevious(%s)", item,  playlistSortTypeToStr(order) );
+  DBGMSG( "playlistItem (%p): getPrevious (%s)", item,  playlistSortTypeToStr(order) );
 
 /*------------------------------------------------------------------------*\
     Need valid input
