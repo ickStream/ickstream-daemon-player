@@ -89,13 +89,16 @@ extern char *_dfbtResourcePath;
        Prototypes 
 \*=========================================================================*/
 DfbtWidget *_dfbtNewWidget( DfbtWidgetType type, int w, int h );
-int  _dfbtWidgetDestruct( DfbtWidget *widget );
+int         _dfbtWidgetDestruct( DfbtWidget *widget );
 
-void _dfbtTextDestruct( DfbtWidget *widget );
-void _dfbtTextDraw( DfbtWidget *widget );
+int         _dfbtSurfaceLock( IDirectFBSurface *surface );
+int         _dfbtSurfaceUnlock( IDirectFBSurface *surface );
 
-void _dfbtImageDestruct( DfbtWidget *widget );
-void _dfbtImageDraw( DfbtWidget *widget );
+void        _dfbtTextDestruct( DfbtWidget *widget );
+void        _dfbtTextDraw( DfbtWidget *widget );
+
+void        _dfbtImageDestruct( DfbtWidget *widget );
+void        _dfbtImageDraw( DfbtWidget *widget );
 
 
 #endif  /* __DFBTTOOLSINTERNAL_H */

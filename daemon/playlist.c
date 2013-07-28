@@ -132,8 +132,10 @@ Playlist *playlistNew( void )
     Create header
 \*------------------------------------------------------------------------*/
   plst = calloc( 1, sizeof(Playlist) );
-  if( !plst )
-    logerr( "playlistNew: out of memeory!" );
+  if( !plst ) {
+    logerr( "playlistNew: out of memory!" );
+    return NULL;
+  }
 
 /*------------------------------------------------------------------------*\
     Init header fields
@@ -142,10 +144,11 @@ Playlist *playlistNew( void )
   // plst->name = strdup( "ickpd player queue" );
  
 /*------------------------------------------------------------------------*\
-    Init mutex in errr check mode
+    Init mutex and set timestamp
 \*------------------------------------------------------------------------*/
   ickMutexInit( &plst->mutex );
- 
+  plst->lastChange = srvtime();
+
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/
@@ -173,13 +176,13 @@ Playlist *playlistFromJSON( json_t *jQueue )
   plst = playlistNew();   
       
 /*------------------------------------------------------------------------*\
-    No json date?
+    No json data?
 \*------------------------------------------------------------------------*/
   if( !jQueue )
     return plst;
     
 /*------------------------------------------------------------------------*\
-    Lazy init: Create playlist header from JSON 
+    Create playlist header from JSON
 \*------------------------------------------------------------------------*/
 
   // ID (optional)
@@ -205,14 +208,18 @@ Playlist *playlistFromJSON( json_t *jQueue )
 
   // Get list of items
   jObj = json_object_get( jQueue, "items" );
-  if( jObj && json_is_array(jObj) ) {
+  if( !jObj )
+    logerr( "Playlist: missing field \"items\"" );
+  else if( !json_is_array(jObj) )
+    logerr( "Playlist: field \"items\" is no array." );
+  else {
   
     // Loop over all items and add them to list
     for( i=0; i<json_array_size(jObj); i++ ) {
       json_t       *jItem = json_array_get( jObj, i );
       PlaylistItem *pItem = playlistItemFromJSON( jItem );
       if( pItem )
-        _playlistAddItemAfter( plst, NULL, PlaylistOriginal, pItem );
+        _playlistAddItemBefore( plst, NULL, PlaylistOriginal, pItem );
       else
         logerr( "Playlist: could not parse playlist item #%d", i+1 );
     } 
@@ -220,8 +227,6 @@ Playlist *playlistFromJSON( json_t *jQueue )
     // Store number of items
     plst->_numberOfItems = json_array_size(jObj);
   }
-  else
-    logerr( "Playlist: missing field \"items\"" );
 
   // Get mapping
   jObj = json_object_get( jQueue, "mapping" );
@@ -242,15 +247,18 @@ Playlist *playlistFromJSON( json_t *jQueue )
     json_t       *jPos = json_array_get( jObj, i );
     PlaylistItem *pItem;
     if( !json_is_integer(jPos) ) {
-      logwarn( "Playlist: mapping item #%d is not an integer" );
-      continue;
+      logwarn( "Playlist: mapping item #%d is not an integer, using id mapping" );
+      playlistResetMapping( plst );
+      break;
     }
     pItem = playlistGetItem( plst, PlaylistOriginal, json_integer_value(jPos) );
-    if( pItem )
-      _playlistAddItemAfter( plst, NULL, PlaylistMapped, pItem );
-    else
-      logerr( "Playlist: could not find mapped item #%d (position %s)",
-              i+1, json_integer_value(jPos) );
+    if( !pItem ) {
+      logerr( "Playlist: could not find mapped item #%d (position %s), using id mapping",
+                    i+1, json_integer_value(jPos) );
+      playlistResetMapping( plst );
+      break;
+    }
+    _playlistAddItemBefore( plst, NULL, PlaylistMapped, pItem );
   }
 
 /*------------------------------------------------------------------------*\
@@ -272,7 +280,7 @@ void playlistDelete( Playlist *plst )
 /*------------------------------------------------------------------------*\
     Lock mutex
 \*------------------------------------------------------------------------*/
-   pthread_mutex_lock( &plst->mutex );
+  pthread_mutex_lock( &plst->mutex );
 
 /*------------------------------------------------------------------------*\
     Free all items and reset header
@@ -280,9 +288,9 @@ void playlistDelete( Playlist *plst )
   playlistReset( plst, true );
   
 /*------------------------------------------------------------------------*\
-    Unlock and free header
+    Destroy mutex and free header
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &plst->mutex );
+  pthread_mutex_destroy( &plst->mutex );
   Sfree( plst );
 }
 
@@ -344,13 +352,9 @@ void playlistReset( Playlist *plst, bool resetHeader )
   }
 
 /*------------------------------------------------------------------------*\
-    Set timestamp
+    Set timestamp, that's all
 \*------------------------------------------------------------------------*/
   plst->lastChange = srvtime();
-
-/*------------------------------------------------------------------------*\
-    That's all
-\*------------------------------------------------------------------------*/
 }
 
 
@@ -404,7 +408,7 @@ void playlistSetId( Playlist *plst, const char *id )
 
 
 /*=========================================================================*\
-       Set Name for playlist 
+       Set name for playlist
 \*=========================================================================*/
 void playlistSetName( Playlist *plst, const char *name )
 {
@@ -429,7 +433,7 @@ const char *playlistGetId( Playlist *plst )
 
 
 /*=========================================================================*\
-       Get Name for playlist 
+       Get name for playlist
 \*=========================================================================*/
 const char *playlistGetName( Playlist *plst )
 {
@@ -533,11 +537,11 @@ PlaylistItem *playlistSetCursorPos( Playlist *plst, int pos )
   item = playlistGetItem( plst, PlaylistMapped, pos );
 
 /*------------------------------------------------------------------------*\
-    If found: store at pointer and invalidate index
+    If found: store at pointer and store index
 \*------------------------------------------------------------------------*/
   if( item ) {
     plst->_cursorItem = item;
-    plst->_cursorPos  = -1;
+    plst->_cursorPos  = pos;
   }
 
 /*------------------------------------------------------------------------*\
@@ -551,7 +555,7 @@ PlaylistItem *playlistSetCursorPos( Playlist *plst, int pos )
 
 /*=========================================================================*\
        Set cursor position (aka current track) to next entry in mapped list
-         return new item (clipped) or NULL (empty list or end of list)
+         return new item or NULL (empty list or end of list)
 \*=========================================================================*/
 PlaylistItem *playlistIncrCursorItem( Playlist *plst )
 {
@@ -589,7 +593,7 @@ PlaylistItem *playlistIncrCursorItem( Playlist *plst )
        Get playlist in ickstream JSON format for method "getPlaylist"
          order selects the original or mapped order or an hybrid format
          offset is the offset of the first element to be included
-         count is the (max.) number of elements included
+         count is the (max.) number of elements included (0 means all)
 \*=========================================================================*/
 json_t *playlistGetJSON( Playlist *plst, PlaylistSortType order, int offset, int count )
 {
@@ -598,15 +602,23 @@ json_t *playlistGetJSON( Playlist *plst, PlaylistSortType order, int offset, int
   PlaylistItem *pItem;
   int           i;
 
-  DBGMSG( "playlistGetJSON (%p): order: %d offset:%d count:%d",
-          order, plst, offset, count );
-
+  DBGMSG( "playlistGetJSON (%p): order: %s offset:%d count:%d",
+           plst, playlistSortTypeToStr(order), offset, count );
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
-    A zero count argument means all
+    Is the requested sort mode supported?
 \*------------------------------------------------------------------------*/
-  if( !count )
+  if( order!=PlaylistOriginal && order!=PlaylistMapped && order!=PlaylistHybrid ) {
+    logerr( "playlistGetJSON: unsupported sort mode %s, %d.",
+             playlistSortTypeToStr(order), order );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    A zero or negative count argument means all items
+\*------------------------------------------------------------------------*/
+  if( count<=0 )
     count = playlistGetLength(plst);
 
 /*------------------------------------------------------------------------*\
@@ -623,7 +635,6 @@ json_t *playlistGetJSON( Playlist *plst, PlaylistSortType order, int offset, int
   pItem = playlistGetItem( plst, order, offset );
   for( i=count; pItem && i; i-- ) {
     json_array_append( jResult, pItem->jItem );  // strong
-    // DBGMSG( "playlistGetJSON: JSON refCnt=%d", pItem->jItem->refcount );
     pItem = playlistItemGetNext( pItem, order );
   }
 
@@ -631,7 +642,7 @@ json_t *playlistGetJSON( Playlist *plst, PlaylistSortType order, int offset, int
     Collect mapping
 \*------------------------------------------------------------------------*/
   if( jMapping ) {
-    pItem = playlistGetItem( plst, order, offset );
+    pItem = playlistGetItem( plst, PlaylistOriginal, offset );
     for( i=count; pItem && i; i-- ) {
       int pos = playlistGetItemPos( plst, PlaylistMapped, pItem );
       json_array_append_new( jMapping, json_integer(pos) );  // steal reference
@@ -642,13 +653,13 @@ json_t *playlistGetJSON( Playlist *plst, PlaylistSortType order, int offset, int
 /*------------------------------------------------------------------------*\
     Build header
 \*------------------------------------------------------------------------*/
-  jResult = json_pack( "{ss sf si si si sb so}",
+  jResult = json_pack( "{ss sf si si si ss so}",
                          "jsonrpc",       "2.0",
                          "lastChanged",   plst->lastChange,
                          "count",         json_array_size(jResult),
                          "countAll",      playlistGetLength(plst),
                          "offset",        offset,
-                         "originalOrder", order==PlaylistOriginal,
+                         "order",         playlistSortTypeToStr(order),
                          "items",         jResult );
   // Mapping, Name and ID are optional
   if( jMapping )
@@ -661,7 +672,7 @@ json_t *playlistGetJSON( Playlist *plst, PlaylistSortType order, int offset, int
 /*------------------------------------------------------------------------*\
     That's all
 \*------------------------------------------------------------------------*/
-  DBGMSG( "playlistGetJSON: result %p", jResult ); 
+  // DBGMSG( "playlistGetJSON(%p): result %p", plst, jResult );
   return jResult;                       
 }
 
@@ -674,13 +685,28 @@ json_t *playlistGetJSON( Playlist *plst, PlaylistSortType order, int offset, int
 \*=========================================================================*/
 PlaylistItem *playlistGetItem( Playlist *plst, PlaylistSortType order, int pos )
 {
-  PlaylistItem *item = order==PlaylistOriginal ? plst->firstItemOriginal :
-                                                 plst->firstItemMapped;
+  PlaylistItem *item = NULL;
 
 #ifdef ICK_DEBUG
   int posbuf = pos;
 #endif
   //CHKLIST( plst );
+
+/*------------------------------------------------------------------------*\
+    Which mode?
+\*------------------------------------------------------------------------*/
+  switch( order ) {
+    case PlaylistOriginal:
+      item = plst->firstItemOriginal;
+      break;
+    case PlaylistMapped:
+      item = plst->firstItemMapped;
+      break;
+    default:
+      logerr( "playlistGetItem: unsupported sort mode %s, %d.",
+               playlistSortTypeToStr(order), order );
+      break;
+  }
 
 /*------------------------------------------------------------------------*\
     Check for lower bound
@@ -698,9 +724,8 @@ PlaylistItem *playlistGetItem( Playlist *plst, PlaylistSortType order, int pos )
     Return
 \*------------------------------------------------------------------------*/
   DBGMSG( "playlistGetItem (%p): order=%s pos=%d -> %p (%s)",
-          plst, order==PlaylistOriginal ? "original" : "mapped",
-          posbuf, item, GETITEMTXT(item) );
-  return item;         
+          plst, playlistSortTypeToStr(order), posbuf, item, GETITEMTXT(item) );
+  return item;
 }
 
 
@@ -712,9 +737,24 @@ PlaylistItem *playlistGetItem( Playlist *plst, PlaylistSortType order, int pos )
 int playlistGetItemPos( Playlist *plst, PlaylistSortType order, PlaylistItem *item )
 {
   int           pos  = 0;
-  PlaylistItem *walk = order==PlaylistOriginal ? plst->firstItemOriginal :
-                                                 plst->firstItemMapped;
+  PlaylistItem *walk = NULL;
   CHKLIST( plst );
+
+/*------------------------------------------------------------------------*\
+    Which mode?
+\*------------------------------------------------------------------------*/
+  switch( order ) {
+    case PlaylistOriginal:
+      walk = plst->firstItemOriginal;
+      break;
+    case PlaylistMapped:
+      walk = plst->firstItemMapped;
+      break;
+    default:
+      logerr( "playlistGetItem: unsupported sort mode %s, %d.",
+               playlistSortTypeToStr(order), order );
+      break;
+  }
 
 /*------------------------------------------------------------------------*\
     Loop over list and search for item
@@ -729,8 +769,8 @@ int playlistGetItemPos( Playlist *plst, PlaylistSortType order, PlaylistItem *it
 /*------------------------------------------------------------------------*\
     Return
 \*------------------------------------------------------------------------*/
-  DBGMSG( "playlistGetItemPos (%p-%s): item=%p (%s) -> %d ",
-          plst, order==PlaylistOriginal ? "original" : "mapped",
+  DBGMSG( "playlistGetItemPos (%p): order=%s item=%p (%s) -> %d ",
+          plst, playlistSortTypeToStr(order),
           item, GETITEMTXT(item), pos );
   return pos;
 }
@@ -775,7 +815,7 @@ int playlistAddItems( Playlist *plst, int oPos, int mPos, json_t *jItems, bool r
 {
   int           i;
   int           rc = 0;
-  PlaylistItem *oAnchor = NULL;  // Itam in original list to add list before
+  PlaylistItem *oAnchor = NULL;  // Item in original list to add list before
   PlaylistItem *mAnchor = NULL;  // Item in mapped list to add list before
 
   DBGMSG( "playlistAddItems (%p): oPos:%d mPos:%d reset:%d",
@@ -792,15 +832,23 @@ int playlistAddItems( Playlist *plst, int oPos, int mPos, json_t *jItems, bool r
     Nothing to do?
 \*------------------------------------------------------------------------*/
   if( !jItems || !json_array_size(jItems) )
-    return rc;
+    return 0;
 
 /*------------------------------------------------------------------------*\
     Get anchor items (if any and not in reset mode)
 \*------------------------------------------------------------------------*/
-  if( oPos>=0 && !resetFlag )
+  if( oPos>=0 && !resetFlag ) {
     oAnchor = playlistGetItem( plst, PlaylistOriginal, oPos );
-  if( mPos>=0 && !resetFlag )
+    if( !oAnchor )
+      logwarn( "playlistAddItems: original position %d out of bounds (%d)",
+                oPos, plst->_numberOfItems );
+  }
+  if( mPos>=0 && !resetFlag ) {
     mAnchor = playlistGetItem( plst, PlaylistMapped, mPos );
+    if( !mAnchor )
+      logwarn( "playlistAddItems: mapped position %d out of bounds (%d)",
+                mPos, plst->_numberOfItems );
+  }
 
 /*------------------------------------------------------------------------*\
     Loop over all items to add
@@ -808,25 +856,19 @@ int playlistAddItems( Playlist *plst, int oPos, int mPos, json_t *jItems, bool r
   for( i=0; i<json_array_size(jItems); i++ ) {
     json_t  *jItem = json_array_get( jItems, i );
 
-    // Create an playlist item from json payload
+    // Create a playlist item from json payload
     PlaylistItem *pItem = playlistItemFromJSON( jItem );
     if( !pItem ) {
-      logerr( "playlistAddItems (%p): could not parse item #%d.", i );
+      logerr( "playlistAddItems: could not parse item #%d.", i );
       rc = -1;
       continue;
     }
 
     // Add new item to original list before anchor if given or to end otherwise
-    if( oAnchor )
-      _playlistAddItemBefore( plst, oAnchor, PlaylistOriginal, pItem );
-    else
-      _playlistAddItemAfter( plst, NULL, PlaylistOriginal, pItem );
+    _playlistAddItemBefore( plst, oAnchor, PlaylistOriginal, pItem );
 
     // Add new item to mapped list before anchor if given or to end otherwise
-    if( mAnchor )
-      _playlistAddItemBefore( plst, mAnchor, PlaylistMapped, pItem );
-    else
-      _playlistAddItemAfter( plst, NULL, PlaylistMapped, pItem );
+    _playlistAddItemBefore( plst, mAnchor, PlaylistMapped, pItem );
 
     // Adjust list count
     plst->_numberOfItems ++;
@@ -869,65 +911,71 @@ int playlistDeleteItems( Playlist *plst, json_t *jItems )
     // Get item ID
     jObj = json_object_get( jItem, "id" );
     if( !jObj || !json_is_string(jObj) ) {
-      logerr( "playlistDeleteItems (%p): item #%d lacks field \"id\"", plst, i ); 
+      logerr( "playlistDeleteItems: item #%d - field \"id\" missing or of wrong type", i );
       rc = -1;
       continue;
     }              
     id = json_string_value( jObj );
-        
-    // Get item by explicit position
+
+/*------------------------------------------------------------------------*\
+    Get item by explicit position
+\*------------------------------------------------------------------------*/
     jObj = json_object_get( jItem, "playbackQueuePos" );
     if( jObj && json_is_integer(jObj) ) {
       int           pos   = json_integer_value( jObj );
       PlaylistItem *pItem = playlistGetItem( plst, PlaylistMapped, pos );
       if( pItem && strcmp(id,pItem->id) ) {
-        logwarn( "playlistDeleteItems (%p): item #%d id \"%s\" differs from \"%s\" at explicit position %d.",
-                  plst, i, id, pItem->id, pos );
+        logwarn( "playlistDeleteItems: item #%d id \"%s\" differs from \"%s\" at explicit position %d.",
+                  i, id, pItem->id, pos );
         rc = -1;
+        continue;
       }
-      if( pItem ) { 
-        _playlistUnlinkItem( plst, pItem, PlaylistBoth );
-
-        // Adjust list length
-        plst->_numberOfItems--;
-
-        // Invalidate cursor index, adjust cursor if necessary
-        plst->_cursorPos = -1;
-        if( plst->_cursorItem==pItem )
-          plst->_cursorItem = pItem->nextMapped;
-
-        // Delete item
-        playlistItemDelete( pItem );
+      if( !pItem ) {
+        logwarn( "playlistDeleteItems: item #%d with invalid explicit position %d.",
+                  plst, i, pos );
+        continue;
       }
-      else
-        logwarn( "playlistDeleteItems (%p): item #%d with invalid explicit position %d.",
-                  plst, i, pos );        
+
+      // Unlink item from both lists
+      _playlistUnlinkItem( plst, pItem, PlaylistBoth );
+
+      // Adjust list length and invalidate cursor index, adjust cursor if necessary
+      plst->_numberOfItems--;
+      plst->_cursorPos = -1;
+      if( plst->_cursorItem==pItem )
+        plst->_cursorItem = pItem->nextMapped ? pItem->nextMapped : pItem->prevMapped;
+
+      // Finally delete the item
+      playlistItemDelete( pItem );
     }
-      
-    // Remove all items with this ID
+
+/*------------------------------------------------------------------------*\
+    Remove all items with this ID
+\*------------------------------------------------------------------------*/
     else for(;;) {
       PlaylistItem *pItem = playlistGetItemById( plst, id );
       if( !pItem )
         break;
+
+      // Unlink item from both lists
       _playlistUnlinkItem( plst, pItem, PlaylistBoth );
 
-      // Adjust list length
+      // Adjust list length and invalidate cursor index, adjust cursor if necessary
       plst->_numberOfItems--;
-
-      // Invalidate cursor index, adjust cursor if necessary
       plst->_cursorPos = -1;
       if( plst->_cursorItem==pItem )
-        plst->_cursorItem = pItem->nextMapped;
+        plst->_cursorItem = pItem->nextMapped ? pItem->nextMapped : pItem->prevMapped;
 
-      // Delete item
+      // Finally delete item
       playlistItemDelete( pItem );
     }
 
   }  // next item from list
 
 /*------------------------------------------------------------------------*\
-    That's it
+    Set timestamp, that's it
 \*------------------------------------------------------------------------*/
+  plst->lastChange = srvtime();
   CHKLIST( plst );
   return rc;
 }
@@ -935,8 +983,12 @@ int playlistDeleteItems( Playlist *plst, json_t *jItems )
 
 /*=========================================================================*\
        Move tracks within playlist
-         order - the list (original or mapping) that should be modified
-         pos   - the position to add the tracks before (if <0 append to end)
+         order  - the list (original or mapping) that should be modified
+         pos    - the position to add the tracks before (if <0 append to end)
+         jItems - list of items to move
+       returns 0 on success, -1 otherwise
+       Note: if order is ORIGINAL, a resetMapping has to be executed
+             afterwards by the caller to synch the queue mapping
 \*=========================================================================*/
 int playlistMoveItems( Playlist *plst, PlaylistSortType order, int pos, json_t *jItems )
 {
@@ -947,9 +999,28 @@ int playlistMoveItems( Playlist *plst, PlaylistSortType order, int pos, json_t *
   int            i;
   int            rc = 0;
 
-  DBGMSG( "playlistMoveItems (%p-%s): before:%d",
-           plst, order==PlaylistOriginal ? "original" : "mapped", pos );
+  DBGMSG( "playlistMoveItems (%p): order: %s before: %d",
+           plst, playlistSortTypeToStr(order), pos );
   CHKLIST( plst );
+
+/*------------------------------------------------------------------------*\
+    Which mode?
+\*------------------------------------------------------------------------*/
+  switch( order ) {
+    case PlaylistOriginal:
+    case PlaylistMapped:
+      break;
+    default:
+      logerr( "playlistMoveItems: unsupported sort mode %s, %d.",
+               playlistSortTypeToStr(order), order );
+      return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    Nothing to do?
+\*------------------------------------------------------------------------*/
+  if( !jItems || !json_array_size(jItems) )
+    return 0;
 
 /*------------------------------------------------------------------------*\
     Get anchor item (if any)
@@ -980,7 +1051,7 @@ int playlistMoveItems( Playlist *plst, PlaylistSortType order, int pos, json_t *
     // Get explicit position 
     jObj = json_object_get( jItem, "playbackQueuePos" );
     if( !jObj || !json_is_integer(jObj) ) {
-      logerr( "playlistMoveItems: item #%d lacks field \"playbackQueuePos\"", i );
+      logerr( "playlistMoveItems: item #%d - field \"playbackQueuePos\" missing or of wrong type", i );
       rc = -1;
       continue;
     } 
@@ -989,7 +1060,7 @@ int playlistMoveItems( Playlist *plst, PlaylistSortType order, int pos, json_t *
     // Get item 
     pItem = playlistGetItem( plst, order, pos );
     if( !pItem ) {
-      logwarn( "playlistMoveItems: item #%d has invalid explicit position %d.", i, pos );
+      logwarn( "playlistMoveItems: item #%d has invalid explicit position %d", i, pos );
       rc = -1;
       continue;
     }
@@ -997,7 +1068,7 @@ int playlistMoveItems( Playlist *plst, PlaylistSortType order, int pos, json_t *
     // Get item ID
     jObj = json_object_get( jItem, "id" );
     if( !jObj || !json_is_string(jObj) ) {
-      logerr( "playlistMoveItems: item #%d lacks field \"id\".", i );
+      logerr( "playlistMoveItems: item #%d - field \"id\" missing or of wrong type", i );
       rc = -1;
       continue;
     }              
@@ -1008,50 +1079,51 @@ int playlistMoveItems( Playlist *plst, PlaylistSortType order, int pos, json_t *
       logwarn( "playlistMoveItems: item #%d id \"%s\" differs from \"%s\" at explicit position %d.",
                 i, id, pItem->id, pos );
       rc = -1;
+      continue;
     }
 
     // Be paranoid: check for doubles since unlinking is not stable against double calls
-    bool found = 0;
-    int j;
-    for( j=0; j<pItemCnt && !found; j++ ) {
-      found = ( pItems[j]==pItem );
-    }
-    if( found ) {
+    int j = 0;
+    while( j<pItemCnt && pItems[j]!=pItem )
+      j++;
+    if( j!=pItemCnt ) {
       logwarn( "playlistMoveItems: item #%d is double in list (previous instance: %d).", i, j );
       rc = -1;
       continue;
     }
       
-    // add Item to temporary list 
+    // Add item to temporary list
     pItems[pItemCnt++] = pItem;
       
   } /* for( i=0; i<json_array_size(jItems); i++ ) */
     
 /*------------------------------------------------------------------------*\
-    Save item under cursor, since unlinking it would forward the cursor
+    Save item under cursor, since unlinking it will change the cursor
 \*------------------------------------------------------------------------*/
   cItem = plst->_cursorItem;
 
 /*------------------------------------------------------------------------*\
-    Unlink all identified items, but do not delete them
+    Unlink all identified items in requested index, but do not delete them
 \*------------------------------------------------------------------------*/
   for( i=0; i<pItemCnt; i++ )
     _playlistUnlinkItem( plst, pItems[i], order );
 
 /*------------------------------------------------------------------------*\
-    Reinsert the items at new position (also invalidates cursor) and restore cursor item
+    Reinsert the items at new position
 \*------------------------------------------------------------------------*/
-  for( i=0; i<pItemCnt; i++ ) {
-    if( anchorItem )
-      _playlistAddItemBefore( plst, anchorItem, order, pItems[i] );
-    else 
-      _playlistAddItemAfter( plst, NULL, order, pItems[i] );
-  }
-  plst->_cursorItem = cItem;
-  
+  for( i=0; i<pItemCnt; i++ )
+    _playlistAddItemBefore( plst, anchorItem, order, pItems[i] );
+
 /*------------------------------------------------------------------------*\
-    Free temporary list of items to move and return
+    Invalidate cursor and restore cursor item
 \*------------------------------------------------------------------------*/
+  plst->_cursorPos  = -1;
+  plst->_cursorItem = cItem;
+
+/*------------------------------------------------------------------------*\
+    Set timestamp, free temporary list of items to move and return
+\*------------------------------------------------------------------------*/
+  plst->lastChange = srvtime();
   Sfree( pItems );
   CHKLIST( plst );
   return rc;
@@ -1071,24 +1143,31 @@ PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool mo
   int           pos = startPos;
 
   DBGMSG( "playlistShuffle (%p): %d-%d/%d cursorToStart:%s",
-           plst, startPos, endPos, plst->_numberOfItems, moveCursorToStart?"Yes":"No"  );
+           plst, startPos, endPos, plst->_numberOfItems,
+           moveCursorToStart?"Yes":"No"  );
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Check end position
 \*------------------------------------------------------------------------*/
   if( endPos>=plst->_numberOfItems ) {
-    logerr( "playlistShuffle (%p): invalid end position %d/%d",
-            plst, endPos, plst->_numberOfItems );
+    logerr( "playlistShuffle: invalid end position %d/%d",
+            endPos, plst->_numberOfItems );
     return NULL;
   }
+
+/*------------------------------------------------------------------------*\
+    Be defensive...
+\*------------------------------------------------------------------------*/
+  if( !plst->_cursorItem )
+    plst->_cursorItem = plst->firstItemMapped;
 
 /*------------------------------------------------------------------------*\
     Get first element
 \*------------------------------------------------------------------------*/
   item1 = playlistGetItem( plst, PlaylistMapped, startPos );
   if( !item1 ) {
-    logerr( "playlistShuffle (%p): invalid start position %d", plst, startPos );
+    logerr( "playlistShuffle: invalid start position %d", startPos );
     return NULL;
   }
 
@@ -1108,20 +1187,21 @@ PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool mo
     int rnd = (int)rndInteger( pos, endPos );
     item2   = playlistGetItem( plst, PlaylistMapped, rnd );
     if( !item1 || !item2 ) {
-      logerr( "playlistShuffle (%p): corrupt linked list @%d(%p)<->%d(%p)/%d",
-               plst, pos, item1, rnd, item2, endPos );
+      logerr( "playlistShuffle: corrupt linked list @%d<->%d/%d",
+               pos, rnd, endPos );
       break;
     }
     DBGMSG( "playlistShuffle (%p): swap %d<->%d/%d ", plst, pos, rnd, endPos  );
+
+    // This invalidates the cursor position and sets the timestamp
     playlistTranspose( plst, item1, item2 );
     item1 = item2->nextMapped;
     pos++;
   }
 
 /*------------------------------------------------------------------------*\
-    Invalidate cursor position and return item under cursor
+    Return item under cursor
 \*------------------------------------------------------------------------*/
-  plst->_cursorPos  = -1;
   CHKLIST( plst );
   return plst->_cursorItem;
 }
@@ -1142,7 +1222,7 @@ bool playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistItem *pIte
     Nothing to do?
 \*------------------------------------------------------------------------*/
   if( pItem1==pItem2 )
-    return 0;
+    return false;
 
 /*------------------------------------------------------------------------*\
     Swap forward links and adjust backward pointers of following elements
@@ -1194,77 +1274,116 @@ bool playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistItem *pIte
 
 
 /*=========================================================================*\
+      Get an (ickstream protocol) string from sort type
+\*=========================================================================*/
+const char *playlistSortTypeToStr( PlaylistSortType order )
+{
+  DBGMSG( "playlistSortTypeToStr: order %d", order );
+
+  // Translate
+  switch( order ) {
+    case PlaylistOriginal: return "ORIGINAL";
+    case PlaylistMapped:   return "CURRENT";
+    case PlaylistHybrid:   return "ORIGINAL_MAPPED";
+    case PlaylistBoth:     return "Both - internal";
+  }
+
+  // Not known or unsupported
+  logerr( "Playlist order type %d unknown.");
+  return "Unknown";
+}
+
+
+/*=========================================================================*\
+      Get playlist sort type form ickstream protocol string
+\*=========================================================================*/
+PlaylistSortType playlistSortTypeFromStr( const char *str )
+{
+  DBGMSG( "playlistSortTypeFromStr: \"%s\"", str );
+
+  // Translate
+  if( !strcmp(str,"ORIGINAL") )
+    return PlaylistOriginal;
+  if( !strcmp(str,"CURRENT") )
+    return PlaylistMapped;
+  if( !strcmp(str,"ORIGINAL_MAPPED") )
+    return PlaylistHybrid;
+
+  // Not known or unsupported
+  return -1;
+}
+
+
+/*=========================================================================*\
        Add an item to the list before a given anchor
           oder defines the list the item is added to
-          if anchor is NULL, the item is added to the beginning of the list
+          if anchor is NULL, the item is added to the end of the list
        Note that the caller is responsible for synchronizing the lists and
        for adjusting the meta data (cursorPos and muberOfItems)
 \*=========================================================================*/
 static void _playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem,
                                     PlaylistSortType order, PlaylistItem *newItem )
 {
-  DBGMSG( "_playlistAddItemBefore(%p-%s): anchor:%p new:%p",
-           plst, order==PlaylistOriginal ? "original" : "mapped",
-           anchorItem, newItem );
+  DBGMSG( "_playlistAddItemBefore(%p): order: %s anchor: %p new: %p",
+           plst, playlistSortTypeToStr(order), anchorItem, newItem );
 
 /*------------------------------------------------------------------------*\
-    Defaults
+    Which mode?
 \*------------------------------------------------------------------------*/
-  if( !anchorItem && order==PlaylistOriginal)
-    anchorItem = plst->firstItemOriginal;
-  else if( !anchorItem )
-    anchorItem = plst->firstItemMapped;
+  switch( order ) {
+    default:
+      logerr( "_playlistAddItemBefore: unsupported sort mode %s, %d.",
+               playlistSortTypeToStr(order), order );
+      return;
 
 /*------------------------------------------------------------------------*\
     Process original list
 \*------------------------------------------------------------------------*/
-  if( order==PlaylistOriginal ) {
+    case PlaylistOriginal:
 
-    // Default anchor is first item
-    if( !anchorItem )
-      anchorItem = plst->firstItemOriginal;
+      // Link item to list
+      newItem->nextOriginal = anchorItem;
+      newItem->prevOriginal = NULL;
+      if( anchorItem ) {
+        newItem->prevOriginal    = anchorItem->prevOriginal;
+        anchorItem->prevOriginal = newItem;
+      }
+      else
+        newItem->prevOriginal = plst->lastItemOriginal;
+      if( newItem->prevOriginal )
+        newItem->prevOriginal->nextOriginal = newItem;
 
-    // Link item to list
-    newItem->nextOriginal = anchorItem;
-    newItem->prevOriginal = NULL;
-    if( anchorItem ) {
-      newItem->prevOriginal = anchorItem->prevOriginal;
-      if( anchorItem->prevOriginal )
-        anchorItem->prevOriginal->nextOriginal = newItem;
-      anchorItem->prevOriginal = newItem;
-    }
+      // Adjust root pointers
+      if( !plst->firstItemOriginal || plst->firstItemOriginal==anchorItem )
+        plst->firstItemOriginal = newItem;
+      if( !plst->lastItemOriginal || !anchorItem )
+        plst->lastItemOriginal = newItem;
 
-    // Adjust root pointers
-    if( !plst->firstItemOriginal || plst->firstItemOriginal==anchorItem )
-      plst->firstItemOriginal = newItem;
-    if( !plst->lastItemOriginal )
-      plst->lastItemOriginal = newItem;
-  }
+      break;
 
 /*------------------------------------------------------------------------*\
     Process mapped list
 \*------------------------------------------------------------------------*/
-  else {
+    case PlaylistMapped:
 
-    // Default anchor is first item
-    if( !anchorItem )
-      anchorItem = plst->firstItemMapped;
+      // Link item to mapped list
+      newItem->nextMapped = anchorItem;
+      newItem->prevMapped = NULL;
+      if( anchorItem ) {
+        newItem->prevMapped    = anchorItem->prevMapped;
+        anchorItem->prevMapped = newItem;
+      }
+      else
+        newItem->prevMapped = plst->lastItemMapped;
+      if( newItem->prevMapped )
+        newItem->prevMapped->nextMapped = newItem;
 
-    // Link item to mapped list
-    newItem->nextMapped = anchorItem;
-    newItem->prevMapped = NULL;
-    if( anchorItem ) {
-      newItem->prevMapped = anchorItem->prevMapped;
-      if( anchorItem->prevMapped )
-        anchorItem->prevMapped->nextMapped = newItem;
-      anchorItem->prevMapped = newItem;
-    }
-
-    // Adjust root pointers
-    if( !plst->firstItemMapped || plst->firstItemMapped==anchorItem )
-      plst->firstItemMapped = newItem;
-    if( !plst->lastItemMapped )
-      plst->lastItemMapped = newItem;
+      // Adjust root pointers
+      if( !plst->firstItemMapped || plst->firstItemMapped==anchorItem )
+        plst->firstItemMapped = newItem;
+      if( !plst->lastItemMapped || !anchorItem )
+        plst->lastItemMapped = newItem;
+      break;
   }
 
 /*------------------------------------------------------------------------*\
@@ -1276,67 +1395,72 @@ static void _playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem,
 /*=========================================================================*\
        Add an item to the list after a given anchor
           oder defines the list the item is added to
-          if anchor is NULL, the item is added to the end of the list
+          if anchor is NULL, the item is added to the beginning of the list
        Note that the caller is responsible for synchronizing the lists and
        for adjusting the meta data (cursorPos and muberOfItems)
 \*=========================================================================*/
 static void _playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem,
                                     PlaylistSortType order, PlaylistItem *newItem )
 {
-  DBGMSG( "_playlistAddItemAfter(%p-%s): anchor:%p new:%p",
-           plst, order==PlaylistOriginal ? "original" : "mapped",
-           anchorItem, newItem );
+  DBGMSG( "_playlistAddItemAfter(%p-%s): order: %s anchor: %p new: %p",
+           plst, playlistSortTypeToStr(order), anchorItem, newItem );
 
- /*------------------------------------------------------------------------*\
-     Process original list
- \*------------------------------------------------------------------------*/
-  if( order==PlaylistOriginal ) {
+/*------------------------------------------------------------------------*\
+    Which mode?
+\*------------------------------------------------------------------------*/
+  switch( order ) {
+    default:
+      logerr( "_playlistAddItemAfter: unsupported sort mode %s, %d.",
+               playlistSortTypeToStr(order), order );
+      return;
 
-    // Default anchor is last item
-    if( !anchorItem )
-      anchorItem = plst->lastItemOriginal;
+/*------------------------------------------------------------------------*\
+    Process original list
+\*------------------------------------------------------------------------*/
+    case PlaylistOriginal:
 
-    // Link item to original list
-    newItem->nextOriginal = NULL;
-    newItem->prevOriginal = anchorItem;
-    if( anchorItem ) {
-      newItem->nextOriginal = anchorItem->nextOriginal;
-      if( anchorItem->nextOriginal )
-        anchorItem->nextOriginal->prevOriginal = newItem;
-      anchorItem->nextOriginal = newItem;
-    }
+      // Link item to original list
+      newItem->nextOriginal = NULL;
+      newItem->prevOriginal = anchorItem;
+      if( anchorItem ) {
+        newItem->nextOriginal = anchorItem->nextOriginal;
+        anchorItem->nextOriginal = newItem;
+      }
+      else
+        newItem->nextOriginal = plst->firstItemOriginal;
+      if( newItem->nextOriginal )
+        newItem->nextOriginal->prevOriginal = newItem;
 
-    // Adjust root pointers
-    if( !plst->firstItemOriginal )
-      plst->firstItemOriginal = newItem;
-    if( !plst->lastItemOriginal || plst->lastItemOriginal==anchorItem )
-      plst->lastItemOriginal = newItem;
-  }
+      // Adjust root pointers
+      if( !plst->firstItemOriginal || !anchorItem )
+        plst->firstItemOriginal = newItem;
+      if( !plst->lastItemOriginal || plst->lastItemOriginal==anchorItem )
+        plst->lastItemOriginal = newItem;
+      break;
 
 /*------------------------------------------------------------------------*\
     Process mapped list
 \*------------------------------------------------------------------------*/
-  else {
+    case PlaylistMapped:
 
-    // Default anchor is last item
-    if( !anchorItem )
-      anchorItem = plst->lastItemMapped;
+      // Link item to mapped list
+      newItem->nextMapped = NULL;
+      newItem->prevMapped = anchorItem;
+      if( anchorItem ) {
+        newItem->nextMapped = anchorItem->nextMapped;
+        anchorItem->nextMapped = newItem;
+      }
+      else
+        newItem->nextMapped = plst->firstItemMapped;
+      if( newItem->nextMapped )
+        newItem->nextMapped->prevMapped = newItem;
 
-    // Link item to mapped list
-    newItem->nextMapped = NULL;
-    newItem->prevMapped = anchorItem;
-    if( anchorItem ) {
-      newItem->nextMapped = anchorItem->nextMapped;
-      if( anchorItem->nextMapped )
-        anchorItem->nextMapped->prevMapped = newItem;
-      anchorItem->nextMapped = newItem;
-    }
-
-    // Adjust root pointers
-    if( !plst->firstItemMapped )
-      plst->firstItemMapped = newItem;
-    if( !plst->lastItemMapped || plst->lastItemMapped==anchorItem )
-      plst->lastItemMapped = newItem;
+      // Adjust root pointers
+      if( !plst->firstItemMapped || !anchorItem )
+        plst->firstItemMapped = newItem;
+      if( !plst->lastItemMapped || plst->lastItemMapped==anchorItem )
+        plst->lastItemMapped = newItem;
+      break;
   }
 
   /*------------------------------------------------------------------------*\
@@ -1355,7 +1479,8 @@ static void _playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem,
 \*=========================================================================*/
 static void _playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem, PlaylistSortType order )
 {
-  DBGMSG( "_playlistUnlinkItem: %p", pItem );
+  DBGMSG( "_playlistUnlinkItem (%p): order=%s item=%p",
+           plst, playlistSortTypeToStr(order), pItem );
 
 /*------------------------------------------------------------------------*\
     Unlink item from original list
@@ -1385,6 +1510,11 @@ static void _playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem, PlaylistSo
       plst->lastItemMapped = pItem->prevMapped;
   }
 }
+
+
+/***************************************************************************\
+ * Functions operating on playlist items
+\***************************************************************************/
 
 
 /*=========================================================================*\
@@ -1419,7 +1549,8 @@ PlaylistItem *playlistItemFromJSON( json_t *jItem )
     Extract header info
 \*------------------------------------------------------------------------*/
   if( _playlistItemFillHeader(item) ) {
-    json_incref( jItem );
+    json_decref( jItem );
+    pthread_mutex_destroy( &item->mutex );
     Sfree( item );
     return NULL;
   }
@@ -1438,7 +1569,7 @@ PlaylistItem *playlistItemFromJSON( json_t *jItem )
 \*=========================================================================*/
 void playlistItemDelete( PlaylistItem *pItem )
 {
-  DBGMSG( "playlistItemDelete: %p refcnt=%d", pItem, pItem->jItem->refcount );
+  DBGMSG( "playlistItemDelete (%p): jrefcnt=%d", pItem, pItem->jItem->refcount );
   /* {
     char *out = json_dumps( pItem->jItem, JSON_PRESERVE_ORDER | JSON_COMPACT | JSON_ENSURE_ASCII );
     DBGMSG( "playlistItemDelete: %s", out );
@@ -1449,6 +1580,7 @@ void playlistItemDelete( PlaylistItem *pItem )
     Free all header features
 \*------------------------------------------------------------------------*/
   json_decref( pItem->jItem );
+  pthread_mutex_destroy( &pItem->mutex );
 
 /*------------------------------------------------------------------------*\
     Free header
@@ -1482,8 +1614,7 @@ void playlistItemUnlock( PlaylistItem *item )
 \*=========================================================================*/
 PlaylistItem *playlistItemGetNext( PlaylistItem *item, PlaylistSortType order )
 {
-  DBGMSG( "playlistItem(%p): getNext(%s)",
-          item, order==PlaylistOriginal ? "original" : "mapped" );
+  DBGMSG( "playlistItem(%p): getNext(%s)", item, playlistSortTypeToStr(order) );
 
 /*------------------------------------------------------------------------*\
     Need valid input
@@ -1501,6 +1632,7 @@ PlaylistItem *playlistItemGetNext( PlaylistItem *item, PlaylistSortType order )
       return item->nextOriginal;
     case PlaylistMapped:
       return item->nextMapped;
+    default:
     case PlaylistHybrid:
     case PlaylistBoth:
       break;
@@ -1519,8 +1651,7 @@ PlaylistItem *playlistItemGetNext( PlaylistItem *item, PlaylistSortType order )
 \*=========================================================================*/
 PlaylistItem *playlistItemGetPrevious( PlaylistItem *item, PlaylistSortType order )
 {
-  DBGMSG( "playlistItem(%p): getPrevious(%s)",
-          item, order==PlaylistOriginal ? "original" : "mapped" );
+  DBGMSG( "playlistItem(%p): getPrevious(%s)", item,  playlistSortTypeToStr(order) );
 
 /*------------------------------------------------------------------------*\
     Need valid input
@@ -1538,6 +1669,7 @@ PlaylistItem *playlistItemGetPrevious( PlaylistItem *item, PlaylistSortType orde
       return item->prevOriginal;
     case PlaylistMapped:
       return item->prevMapped;
+    default:
     case PlaylistHybrid:
     case PlaylistBoth:
       break;
@@ -1624,8 +1756,8 @@ json_t *playlistItemGetModelAttribute( PlaylistItem *pItem, const char *attribut
   // Get attribute container
   jObj = json_object_get( pItem->jItem, "itemAttributes" );
   if( !jObj  ) {
-    logwarn( "playlistItemGetModelAttribute (%p,%s): Field \"itemAttributes\" not found.",
-              pItem, pItem->text );
+    logwarn( "playlistItemGetModelAttribute (%s): Field \"itemAttributes\" not found.",
+              pItem->text );
     return NULL;
   }
 
@@ -1674,8 +1806,8 @@ const char *playlistItemGetImageUri( PlaylistItem *pItem )
      return json_string_value( jObj );
 
   if( jObj )
-    logwarn( "playlistItemGetImageUri (%p,%s): Field \"image\" is not a string.",
-             pItem, pItem->text );
+    logwarn( "playlistItemGetImageUri (%s): Field \"image\" is not a string.",
+             pItem->text );
 
   return NULL;
 }
@@ -1701,8 +1833,8 @@ int playlistItemSetMetaData( PlaylistItem *pItem, json_t *metaObj, bool replace 
     Merge mode: try to merge new Object into existing one
 \*------------------------------------------------------------------------*/
   else if( json_object_merge(pItem->jItem,metaObj) ) {
-    logerr( "playlistItemSetMetaData (%p,%s): %p could not merge.",
-            pItem, pItem->text, metaObj );
+    logerr( "playlistItemSetMetaData (%s): could not merge new meta data.",
+            pItem->text );
     return -1;
   }
 
@@ -1710,8 +1842,8 @@ int playlistItemSetMetaData( PlaylistItem *pItem, json_t *metaObj, bool replace 
     Adjust header info
 \*------------------------------------------------------------------------*/
   if( _playlistItemFillHeader(pItem) ) {
-    logerr( "playlistItemSetMetaData (%p,%s): %p invalid header data",
-            pItem, pItem->text, metaObj );
+    logerr( "playlistItemSetMetaData (%s): invalid header of new meta data.",
+            pItem->text );
     return -1;
   }
 
@@ -1724,17 +1856,19 @@ int playlistItemSetMetaData( PlaylistItem *pItem, json_t *metaObj, bool replace 
 
 /*=========================================================================*\
        Extract some header info from playlist JSON item for fast access
+         return 0 on success, -1 on error
 \*=========================================================================*/
 static int _playlistItemFillHeader( PlaylistItem *pItem )
 {
-  json_t *jObj;
+  json_t     *jObj;
+  const char *typeStr;
 
 /*------------------------------------------------------------------------*\
     Extract id for quick access (weak ref.)
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( pItem->jItem, "id" );
   if( !jObj || !json_is_string(jObj) ) {
-    logerr( "_playlistItemFillHeader: Missing field \"id\"!" );
+    logerr( "_playlistItemFillHeader: Field \"id\" missing or of wrong type." );
     return -1;
   }
   pItem->id = json_string_value( jObj );
@@ -1744,29 +1878,27 @@ static int _playlistItemFillHeader( PlaylistItem *pItem )
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( pItem->jItem, "text" );
   if( !jObj || !json_is_string(jObj) ) {
-    logerr( "_playlistItemFillHeader: Missing field \"text\"!" );
+    logerr( "_playlistItemFillHeader: Field \"text\" missing or of wrong type." );
     return -1;
   }
   pItem->text = json_string_value( jObj );
 
 /*------------------------------------------------------------------------*\
-    Extract item type (Fixme: remove default to track)
+    Extract item type
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( pItem->jItem, "type" );
   if( !jObj || !json_is_string(jObj) ) {
-    logwarn( "_playlistItemFillHeader: Missing field \"type\"!" );
-    pItem->type = PlaylistItemTrack;
+    logwarn( "_playlistItemFillHeader: Field \"type\" missing or of wrong type." );
+    return -1;
   }
+  typeStr = json_string_value( jObj );
+  if( !strcmp(typeStr,"track") )
+    pItem->type = PlaylistItemTrack;
+  else if( !strcmp(typeStr,"stream") )
+    pItem->type = PlaylistItemStream;
   else {
-    const char *typeStr = json_string_value( jObj );
-    if( !strcmp(typeStr,"track") )
-      pItem->type = PlaylistItemTrack;
-    else if( !strcmp(typeStr,"stream") )
-      pItem->type = PlaylistItemStream;
-    else {
-      logerr( "_playlistItemFillHeader: Unknown type \"%s\"", typeStr );
-      return -1;
-    }
+    logerr( "_playlistItemFillHeader: Unknown type \"%s\"", typeStr );
+    return -1;
   }
 
 /*------------------------------------------------------------------------*\
@@ -1774,7 +1906,7 @@ static int _playlistItemFillHeader( PlaylistItem *pItem )
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( pItem->jItem, "streamingRefs" );
   if( !jObj || !json_is_array(jObj) ) {
-    logerr( "_playlistItemFillHeader: Missing field \"streamingRefs\"!" );
+    logerr( "_playlistItemFillHeader: Field \"streamingRefs\" missing or of wrong type." );
     return -1;
   }
   pItem->jStreamingRefs = jObj;

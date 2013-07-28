@@ -125,6 +125,9 @@ int           playlistMoveItems( Playlist *plst, PlaylistSortType order, int pos
 PlaylistItem *playlistShuffle( Playlist *plst, int startPos, int endPos, bool moveCursorToStart );
 bool          playlistTranspose( Playlist *plst, PlaylistItem *pItem1, PlaylistItem *pItem2 );
 
+const char       *playlistSortTypeToStr( PlaylistSortType order );
+PlaylistSortType  playlistSortTypeFromStr( const char *str );
+
 PlaylistItem     *playlistItemFromJSON( json_t *jItem );
 void              playlistItemDelete( PlaylistItem *pItem );
 void              playlistItemLock( PlaylistItem *item );

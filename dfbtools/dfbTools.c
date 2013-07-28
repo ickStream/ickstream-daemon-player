@@ -82,6 +82,8 @@ char *_dfbtResourcePath;
 static IDirectFB         *dfb;
 static IDirectFBSurface  *primary;
 static DfbtWidget        *screen;
+static pthread_mutex_t    surfaceMutex = PTHREAD_MUTEX_INITIALIZER;
+
 
 
 /*=========================================================================*\
@@ -402,7 +404,9 @@ int dfbtRedrawScreen( bool force )
 /*------------------------------------------------------------------------*\
     Flip screen, that's all
 \*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &surfaceMutex );
   drc = screen->surface->Flip( screen->surface, NULL, 0 );
+  pthread_mutex_unlock( &surfaceMutex );
   if( drc!=DFB_OK ) {
     logerr( "dfbtRedrawScreen: could not flip screen (%s).",
              DirectFBErrorString(drc) );
@@ -426,7 +430,7 @@ DfbtWidget *_dfbtNewWidget( DfbtWidgetType type, int w, int h )
   IDirectFBSurface      *surf;
   DfbtWidget            *widget;
 
-  DBGMSG( "_newWidget: type %d, size %dx%d", type, w, h );
+  DBGMSG( "_dfbtNewWidget: type %d, size %dx%d", type, w, h );
 
 /*------------------------------------------------------------------------*\
     Use primary surface for a screen
@@ -446,7 +450,9 @@ DfbtWidget *_dfbtNewWidget( DfbtWidgetType type, int w, int h )
     sdsc.width       = w;
     sdsc.height      = h;
 
+    pthread_mutex_lock( &surfaceMutex );
     drc= dfb->CreateSurface( dfb, &sdsc, &surf );
+    pthread_mutex_unlock( &surfaceMutex );
     if( drc!=DFB_OK ) {
       logerr( "_newWidget: could not get surface (%s).", DirectFBErrorString(drc) );
       return NULL;
@@ -456,7 +462,9 @@ DfbtWidget *_dfbtNewWidget( DfbtWidgetType type, int w, int h )
 /*------------------------------------------------------------------------*\
     We want to use alpha blending
 \*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &surfaceMutex );
   drc= surf->SetBlittingFlags( surf, DSBLIT_BLEND_ALPHACHANNEL);
+  pthread_mutex_unlock( &surfaceMutex );
   if( drc!=DFB_OK )
     logwarn( "_newWidget: could not set alpha blending (%s).", DirectFBErrorString(drc) );
 
@@ -526,11 +534,15 @@ int _dfbtWidgetDestruct( DfbtWidget *widget )
     Release surface
 \*------------------------------------------------------------------------*/
   if( widget->type!=DfbtScreen ) {
-    DFBResult drc = widget->surface->Release( widget->surface );
+    DFBResult drc;
+    pthread_mutex_lock( &surfaceMutex );
+    drc = widget->surface->Release( widget->surface );
+    pthread_mutex_unlock( &surfaceMutex );
     if( drc!=DFB_OK )
       logerr( "_dfbtWidgetDestruct (%s, %d): could not release surface (%s).",
                widget->name, widget->type, DirectFBErrorString(drc) );
   }
+  widget->surface = NULL;
 
 /*------------------------------------------------------------------------*\
     Delete mutex
@@ -547,6 +559,24 @@ int _dfbtWidgetDestruct( DfbtWidget *widget )
     That's all
 \*------------------------------------------------------------------------*/
   return 0;
+}
+
+
+/*=========================================================================*\
+    Lock surface
+\*=========================================================================*/
+int _dfbtSurfaceLock( IDirectFBSurface *surface )
+{
+  return pthread_mutex_lock( &surfaceMutex );
+}
+
+
+/*=========================================================================*\
+    Unlock surface
+\*=========================================================================*/
+int _dfbtSurfaceUnlock( IDirectFBSurface *surface )
+{
+  return pthread_mutex_unlock( &surfaceMutex );
 }
 
 
@@ -568,7 +598,7 @@ static bool _checkUpdates( DfbtWidget *widget )
   pthread_mutex_lock( &widget->mutex );
 
 /*------------------------------------------------------------------------*\
-    Check descendents
+    Check descendants
 \*------------------------------------------------------------------------*/
   for( walk=widget->content; walk; walk=walk->next ) {
     if( _checkUpdates(walk) )
@@ -636,11 +666,16 @@ static int _redraw( DfbtWidget *widget, IDirectFBSurface *surf )
         break;
 
       case DfbtText:
+        pthread_mutex_lock( &surfaceMutex );
         _dfbtTextDraw( widget );
+        pthread_mutex_unlock( &surfaceMutex );
         break;
 
       case DfbtImage:
+        pthread_mutex_lock( &surfaceMutex );
         _dfbtImageDraw( widget );
+        pthread_mutex_unlock( &surfaceMutex );
+
         break;
 
       default:
@@ -654,7 +689,9 @@ static int _redraw( DfbtWidget *widget, IDirectFBSurface *surf )
     Draw this widget in parent (surf is NULL for screen as there is no parent)
 \*------------------------------------------------------------------------*/
   if( surf ) {
+    pthread_mutex_lock( &surfaceMutex );
     drc = surf->Blit( surf, widget->surface, NULL, widget->offset.x, widget->offset.y );
+    pthread_mutex_unlock( &surfaceMutex );
     if( drc!=DFB_OK ) {
       logerr( "_redraw: could not blit widget to parent (%s).",
                DirectFBErrorString(drc) );

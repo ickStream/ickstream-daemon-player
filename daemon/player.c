@@ -877,7 +877,7 @@ int playerSetPlaybackMode( PlayerPlaybackMode mode, bool broadcast )
   switch( playerPlaybackMode ) {
     case PlaybackShuffle:
       if( playerQueue ) {
-        int startPos = 0*playlistGetCursorPos( playerQueue );
+        int startPos = 0;
         int endPos   = playlistGetLength( playerQueue )-1;
         playlistShuffle( playerQueue, startPos, endPos, true );
         playlistChanged = true;

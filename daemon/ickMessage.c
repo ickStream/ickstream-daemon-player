@@ -526,13 +526,21 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     if( jParams ) {
 
       // Get optional ordering
-      jObj = json_object_get( jParams, "originalOrder" );
-      if( jObj && json_is_boolean(jObj) )
-         order = json_is_true(jObj) ? PlaylistOriginal : PlaylistMapped;
+      jObj = json_object_get( jParams, "order" );
+      if( jObj && json_is_string(jObj) ) {
+         order = playlistSortTypeFromStr( json_string_value(jObj) );
+         if( order<0 || order>PlaylistHybrid ) {
+           logerr( "ickMessage from %s contains non field \"order\" with unknown value: %s", sourceUUID, message );
+           rpcErrCode    = RPC_INVALID_PARAMS;
+           rpcErrMessage = "Parameter \"order\": invalid value";
+           playlistUnlock( plst );
+           goto rpcError;
+         }
+      }
       else if( jObj ) {
-        logerr( "ickMessage from %s contains non boolean field \"originalOrder\": %s", sourceUUID, message );
+        logerr( "ickMessage from %s contains non string field \"order\": %s", sourceUUID, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
-        rpcErrMessage = "Parameter \"originalOrder\": wrong type (no boolean)";
+        rpcErrMessage = "Parameter \"order\": wrong type (no string)";
         playlistUnlock( plst );
         goto rpcError;
       }

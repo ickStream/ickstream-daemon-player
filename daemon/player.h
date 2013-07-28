@@ -88,7 +88,7 @@ typedef enum {
 
 int                 playerInit( void );
 void                playerShutdown( void );
-const char         *playerPlaybackModeToStr( PlayerPlaybackMode );
+const char         *playerPlaybackModeToStr( PlayerPlaybackMode mode );
 PlayerPlaybackMode  playerPlaybackModeFromStr( const char *str );
 Playlist           *playerGetQueue( void );
 void                playerResetQueue( void );

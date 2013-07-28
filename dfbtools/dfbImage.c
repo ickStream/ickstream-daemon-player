@@ -155,7 +155,9 @@ DfbtWidget *dfbtImage( int width, int height, const char *uri, bool isFile )
     Set render options for scaling
 \*------------------------------------------------------------------------*/
   ropts = DSRO_SMOOTH_UPSCALE | DSRO_SMOOTH_DOWNSCALE;
+  _dfbtSurfaceLock( widget->surface );
   widget->surface->SetRenderOptions( widget->surface, ropts );
+  _dfbtSurfaceUnlock( widget->surface );
 
 /*------------------------------------------------------------------------*\
     Allocate and init additional data
