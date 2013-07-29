@@ -59,6 +59,7 @@ Remarks         : -
 #include <pthread.h>
 #include <directfb.h>
 #include <signal.h>
+#include <sys/time.h>
 #include <curl/curl.h>
 
 #include "dfbTools.h"
@@ -208,8 +209,9 @@ DfbtImageState dfbtImageGetState( DfbtWidget *widget )
 /*=========================================================================*\
     Lock image and wait for completion (or error)
       timeout is in ms, 0 or a negative values are treated as infinity
-      returns 0 and locks feed, if condition is met
+      returns 0 if condition is met
         std. errode (ETIMEDOUT in case of timeout) and no locking otherwise
+        image is unlocked in any case
 \*=========================================================================*/
 int dfbtImageWaitForComplete( DfbtWidget *widget, int timeout )
 {

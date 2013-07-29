@@ -16,7 +16,7 @@ Error Messages  : -
   
 Date            : 28.05.2013
 
-Updates         : -
+Updates         : 29.07.2013 using a dedicated thread to serialize dfb actions //MAF
                   
 Author          : //MAF 
 
@@ -52,6 +52,11 @@ Remarks         : -
 
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
+#include <math.h>
+#include <errno.h>
+#include <sys/time.h>
+#include <pthread.h>
 #include <jansson.h>
 #include <directfb.h>
 
@@ -72,11 +77,45 @@ Remarks         : -
 /*=========================================================================*\
        Macro and type definitions 
 \*=========================================================================*/
+
+// Number of playback queue items to render
 #define DFB_ITEMS 7
+
+// State of this HMI module
+typedef enum {
+  HmiUninitialized,
+  HmiInitialized,
+  HmiStarting,
+  HmiRunning,
+  HmiTerminating,
+  HmiTerminatedOk,
+  HmiTerminatedError
+} HmiState;
+
+// HMI elements
+typedef enum {
+  HmiElementCurrentItem    = 0x0001,
+  HmiElementPlaybackQueue  = 0x0002,
+  HmiElementConfiguration  = 0x0004,
+  HmiElementState          = 0x0008,
+  HmiElementPlaybackMode   = 0x0010,
+  HmiElementVolume         = 0x0020,
+  HmiElementFormat         = 0x0040,
+  HmiElementPositionSlider = 0x0080,
+  HmiElementPositionString = 0x0100,
+  HmiElementAll            = 0xffff,
+} HmiElement;
+
 
 /*=========================================================================*\
 	Private symbols
 \*=========================================================================*/
+
+static pthread_t             hmiThread;
+static volatile HmiState     hmiState = HmiUninitialized;
+static volatile HmiElement   hmiUpdates;
+static pthread_mutex_t       hmiUpdateMutex;
+static pthread_cond_t        hmiCondUpdate;
 
 
 static DFBRectangle       artRect;
@@ -101,7 +140,10 @@ static DfbtWidget        *wVolumeString;   // strong
 static DfbtWidget        *wPositionIcon;   // strong
 static DfbtWidget        *wPositionString; // strong
 
-static PlaylistItem *currentItem;
+static PlaylistItem      *currentItem;
+static double             currentSeekPos;
+static double             currentLength;
+static AudioFormat        currentFormat;
 
 
                           // A,    R,    G,    B
@@ -114,6 +156,8 @@ static DFBColor cGray    = { 0xFF, 0x20, 0x20, 0x20 };
 /*=========================================================================*\
 	Private prototypes
 \*=========================================================================*/
+static void        _hmiUpdateRequest( HmiElement updates, bool trigger );
+static void       *_hmiThread( void *arg );
 static DfbtWidget *wPlaylistItem( PlaylistItem *item, int pos, int width, int height, bool isCursor );
 
 
@@ -124,17 +168,29 @@ int hmiInit( int *argc, char *(*argv[]) )
 {
   DBGMSG( "hmiInit: input %d args", *argc );
 
+/*------------------------------------------------------------------------*\
+    INitialize direct frame buffer library
+\*------------------------------------------------------------------------*/
   DFBResult drc = DirectFBInit( argc, argv );
   if( drc!=DFB_OK ) {
     logerr( "hmiInit: could not init direct fb (%s).", DirectFBErrorString(drc) );
     return -1;
   }
 
+/*------------------------------------------------------------------------*\
+    Set some direct FB options
+\*------------------------------------------------------------------------*/
   DirectFBSetOption( "no-vt", NULL );
   DirectFBSetOption( "no-sighandler", NULL );
+  DirectFBSetOption( "no-cursor", NULL );
+  DirectFBSetOption ("bg-none", NULL);
+  DirectFBSetOption ("no-init-layer", NULL);
 
+/*------------------------------------------------------------------------*\
+    Set state, that's it
+\*------------------------------------------------------------------------*/
+  hmiState = HmiInitialized;
   DBGMSG( "hmiInit: output %d args", *argc );
-
   return 0;
 }
 
@@ -144,107 +200,28 @@ int hmiInit( int *argc, char *(*argv[]) )
 \*=========================================================================*/
 int hmiCreate( void )
 {
-  IDirectFB            *dfb;
-  DfbtWidget           *screen;
-  int                   width, height;
-  DFBResult             drc;
-  DFBFontDescription    fdsc;
+  int rc;
   DBGMSG( "Initializing HMI module..." );
 
 /*------------------------------------------------------------------------*\
-    Set some direct FB options
+    Init mutex and condition
 \*------------------------------------------------------------------------*/
-  DirectFBSetOption( "no-cursor", NULL );
-  DirectFBSetOption ("bg-none", NULL);
-  DirectFBSetOption ("no-init-layer", NULL);
+  ickMutexInit( &hmiUpdateMutex );
+  pthread_cond_init( &hmiCondUpdate, NULL );
 
 /*------------------------------------------------------------------------*\
-    Init direct frema buffer and build up screen
+    Create HMI thread, this encapsulates all directFB actions
 \*------------------------------------------------------------------------*/
-  if( dfbtInit("../resources") )
-    return -1;
-
-  dfb = dfbtGetDdb();
-  screen = dfbtGetScreen();
-  dfbtGetSize( screen, &width, &height );
-
-/*------------------------------------------------------------------------*\
-    Get fonts
-\*------------------------------------------------------------------------*/
-  fdsc.flags      = DFDESC_HEIGHT | DFDESC_ATTRIBUTES;
-  fdsc.height     = 1 + 24*height/1024;
-  fdsc.attributes = DFFA_NONE;
-  drc = dfb->CreateFont( dfb, fontfile, &fdsc, &font1 );
-  if( drc!=DFB_OK ) {
-    logerr( "hmiInit: could not find font %s (%s).", fontfile, DirectFBErrorString(drc) );
-    return -1;
-  }
-
-  fdsc.flags      = DFDESC_HEIGHT | DFDESC_ATTRIBUTES;
-  fdsc.height     = 1 + 48*height/1024;
-  fdsc.attributes = DFFA_NONE;
-  drc = dfb->CreateFont( dfb, fontfile, &fdsc, &font2 );
-  if( drc!=DFB_OK ) {
-    logerr( "hmiInit: could not find font %s (%s).", fontfile, DirectFBErrorString(drc) );
-    DFBRELEASE( font1 );
-    return -1;
-  }
-
-  fdsc.flags      = DFDESC_HEIGHT | DFDESC_ATTRIBUTES;
-  fdsc.height     = 1 + 16*height/1024;
-  fdsc.attributes = DFFA_NONE;
-  drc = dfb->CreateFont( dfb, fontfile, &fdsc, &font3 );
-  if( drc!=DFB_OK ) {
-    logerr( "hmiInit: could not find font %s (%s).", fontfile, DirectFBErrorString(drc) );
-    DFBRELEASE( font1 );
+  rc = pthread_create( &hmiThread, NULL, _hmiThread, NULL );
+  if( rc ) {
+    logerr( "hmiCreate: Unable to start HMI thread: %s", strerror(rc) );
     return -1;
   }
 
 /*------------------------------------------------------------------------*\
-    Define area for cover art
+    Set state, that's it
 \*------------------------------------------------------------------------*/
-  int border = height/100;
-  artRect.w = (DFB_ITEMS-2)*(height/DFB_ITEMS)-2*border;
-  artRect.h = artRect.w;
-  artRect.x = (width/2-artRect.w)/2;
-  artRect.y = border;
-
-/*------------------------------------------------------------------------*\
-    Load logo as default artwork
-\*------------------------------------------------------------------------*/
-  wArtwork = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
-  if( wArtwork ) {
-   // dfbtSetBackground( wArtwork, &cBlue );
-   dfbtContainerAdd( screen, wArtwork, artRect.x, artRect.y, DfbtAlignTopLeft );
-  }
-
-/*------------------------------------------------------------------------*\
-    Create and add container for playlist elements
-\*------------------------------------------------------------------------*/
-  wPlaylist = dfbtContainer( width/2, height );
-  dfbtContainerAdd( screen, wPlaylist, width, 0, DfbtAlignTopRight );
-  dfbtSetName( wPlaylist, "Playlist Window" );
-
-/*------------------------------------------------------------------------*\
-    Create and add container for status elements
-\*------------------------------------------------------------------------*/
-  wStatus = dfbtContainer( width/2-2*border, height/DFB_ITEMS-border );
-  dfbtSetBackground( wStatus, &cRed );
-  dfbtContainerAdd( screen, wStatus, border, artRect.y+artRect.h+border, DfbtAlignTopLeft );
-  dfbtSetName( wStatus, "Status Window" );
-
-/*------------------------------------------------------------------------*\
-    Create and add container for config elements
-\*------------------------------------------------------------------------*/
-  wConfig = dfbtContainer( width/2-2*border, height/DFB_ITEMS-border );
-  dfbtSetBackground( wConfig, &cGray );
-  dfbtContainerAdd( screen, wConfig, border, artRect.y+artRect.h+height/DFB_ITEMS+border, DfbtAlignTopLeft );
-  dfbtSetName( wConfig, "Config Window" );
-
-/*------------------------------------------------------------------------*\
-    That's all
-\*------------------------------------------------------------------------*/
-  dfbtRedrawScreen( false );
+  hmiState = HmiStarting;
   return 0;
 }
 
@@ -257,34 +234,22 @@ void hmiShutdown( void )
   DBGMSG( "Shutting down HMI module..." );
 
 /*------------------------------------------------------------------------*\
-    Get rid of global containers
+    Stop HMI thread and wait for termination
 \*------------------------------------------------------------------------*/
-  dfbtRelease( wPlaylist );
-  dfbtRelease( wArtwork );
-  dfbtRelease( wStatus );
-  dfbtRelease( wConfig );
-  dfbtRelease( wStateIcon );
-  dfbtRelease( wRepeatIcon );
-  dfbtRelease( wShuffleIcon );
-  dfbtRelease( wSourceIcon );
-  dfbtRelease( wFormatString1 );
-  dfbtRelease( wFormatString2 );
-  dfbtRelease( wVolumeIcon );
-  dfbtRelease( wVolumeString );
-  dfbtRelease( wPositionIcon );
-  dfbtRelease( wPositionString );
+  hmiState = HmiTerminating;
+  if( hmiState>=HmiStarting )
+     pthread_join( hmiThread, NULL );
 
 /*------------------------------------------------------------------------*\
-    Release fonts and primary/super interfaces
+    Delete mutex and condition
 \*------------------------------------------------------------------------*/
-  DFBRELEASE( font1 );
-  DFBRELEASE( font2 );
-  DFBRELEASE( font3 );
+  pthread_mutex_destroy( &hmiUpdateMutex );
+  pthread_cond_destroy( &hmiCondUpdate );
 
 /*------------------------------------------------------------------------*\
-    Shut down toolkit
+    That's all
 \*------------------------------------------------------------------------*/
-  dfbtShutdown();
+  DBGMSG( "HMI module is shut down" );
 }
 
 
@@ -293,17 +258,291 @@ void hmiShutdown( void )
 \*=========================================================================*/
 void hmiNewConfig( void )
 {
+  DBGMSG( "hmiNewConfig: %s, \"%s\", \"%s\".",
+      playerGetUUID(),  playerGetName(), playerGetToken()?"Cloud":"No Cloud" );
+
+/*------------------------------------------------------------------------*\
+    Request updates for configuration, current item and playback queue
+    (images might have become available through newly added content services)
+\*------------------------------------------------------------------------*/
+  _hmiUpdateRequest( HmiElementConfiguration|HmiElementCurrentItem|HmiElementPlaybackQueue, false );
+}
+
+
+/*=========================================================================*\
+      Queue changed or cursor is pointing to a new item
+\*=========================================================================*/
+void hmiNewQueue( Playlist *plst )
+{
+  PlaylistItem *item = playlistGetCursorItem( plst );
+
+  DBGMSG( "hmiNewQueue: %p (%s).", item, item?playlistItemGetText(item):"<None>" );
+
+/*------------------------------------------------------------------------*\
+    Request updates for current item and playback queue,
+    store length of current item
+\*------------------------------------------------------------------------*/
+  HmiElement updates = HmiElementPlaybackQueue;
+  if( item!=currentItem ) {
+    updates      |= HmiElementCurrentItem;
+    currentItem   = item;
+    currentLength = item ? playlistItemGetDuration( item ) : 0;
+  }
+  _hmiUpdateRequest( updates, false );
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+}
+
+
+/*=========================================================================*\
+      Player state has changed
+\*=========================================================================*/
+void hmiNewState( PlayerState state )
+{
+  DBGMSG( "hmiNewState: %d.", state );
+
+/*------------------------------------------------------------------------*\
+    Request updates for current item and playback queue
+\*------------------------------------------------------------------------*/
+  _hmiUpdateRequest( HmiElementState, false );
+}
+
+
+/*=========================================================================*\
+      Player playback mode has changed
+\*=========================================================================*/
+void hmiNewPlaybackMode( PlayerPlaybackMode mode )
+{
+  DBGMSG( "hmiNewPlaybackMode: %d.", mode );
+
+/*------------------------------------------------------------------------*\
+    Request updates for playback mode
+\*------------------------------------------------------------------------*/
+  _hmiUpdateRequest( HmiElementPlaybackMode, false );
+}
+
+
+/*=========================================================================*\
+      Volume and muting setting has changed
+\*=========================================================================*/
+void hmiNewVolume( double volume, bool muted )
+{
+  DBGMSG( "hmiNewVolume: %.2lf (muted: %s).", volume, muted?"On":"Off" );
+
+/*------------------------------------------------------------------------*\
+    Request updates for playback mode
+\*------------------------------------------------------------------------*/
+  _hmiUpdateRequest( HmiElementVolume, false );
+}
+
+
+/*=========================================================================*\
+      Audio backend format has changed
+\*=========================================================================*/
+void hmiNewFormat( AudioFormat *format )
+{
+  DBGMSG( "hmiNewFormat: %s.", audioFormatStr(NULL,format) );
+
+/*------------------------------------------------------------------------*\
+    Buffer format locally
+\*------------------------------------------------------------------------*/
+  memcpy( &currentFormat, format, sizeof(AudioFormat) );
+
+/*------------------------------------------------------------------------*\
+    Request update for audio format
+\*------------------------------------------------------------------------*/
+  _hmiUpdateRequest( HmiElementFormat, false );
+}
+
+
+/*=========================================================================*\
+      New seek Position
+\*=========================================================================*/
+void hmiNewPosition( double seekPos )
+{
+  HmiElement updates = HmiElementPositionString;
+
+  DBGMSG( "hmiNewPosition: %.2lf", seekPos);
+
+/*------------------------------------------------------------------------*\
+    Reset or start local counter or check and correct deviation
+\*------------------------------------------------------------------------*/
+  if( seekPos==0.0 || (currentSeekPos==0.0&&seekPos>0.0) || fabs(seekPos-currentSeekPos)>0.5 ) {
+    if( currentSeekPos>0 && seekPos==0.0 )
+      DBGMSG( "hmiNewPosition: correcting counter by %.3fs", seekPos-currentSeekPos );
+    currentSeekPos = seekPos;
+    updates |= HmiElementPositionSlider;
+  }
+
+/*------------------------------------------------------------------------*\
+    Request updates for position string and possibly marker
+\*------------------------------------------------------------------------*/
+  _hmiUpdateRequest( updates, false );
+}
+
+
+/*=========================================================================*\
+      Render current item
+\*=========================================================================*/
+static void _hmiRenderCurrentItem( void )
+{
+  Playlist     *plst = playerGetQueue( );
+  PlaylistItem *item = NULL;
+  DfbtWidget   *screen = dfbtGetScreen();
+  int           width, height, border, size;
+
+  DBGMSG( "_hmiRenderCurrentItem" );
+
+/*------------------------------------------------------------------------*\
+    Clear artwork and source icon
+\*------------------------------------------------------------------------*/
+  if( wArtwork ) {
+    dfbtContainerRemove( screen, wArtwork );
+    dfbtRelease( wArtwork );
+    wArtwork = NULL;
+  }
+  if( wSourceIcon ) {
+    dfbtContainerRemove( wStatus, wSourceIcon );
+    dfbtRelease( wSourceIcon );
+    wSourceIcon = NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Lock playlist and get current item
+\*------------------------------------------------------------------------*/
+  if( plst ) {
+    playlistLock( plst );
+    item = playlistGetCursorItem( plst );
+  }
+
+/*------------------------------------------------------------------------*\
+    Show Artwork
+\*------------------------------------------------------------------------*/
+  if( item ) {
+    json_t *jObj = playlistItemGetAttribute( item, "image" );
+    if( jObj && json_is_string(jObj) ) {
+      char *uri = ickServiceResolveURI( json_string_value(jObj), "content" );
+      if( uri )
+        wArtwork = dfbtImage( artRect.w, artRect.h, uri, false );
+    }
+  }
+  if( !wArtwork )
+    wArtwork = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
+  if( wArtwork ) {
+    // dfbtSetBackground( wArtwork, &cBlue );
+    dfbtContainerAdd( screen, wArtwork, artRect.x, artRect.y, DfbtAlignTopLeft );
+  }
+
+/*------------------------------------------------------------------------*\
+    Get geometry
+\*------------------------------------------------------------------------*/
+  dfbtGetSize( wPlaylist, &width, &height );
+  border = height/100;
+  dfbtGetSize( wStatus, &width, &height );
+  size = (height-2*border)/2;
+
+/*------------------------------------------------------------------------*\
+    Show Source Icon
+\*------------------------------------------------------------------------*/
+  if( item ) {
+    switch( playlistItemGetType(item) ) {
+      case PlaylistItemTrack:
+        wSourceIcon = dfbtImage( size, size, "ickSourceTrack.png", true );
+        break;
+      case PlaylistItemStream:
+        wSourceIcon = dfbtImage( size, size, "ickSourceStream.png", true );
+        break;
+    }
+    dfbtContainerAdd( wStatus, wSourceIcon, width-3*border-2*size, border, DfbtAlignTopRight );
+  }
+
+/*------------------------------------------------------------------------*\
+    Unlock playlist, that's all
+\*------------------------------------------------------------------------*/
+  if( plst )
+    playlistUnlock( plst );
+}
+
+
+/*=========================================================================*\
+      Render playback queue
+\*=========================================================================*/
+static void _hmiRenderPlaybackQueue( void )
+{
+  Playlist     *plst = playerGetQueue( );
+  PlaylistItem *item = NULL;
+  int           width, height, border, i;
+
+  DBGMSG( "_hmiRenderPlaybackQueue" );
+
+/*------------------------------------------------------------------------*\
+    Get geometry
+\*------------------------------------------------------------------------*/
+  dfbtGetSize( wPlaylist, &width, &height );
+  border = height/100;
+  height = height / DFB_ITEMS;
+
+/*------------------------------------------------------------------------*\
+    Clear container of playback queue items
+\*------------------------------------------------------------------------*/
+  dfbtContainerRemove( wPlaylist, NULL );
+
+/*------------------------------------------------------------------------*\
+    Lock playlist and get current item
+\*------------------------------------------------------------------------*/
+  if( plst ) {
+    playlistLock( plst );
+    item = playlistGetCursorItem( plst );
+  }
+
+/*------------------------------------------------------------------------*\
+    Create widgets for playback queue items
+\*------------------------------------------------------------------------*/
+  for( i=0; i<DFB_ITEMS; i++ ) {
+    int           pos     = 0;
+    PlaylistItem *theItem = NULL;
+    DfbtWidget   *wItem;
+
+    if( plst ) {
+      pos     = playlistGetCursorPos(plst)-DFB_ITEMS/2 + i;
+      theItem = playlistGetItem( plst, PlaylistMapped, pos );
+    }
+
+    if( theItem )
+      playlistItemLock( theItem );
+
+    wItem = wPlaylistItem( theItem, pos, width-border, height-border, item && theItem==item );
+    dfbtContainerAdd( wPlaylist, wItem, 0, i*height, DfbtAlignTopLeft );
+    dfbtRelease( wItem );
+
+    if( theItem )
+      playlistItemUnlock( theItem );
+  }
+
+/*------------------------------------------------------------------------*\
+    Unlock playlist, that's all
+\*------------------------------------------------------------------------*/
+  if( plst )
+    playlistUnlock( plst );
+}
+
+
+/*=========================================================================*\
+      Render player configuration (name, cloud access)
+\*=========================================================================*/
+static void _hmiRenderConfig( void )
+{
   DfbtWidget      *wTxt;
   char            *txt;
   int              width, height, border;
   int              txt_x, txt_y;
   int              a;
   size_t           len;
-
   ServiceListItem *service;
 
-  DBGMSG( "hmiNewConfig: %s, \"%s\", \"%s\".",
-      playerGetUUID(),  playerGetName(), playerGetToken()?"Cloud":"No Cloud" );
+  DBGMSG( "_hmiRenderConfig" );
 
 /*------------------------------------------------------------------------*\
     Clear container
@@ -393,137 +632,21 @@ void hmiNewConfig( void )
   Sfree( txt );
 
 /*------------------------------------------------------------------------*\
-    Trigger reconstruction of queue since images might have become
-    available through newly added content services
-    This also triggers a redraw
+    That's all
 \*------------------------------------------------------------------------*/
-//  dfbtRedrawScreen( false );
-  hmiNewQueue( playerGetQueue() );
 }
 
 
 /*=========================================================================*\
-      Queue changed or cursor is pointing to a new item
+      Render player state
 \*=========================================================================*/
-void hmiNewQueue( Playlist *plst )
+static void _hmiRenderState( void )
 {
-  int i;
-  DfbtWidget   *screen = dfbtGetScreen();
-  DfbtWidget   *wItem;
-  int           width, height, border, size;
-  PlaylistItem *item = playlistGetCursorItem( plst );
-
-  DBGMSG( "hmiNewQueue: %p (%s).", item, item?playlistItemGetText(item):"<None>" );
-  currentItem = item;
-
-
-/*------------------------------------------------------------------------*\
-    Get geometry
-\*------------------------------------------------------------------------*/
-  dfbtGetSize( wPlaylist, &width, &height );
-  border = height/100;
-  height = height / DFB_ITEMS;
-
-/*------------------------------------------------------------------------*\
-    Clear artwork, source icon and playlist container
-\*------------------------------------------------------------------------*/
-  if( wArtwork ) {
-    dfbtContainerRemove( screen, wArtwork );
-    dfbtRelease( wArtwork );
-    wArtwork = NULL;
-  }
-  if( wSourceIcon ) {
-    dfbtContainerRemove( wStatus, wSourceIcon );
-    dfbtRelease( wSourceIcon );
-    wSourceIcon = NULL;
-  }
-  dfbtContainerRemove( wPlaylist, NULL );
-
-  /*
-  wArtwork = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
-  if( wArtwork )
-    dfbtContainerAdd( screen, wArtwork, artRect.x, artRect.y, DfbtAlignTopLeft );
-
-  dfbtRedrawScreen( false );
-  return;
-  */
-
-/*------------------------------------------------------------------------*\
-    Show Artwork
-\*------------------------------------------------------------------------*/
-  if( item ) {
-    json_t *jObj = playlistItemGetAttribute( item, "image" );
-    if( jObj && json_is_string(jObj) ) {
-      char *uri = ickServiceResolveURI( json_string_value(jObj), "content" );
-      if( uri )
-        wArtwork = dfbtImage( artRect.w, artRect.h, uri, false );
-    }
-  }
-  if( !wArtwork )
-    wArtwork = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
-  if( wArtwork ) {
-    // dfbtSetBackground( wArtwork, &cBlue );
-    dfbtContainerAdd( screen, wArtwork, artRect.x, artRect.y, DfbtAlignTopLeft );
-  }
-
-
-/*------------------------------------------------------------------------*\
-    Create widgets for playback queue items
-\*------------------------------------------------------------------------*/
-  playlistLock( plst );
-  for( i=0; i<DFB_ITEMS; i++ ) {
-    int           pos     = playlistGetCursorPos(plst)-DFB_ITEMS/2 + i;
-    PlaylistItem *theItem = playlistGetItem( plst, PlaylistMapped, pos );
-
-    if( theItem )
-      playlistItemLock( theItem );
-
-    wItem = wPlaylistItem( theItem, pos, width-border, height-border, item && theItem==item );
-    dfbtContainerAdd( wPlaylist, wItem, 0, i*height, DfbtAlignTopLeft );
-    dfbtRelease( wItem );
-
-    if( theItem )
-      playlistItemUnlock( theItem );
-  }
-  playlistUnlock( plst );
-
-/*------------------------------------------------------------------------*\
-    Get geometry
-\*------------------------------------------------------------------------*/
-  dfbtGetSize( wStatus, &width, &height );
-  size = (height-2*border)/2;
-
-/*------------------------------------------------------------------------*\
-    Show Source Icon
-\*------------------------------------------------------------------------*/
-  if( item ) {
-    switch( playlistItemGetType(item) ) {
-      case PlaylistItemTrack:
-        wSourceIcon = dfbtImage( size, size, "ickSourceTrack.png", true );
-        break;
-      case PlaylistItemStream:
-        wSourceIcon = dfbtImage( size, size, "ickSourceStream.png", true );
-        break;
-    }
-    dfbtContainerAdd( wStatus, wSourceIcon, width-3*border-2*size, border, DfbtAlignTopRight );
-  }
-
-/*------------------------------------------------------------------------*\
-    Trigger redraw
-\*------------------------------------------------------------------------*/
-  dfbtRedrawScreen( false );
-}
-
-
-/*=========================================================================*\
-      Player state has changed
-\*=========================================================================*/
-void hmiNewState( PlayerState state )
-{
+  PlayerState   state  = playerGetState();
   DfbtWidget   *screen = dfbtGetScreen();
   int           width, height, border;
 
-  DBGMSG( "hmiNewState: %d.", state );
+  DBGMSG( "_hmiRenderState: %d.", state );
 
 /*------------------------------------------------------------------------*\
     Get geometry
@@ -564,21 +687,21 @@ void hmiNewState( PlayerState state )
     dfbtContainerAdd( wStatus, wStateIcon, border, border, DfbtAlignTopLeft );
 
 /*------------------------------------------------------------------------*\
-    Trigger redraw
+    That's all
 \*------------------------------------------------------------------------*/
-  dfbtRedrawScreen( false );
 }
 
 
 /*=========================================================================*\
-      Player playback mode has changed
+      Render playback mode
 \*=========================================================================*/
-void hmiNewPlaybackMode( PlayerPlaybackMode mode )
+static void _hmiRenderPlaybackMode( void )
 {
-  DfbtWidget   *screen = dfbtGetScreen();
-  int           width, height, border;
+  PlayerPlaybackMode mode   = playerGetPlaybackMode();
+  DfbtWidget        *screen = dfbtGetScreen();
+  int                width, height, border;
 
-  DBGMSG( "hmiNewPlaybackMode: %d.", mode );
+  DBGMSG( "_hmiRenderPlaybackMode: %s", playerPlaybackModeToStr(mode) );
 
 /*------------------------------------------------------------------------*\
     Get geometry
@@ -639,22 +762,23 @@ void hmiNewPlaybackMode( PlayerPlaybackMode mode )
     dfbtContainerAdd( wStatus, wShuffleIcon, width-2*border-height, border, DfbtAlignTopRight );
 
 /*------------------------------------------------------------------------*\
-    Trigger redraw
+    That's all
 \*------------------------------------------------------------------------*/
-  dfbtRedrawScreen( false );
 }
 
 
 /*=========================================================================*\
-      Volume and muting setting has changed
+      Render volume and muting settings
 \*=========================================================================*/
-void hmiNewVolume( double volume, bool muted )
+static void _hmiRenderVolume( void )
 {
+  double        volume = playerGetVolume();
+  bool          muted  = playerGetMuting();
   DfbtWidget   *screen = dfbtGetScreen();
   int           width, height, border, size, y, a;
   char          buffer[64];
-  DBGMSG( "hmiNewVolume: %.2lf (muted: %s).", volume, muted?"On":"Off" );
 
+  DBGMSG( "_hmiRenderVolume: %.2lf (muted: %s).", volume, muted?"On":"Off" );
 
 /*------------------------------------------------------------------------*\
     Get geometry
@@ -701,22 +825,21 @@ void hmiNewVolume( double volume, bool muted )
   dfbtContainerAdd( wStatus, wVolumeString, width-4*border-3*size, y, DfbtAlignCenterRight );
 
 /*------------------------------------------------------------------------*\
-    Trigger redraw
+    That's it
 \*------------------------------------------------------------------------*/
-  dfbtRedrawScreen( false );
 }
 
 
 /*=========================================================================*\
-      Audio backend format has changed
+      Render audio backend format
 \*=========================================================================*/
-void hmiNewFormat( AudioFormat *format )
+static void _hmiRenderFormat( void )
 {
   DfbtWidget   *screen = dfbtGetScreen();
   int           width, height, border, size, y;
   char          buffer[64];
 
-  DBGMSG( "hmiNewFormat: %s.", audioFormatStr(NULL,format) );
+  DBGMSG( "_hmiRenderFormat: %s.", audioFormatStr(NULL,&currentFormat) );
 
 /*------------------------------------------------------------------------*\
     Get geometry
@@ -743,36 +866,87 @@ void hmiNewFormat( AudioFormat *format )
 /*------------------------------------------------------------------------*\
     Show new strings
 \*------------------------------------------------------------------------*/
-  if( audioFormatIsComplete(format) ) {
-    sprintf( buffer, "%d Hz", format->sampleRate );
+  if( audioFormatIsComplete(&currentFormat) ) {
+    sprintf( buffer, "%d Hz", currentFormat.sampleRate );
     wFormatString1 = dfbtText( buffer, font1, &cWhite );
     y = height-border-size/2;
     dfbtContainerAdd( wStatus, wFormatString1, width-border, y, DfbtAlignBottomRight );
-    sprintf( buffer, "%dx%d bit", format->channels, format->bitWidth );
+    sprintf( buffer, "%dx%d bit", currentFormat.channels, currentFormat.bitWidth );
     wFormatString2 = dfbtText( buffer, font1, &cWhite );
     dfbtContainerAdd( wStatus, wFormatString2, width-border, y, DfbtAlignTopRight );
   }
 
 /*------------------------------------------------------------------------*\
-    Trigger redraw
+    That's all
 \*------------------------------------------------------------------------*/
-  dfbtRedrawScreen( false );
 }
 
 
 /*=========================================================================*\
-      New seek Position
+      Render seek position slider
 \*=========================================================================*/
-void hmiNewPosition( double seekPos )
+static void _hmiRenderPositionSlider( void )
+{
+  DfbtWidget   *screen = dfbtGetScreen();
+  int           width, height, border, x, y;
+
+  DBGMSG( "_hmiRenderPositionSlider: %.2lf/%.2lf", currentSeekPos, currentLength );
+
+/*------------------------------------------------------------------------*\
+    Hide slider if there is no item, total length or we are not playing
+\*------------------------------------------------------------------------*/
+  if( currentLength<=0 || currentSeekPos<0 || playerGetState()==PlayerStateStop ) {
+    if( wPositionIcon && dfbtContainerFind(screen,wPositionIcon) )
+      dfbtContainerRemove( screen, wPositionIcon );
+    return;
+  }
+
+/*------------------------------------------------------------------------*\
+    Get geometry and calculate cursor position
+\*------------------------------------------------------------------------*/
+  dfbtGetSize( screen, &width, &height );
+  border = height/100;
+  dfbtGetSize( wStatus, &width, &height );
+  dfbtGetOffset( wStatus, &x, &y );
+  x = currentSeekPos*(width-2*border)/currentLength + .5 + 2*border;
+
+/*------------------------------------------------------------------------*\
+    Lazy image loading
+\*------------------------------------------------------------------------*/
+  if( !wPositionIcon ) {
+    wPositionIcon = dfbtImage( 2*border, 2*border, "ickPositionCursor.png", true );
+    if( !wPositionIcon ) {
+      logerr( "_hmiRenderPositionSlider: could not load %s", "ickPositionCursor.png" );
+      return;
+    }
+  }
+
+/*------------------------------------------------------------------------*\
+    Show or reposition cursor
+\*------------------------------------------------------------------------*/
+  if( !dfbtContainerFind(screen,wPositionIcon) )
+    dfbtContainerAdd( screen, wPositionIcon, x, y, DfbtAlignCenter );
+  else
+    dfbtContainerSetPosition( screen, wPositionIcon, x, y, DfbtAlignCenter );
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+}
+
+
+/*=========================================================================*\
+      Render seek position string
+\*=========================================================================*/
+static void _hmiRenderPositionString( void )
 {
   DfbtWidget   *screen = dfbtGetScreen();
   int           width, height, border;
   char          buffer[64];
-  int           h, m, s;
-  int           d = 0;
+  int           d, h, m, s;
   char          percentStr[20];
 
-  DBGMSG( "hmiNewPosition: %.2lf/%.2lf", seekPos, d );
+  DBGMSG( "_hmiRenderPositionString: %.2lf/%.2lf", currentSeekPos, currentLength );
 
 /*------------------------------------------------------------------------*\
     Get geometry
@@ -794,53 +968,31 @@ void hmiNewPosition( double seekPos )
     Do we have a duration?
 \*------------------------------------------------------------------------*/
   *percentStr = '\0';
-  if( currentItem )
-    d = playlistItemGetDuration( currentItem );
-  if( seekPos>=0 && d>0 ) {
-    int x, y;
-
-    // Calculate cursor position
-    dfbtGetOffset( wStatus, &x, &y );
-    x = seekPos*(width-2*border)/d + .5 + 2*border;
+  if( currentSeekPos>=0 && currentLength>0 ) {
 
     // Construct string component (total length)
-    h = (int)d/3600;
+    d  = currentLength;
+    h  = (int)d/3600;
     d -= h*3600;
-    m = (int)d/60;
+    m  = (int)d/60;
     d -= m*60;
-    s = (int)d;
+    s  = (int)d;
     if( h )
       sprintf( percentStr, " / %d:%02d:%02d", h, m, s );
     else
       sprintf( percentStr, " / %d:%02d", m, s );
 
-    // Load or reposition cursor
-    if( wPositionIcon )
-      dfbtContainerSetPosition( screen, wPositionIcon, x, y, DfbtAlignCenter );
-    else {
-      wPositionIcon = dfbtImage( 2*border, 2*border, "ickPositionCursor.png", true );
-      dfbtContainerAdd( screen, wPositionIcon, x, y, DfbtAlignCenter );
-    }
-  }
-
-/*------------------------------------------------------------------------*\
-    No duration!
-\*------------------------------------------------------------------------*/
-  else {
-    *percentStr = '\0';
-    dfbtContainerRemove( screen, wPositionIcon );
-    dfbtRelease( wPositionIcon );
-    wPositionIcon = NULL;
   }
 
 /*------------------------------------------------------------------------*\
     Build human readable time string
 \*------------------------------------------------------------------------*/
-  h = (int)seekPos/3600;
-  seekPos -= h*3600;
-  m = (int)seekPos/60;
-  seekPos -= m*60;
-  s = (int)seekPos;
+  d  = currentSeekPos;
+  h  = (int)d/3600;
+  d -= h*3600;
+  m  = (int)d/60;
+  d -= m*60;
+  s  = (int)d;
   if( h )
     sprintf( buffer, "%d:%02d:%02d%s", h, m, s, percentStr );
   else
@@ -853,9 +1005,320 @@ void hmiNewPosition( double seekPos )
   dfbtContainerAdd( wStatus, wPositionString, height+border, height/2, DfbtAlignCenterLeft );
 
 /*------------------------------------------------------------------------*\
-    Trigger redraw
+    That's all
 \*------------------------------------------------------------------------*/
-  dfbtRedrawScreen( false );
+}
+
+
+/*=========================================================================*\
+      Request updates
+        trigger - trigger immediate redraw
+\*=========================================================================*/
+static void _hmiUpdateRequest( HmiElement updates, bool trigger )
+{
+  DBGMSG( "_hmiUpdateRequest: %04x, immediate: %s", updates, trigger?"Yes":"No" );
+
+/*------------------------------------------------------------------------*\
+    nothing to do?
+\*------------------------------------------------------------------------*/
+  if( !updates )
+    return;
+
+/*------------------------------------------------------------------------*\
+    Add updates to vector
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &hmiUpdateMutex );
+  hmiUpdates |= updates;
+  pthread_mutex_unlock( &hmiUpdateMutex );
+
+/*------------------------------------------------------------------------*\
+    Signal immediate redraw
+\*------------------------------------------------------------------------*/
+  if( trigger )
+    pthread_cond_signal( &hmiCondUpdate );
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+}
+
+
+/*=========================================================================*\
+    Lock update mutex and wait for update requests (or error)
+      timeout is in ms, 0 or a negative values are treated as infinity
+      returns 0 and locks mutex if condition is met
+        std. errode (ETIMEDOUT in case of timeout) and no locking otherwise
+\*=========================================================================*/
+static int _hmiLockWaitForUpdateRequest( int timeout )
+{
+  struct timeval   now;
+  struct timespec  abstime;
+  int              err = 0;
+
+  DBGMSG( "_hmiLockWaitForUpdateRequest: waiting (timeout %dms)", timeout );
+
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+   pthread_mutex_lock( &hmiUpdateMutex );
+
+/*------------------------------------------------------------------------*\
+    Get absolute timestamp for timeout
+\*------------------------------------------------------------------------*/
+  if( timeout>0 ) {
+    gettimeofday( &now, NULL );
+    abstime.tv_sec  = now.tv_sec + timeout/1000;
+    abstime.tv_nsec = now.tv_usec*1000UL +(timeout%1000)*1000UL*1000UL;
+    if( abstime.tv_nsec>1000UL*1000UL*1000UL ) {
+      abstime.tv_nsec -= 1000UL*1000UL*1000UL;
+      abstime.tv_sec++;
+    }
+  }
+
+/*------------------------------------------------------------------------*\
+    Loop while condition is not met (cope with "spurious  wakeups")
+\*------------------------------------------------------------------------*/
+  while( !hmiUpdates ) {
+
+    // wait for condition
+    err = timeout>0 ? pthread_cond_timedwait( &hmiCondUpdate, &hmiUpdateMutex, &abstime )
+                    : pthread_cond_wait( &hmiCondUpdate, &hmiUpdateMutex );
+
+    // Break on errors
+    if( err )
+      break;
+  }
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  DBGMSG( "_hmiLockWaitForUpdateRequest: %s", err?strerror(err):"Locked" );
+  return err;
+}
+
+
+/*=========================================================================*\
+    Thread managing all direct front buffer actions
+\*=========================================================================*/
+static void *_hmiThread( void *arg )
+{
+  IDirectFB            *dfb;
+  DfbtWidget           *screen;
+  int                   width, height;
+  DFBResult             drc;
+  DFBFontDescription    fdsc;
+  double                lastTime;
+
+  DBGMSG( "DirectFB HMI thread: starting." );
+  PTHREADSETNAME( "hmi" );
+
+/*------------------------------------------------------------------------*\
+    Init direct frame buffer and build up screen
+\*------------------------------------------------------------------------*/
+  if( dfbtInit("../resources") ) {
+    hmiState = HmiTerminatedError;
+    return NULL;
+  }
+  dfb = dfbtGetDdb();
+  screen = dfbtGetScreen();
+  dfbtGetSize( screen, &width, &height );
+
+/*------------------------------------------------------------------------*\
+    Get fonts
+\*------------------------------------------------------------------------*/
+  fdsc.flags      = DFDESC_HEIGHT | DFDESC_ATTRIBUTES;
+  fdsc.height     = 1 + 24*height/1024;
+  fdsc.attributes = DFFA_NONE;
+  drc = dfb->CreateFont( dfb, fontfile, &fdsc, &font1 );
+  if( drc!=DFB_OK ) {
+    logerr( "hmiThread: could not find font %s (%s).", fontfile, DirectFBErrorString(drc) );
+    hmiState = HmiTerminatedError;
+    return NULL;
+  }
+
+  fdsc.flags      = DFDESC_HEIGHT | DFDESC_ATTRIBUTES;
+  fdsc.height     = 1 + 48*height/1024;
+  fdsc.attributes = DFFA_NONE;
+  drc = dfb->CreateFont( dfb, fontfile, &fdsc, &font2 );
+  if( drc!=DFB_OK ) {
+    logerr( "hmiThread: could not find font %s (%s).", fontfile, DirectFBErrorString(drc) );
+    DFBRELEASE( font1 );
+    hmiState = HmiTerminatedError;
+    return NULL;
+  }
+
+  fdsc.flags      = DFDESC_HEIGHT | DFDESC_ATTRIBUTES;
+  fdsc.height     = 1 + 16*height/1024;
+  fdsc.attributes = DFFA_NONE;
+  drc = dfb->CreateFont( dfb, fontfile, &fdsc, &font3 );
+  if( drc!=DFB_OK ) {
+    logerr( "hmiThread: could not find font %s (%s).", fontfile, DirectFBErrorString(drc) );
+    DFBRELEASE( font1 );
+    hmiState = HmiTerminatedError;
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Define area for cover art
+\*------------------------------------------------------------------------*/
+  int border = height/100;
+  artRect.w = (DFB_ITEMS-2)*(height/DFB_ITEMS)-2*border;
+  artRect.h = artRect.w;
+  artRect.x = (width/2-artRect.w)/2;
+  artRect.y = border;
+
+/*------------------------------------------------------------------------*\
+    Load logo as default artwork
+\*------------------------------------------------------------------------*/
+  wArtwork = dfbtImage( artRect.w, artRect.h, "icklogo.png", true );
+  if( wArtwork ) {
+   // dfbtSetBackground( wArtwork, &cBlue );
+   dfbtContainerAdd( screen, wArtwork, artRect.x, artRect.y, DfbtAlignTopLeft );
+  }
+
+/*------------------------------------------------------------------------*\
+    Create and add container for playlist elements
+\*------------------------------------------------------------------------*/
+  wPlaylist = dfbtContainer( width/2, height );
+  dfbtContainerAdd( screen, wPlaylist, width, 0, DfbtAlignTopRight );
+  dfbtSetName( wPlaylist, "Playlist Window" );
+
+/*------------------------------------------------------------------------*\
+    Create and add container for status elements
+\*------------------------------------------------------------------------*/
+  wStatus = dfbtContainer( width/2-2*border, height/DFB_ITEMS-border );
+  dfbtSetBackground( wStatus, &cRed );
+  dfbtContainerAdd( screen, wStatus, border, artRect.y+artRect.h+border, DfbtAlignTopLeft );
+  dfbtSetName( wStatus, "Status Window" );
+
+/*------------------------------------------------------------------------*\
+    Create and add container for config elements
+\*------------------------------------------------------------------------*/
+  wConfig = dfbtContainer( width/2-2*border, height/DFB_ITEMS-border );
+  dfbtSetBackground( wConfig, &cGray );
+  dfbtContainerAdd( screen, wConfig, border, artRect.y+artRect.h+height/DFB_ITEMS+border, DfbtAlignTopLeft );
+  dfbtSetName( wConfig, "Config Window" );
+
+/*------------------------------------------------------------------------*\
+    Mark all elements for first update
+\*------------------------------------------------------------------------*/
+  hmiUpdates = HmiElementAll;
+
+/*------------------------------------------------------------------------*\
+    Main loop
+\*------------------------------------------------------------------------*/
+  hmiState = HmiRunning;
+  lastTime = srvtime();
+  while( hmiState==HmiRunning ) {
+    int        rc;
+    double     now, delta;
+    HmiElement theUpdates;
+
+    // Wait for update requests
+    rc = _hmiLockWaitForUpdateRequest( 100 );
+
+    // Timeout?
+    if( rc==ETIMEDOUT ) {
+      pthread_mutex_lock( &hmiUpdateMutex );
+    }
+
+    // Get pending updates
+    theUpdates = hmiUpdates;
+    hmiUpdates = 0;
+
+    // Get time forward
+    now      = srvtime();
+    delta    = now - lastTime;
+    lastTime = now;
+
+    // Forward position counter
+    if( currentSeekPos!=0.0 && playerGetState()==PlayerStatePlay ) {
+      currentSeekPos += delta;
+      theUpdates |= HmiElementPositionSlider;
+      // theUpdates |= HmiElementPositionString;
+    }
+
+    pthread_mutex_unlock( &hmiUpdateMutex );
+
+    DBGMSG( "hmiThread: Running Mainloop with updates %04x...", theUpdates );
+
+    // Nothing to do?
+    if( !theUpdates )
+      continue;
+
+    // Update current item
+    if( theUpdates&HmiElementCurrentItem )
+      _hmiRenderCurrentItem();
+
+    // Update playback queue
+    if( theUpdates&HmiElementPlaybackQueue )
+      _hmiRenderPlaybackQueue();
+
+    // Update player configuration
+    if( theUpdates&HmiElementConfiguration )
+      _hmiRenderConfig();
+
+    // Update player status
+    if( theUpdates&HmiElementState )
+      _hmiRenderState();
+
+    // Update player playback mode
+    if( theUpdates&HmiElementPlaybackMode )
+      _hmiRenderPlaybackMode();
+
+    // Update playback volume
+    if( theUpdates&HmiElementVolume )
+      _hmiRenderVolume();
+
+    // Update audio format
+    if( theUpdates&HmiElementFormat )
+      _hmiRenderFormat();
+
+    // Update position slider
+    if( theUpdates&HmiElementPositionSlider )
+    _hmiRenderPositionSlider();
+
+    // Update position string
+    if( theUpdates&HmiElementPositionString )
+    _hmiRenderPositionString();
+
+    // Redraw screen
+    dfbtRedrawScreen( false );
+  }
+
+
+  DBGMSG( "hmiThread: Shutting down with mode %d...", hmiState );
+
+/*------------------------------------------------------------------------*\
+    Get rid of global containers
+\*------------------------------------------------------------------------*/
+  dfbtRelease( wPlaylist );
+  dfbtRelease( wArtwork );
+  dfbtRelease( wStatus );
+  dfbtRelease( wConfig );
+  dfbtRelease( wStateIcon );
+  dfbtRelease( wRepeatIcon );
+  dfbtRelease( wShuffleIcon );
+  dfbtRelease( wSourceIcon );
+  dfbtRelease( wFormatString1 );
+  dfbtRelease( wFormatString2 );
+  dfbtRelease( wVolumeIcon );
+  dfbtRelease( wVolumeString );
+  dfbtRelease( wPositionIcon );
+  dfbtRelease( wPositionString );
+
+/*------------------------------------------------------------------------*\
+    Release fonts and primary/super interfaces
+\*------------------------------------------------------------------------*/
+  DFBRELEASE( font1 );
+  DFBRELEASE( font2 );
+  DFBRELEASE( font3 );
+
+/*------------------------------------------------------------------------*\
+    Shut down toolkit
+\*------------------------------------------------------------------------*/
+  dfbtShutdown();
+  return NULL;
 }
 
 
