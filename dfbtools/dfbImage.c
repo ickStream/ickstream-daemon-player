@@ -302,13 +302,50 @@ void _dfbtImageDraw( DfbtWidget *widget )
   DBGMSG( "_dfbtImageDraw (%p): \"%s\" ", widget, cacheItem->uri );
 
 /*------------------------------------------------------------------------*\
+    We can do nothing if cache item in in error condition.
+\*------------------------------------------------------------------------*/
+  if( cacheItem->state==DfbtImageError ) {
+    DBGMSG( "_dfbtImageDraw (%p,%s): drawing suspended, cache item in error state",
+            widget, cacheItem->uri );
+    return;
+  }
+
+/*------------------------------------------------------------------------*\
     We can do nothing if item is not complete, mark as dirty.
 \*------------------------------------------------------------------------*/
   if( cacheItem->state!=DfbtImageComplete ) {
-    DBGMSG( "_dfbtImageDraw (%p,%s): drawing suspended, cache not complete",
+    DBGMSG( "_dfbtImageDraw (%p,%s): drawing suspended, cache item not complete",
             widget, cacheItem->uri );
     widget->needsUpdate = true;
     return;
+  }
+
+/*------------------------------------------------------------------------*\
+    Lazily create direct frame buffer and image provider
+\*------------------------------------------------------------------------*/
+  if( !cacheItem->dfbProvider ) {
+    if( !cacheItem->dfbBuffer ) {
+      IDirectFB *dfb = dfbtGetDdb();
+      DFBDataBufferDescription ddsc;
+      ddsc.flags         = DBDESC_MEMORY;
+      ddsc.memory.data   = cacheItem->bufferData;
+      ddsc.memory.length = cacheItem->bufferLen;
+      drc =  dfb->CreateDataBuffer( dfb, &ddsc, &cacheItem->dfbBuffer);
+      if( drc!=DFB_OK ) {
+        logerr( "_dfbtImageDraw (p,%s): could not create data buffer (%s).",
+                cacheItem, cacheItem->uri, DirectFBErrorString(drc) );
+        cacheItem->state = DfbtImageError;
+        return;
+       }
+    }
+    drc = cacheItem->dfbBuffer->CreateImageProvider( cacheItem->dfbBuffer, &cacheItem->dfbProvider );
+    cacheItem->state = DfbtImageComplete;
+    if( drc!=DFB_OK ) {
+      logerr( "_dfbtImageDraw (p,%s): could not create image provider (%s).",
+              cacheItem, cacheItem->uri, DirectFBErrorString(drc) );
+      cacheItem->state = DfbtImageError;
+      return;
+    }
   }
 
 /*------------------------------------------------------------------------*\
@@ -610,36 +647,16 @@ end:
     curl_slist_free_all( addedHeaderFields );
 
 /*------------------------------------------------------------------------*\
-    Create direct frame buffer image provider
+    Mark cache item as complete
 \*------------------------------------------------------------------------*/
-  if( cacheItem->state == DfbtImageLoading ) {
-    IDirectFB *dfb = dfbtGetDdb();
-    DFBDataBufferDescription ddsc;
-    ddsc.flags         = DBDESC_MEMORY;
-    ddsc.memory.data   = cacheItem->bufferData;
-    ddsc.memory.length = cacheItem->bufferLen;
-    DFBResult drc =  dfb->CreateDataBuffer( dfb, &ddsc, &cacheItem->dfbBuffer);
-    if( drc!=DFB_OK ) {
-      logerr( "Image loader thread (p,%s): could not create data buffer (%s).",
-              cacheItem, cacheItem->uri, DirectFBErrorString(drc) );
-      cacheItem->state = DfbtImageError;
-     }
-  }
-  if( cacheItem->state == DfbtImageLoading ) {
-    DFBResult drc = cacheItem->dfbBuffer->CreateImageProvider( cacheItem->dfbBuffer, &cacheItem->dfbProvider );
+  if( cacheItem->state == DfbtImageLoading )
     cacheItem->state = DfbtImageComplete;
-    if( drc!=DFB_OK ) {
-      logerr( "Image loader thread (p,%s): could not create image provider (%s).",
-              cacheItem, cacheItem->uri, DirectFBErrorString(drc) );
-      cacheItem->state = DfbtImageError;
-    }
-    pthread_cond_signal( &cacheItem->condIsComplete );
-  }
+  pthread_cond_signal( &cacheItem->condIsComplete );
 
 /*------------------------------------------------------------------------*\
     Trigger redraw
 \*------------------------------------------------------------------------*/
-  dfbtRedrawScreen( false );
+  // dfbtRedrawScreen( false );
 
 /*------------------------------------------------------------------------*\
     That's all ...
