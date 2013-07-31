@@ -61,6 +61,7 @@ Remarks         : -
 #include <errno.h>
 #include <pthread.h>
 #include <signal.h>
+#include <sys/select.h>
 #include <curl/curl.h>
 
 #include "ickpd.h"
@@ -694,13 +695,37 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
 \*------------------------------------------------------------------------*/
   //DBGMEM( "Binary feed", buffer, size );
   while( size ) {
-    ssize_t bytes;
+    fd_set         wfds;
+    struct timeval tv;
+    int            retval;
+    ssize_t        bytes;
 
     // Terminate feed?
     if( feed->state>FeedConnected ) {
       retVal = errVal;
       break;
     }
+
+    // wait max. 500ms for pipe to be writable
+    FD_ZERO( &wfds );
+    FD_SET( feed->pipefd[1], &wfds);
+    tv.tv_sec  = 0;
+    tv.tv_usec = 500;
+    retval     = select( feed->pipefd[1]+1, NULL, &wfds, NULL, &tv);
+    if( retval<0 ) {
+      logerr( "Feeder thread (%s): select returned %s",
+               feed->uri, strerror(errno) );
+      retVal = errVal;
+      break;
+    }
+    else if( !retval ) {
+      DBGMSG( "Feeder thread(%s): waiting for pipe to be writable...",
+               feed->uri );
+      continue;
+    }
+
+              /* FD_ISSET(0, &rfds) will be true. */
+
 
     // Forward data to pipe (blocking mode)
     bytes = write( feed->pipefd[1], buffer, size );

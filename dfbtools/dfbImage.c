@@ -689,7 +689,7 @@ end:
   for( walk=imageList; walk; walk=NEXTIMAGE(walk) ) {
     DfbtImageData  *imageData = walk->data;
     if( imageData->cacheItem==cacheItem ) {
-      DBGMSG( "Image loader thread (%s): makring widget %p (%s) for update",
+      DBGMSG( "Image loader thread (%s): marking widget %p (%s) for update",
               cacheItem->uri, walk, walk->name );
       walk->needsUpdate = true;
     }
