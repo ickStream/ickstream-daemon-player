@@ -1105,6 +1105,7 @@ static void *_hmiThread( void *arg )
   IDirectFB            *dfb;
   DfbtWidget           *screen;
   int                   width, height;
+  bool                  redrawRequestFlag = false;
   DFBResult             drc;
   DFBFontDescription    fdsc;
   double                lastTime;
@@ -1115,7 +1116,7 @@ static void *_hmiThread( void *arg )
 /*------------------------------------------------------------------------*\
     Init direct frame buffer and build up screen
 \*------------------------------------------------------------------------*/
-  if( dfbtInit("../resources") ) {
+  if( dfbtInit("../resources",&redrawRequestFlag) ) {
     hmiState = HmiTerminatedError;
     return NULL;
   }
@@ -1243,7 +1244,7 @@ static void *_hmiThread( void *arg )
     DBGMSG( "hmiThread: Running Mainloop with updates %04x...", theUpdates );
 
     // Nothing to do?
-    if( !theUpdates )
+    if( !theUpdates && !redrawRequestFlag )
       continue;
 
     // Update current item
@@ -1284,6 +1285,7 @@ static void *_hmiThread( void *arg )
 
     // Redraw screen
     dfbtRedrawScreen( false );
+    redrawRequestFlag = false;
   }
 
 

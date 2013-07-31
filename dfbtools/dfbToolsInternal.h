@@ -83,6 +83,8 @@ struct _dfbtwidget {
        Global symbols 
 \*=========================================================================*/
 extern char *_dfbtResourcePath;
+extern bool *_dfbtRedrawRequestPtr;
+
 
 
 /*=========================================================================*\

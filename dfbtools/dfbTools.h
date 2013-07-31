@@ -114,7 +114,7 @@ typedef enum {
 /*=========================================================================*\
        Prototypes 
 \*=========================================================================*/
-int               dfbtInit( const char *resourcePath );
+int               dfbtInit( const char *resourcePath, bool *redrawRequestFlag );
 void              dfbtShutdown( void );
 IDirectFB        *dfbtGetDdb( void );
 DfbtWidget       *dfbtGetScreen( void );

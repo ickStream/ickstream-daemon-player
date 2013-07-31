@@ -98,16 +98,20 @@ typedef struct _imageCacheItem {
 
 // Extra widget data
 typedef struct {
+  DfbtWidget              *nextImage;          // linked lists of images
   ImageCacheItem          *cacheItem;          // strong
 } DfbtImageData;
 
+#define NEXTIMAGE(widget) (((DfbtImageData*)widget->data)->nextImage)
 
 
 /*=========================================================================*\
     Private symbols
 \*=========================================================================*/
 static pthread_mutex_t   cacheMutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t   imageMutex = PTHREAD_MUTEX_INITIALIZER;
 static ImageCacheItem   *cacheList;
+static DfbtWidget       *imageList;
 
 
 /*=========================================================================*\
@@ -176,6 +180,14 @@ DfbtWidget *dfbtImage( int width, int height, const char *uri, bool isFile )
     Default name
 \*------------------------------------------------------------------------*/
   dfbtSetName( widget, uri );
+
+/*------------------------------------------------------------------------*\
+    Link to list of images
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &imageMutex );
+  imageData->nextImage = imageList;
+  imageList            = widget;
+  pthread_mutex_unlock( &imageMutex );
 
 /*------------------------------------------------------------------------*\
     That's all
@@ -274,8 +286,26 @@ int dfbtImageWaitForComplete( DfbtWidget *widget, int timeout )
 void _dfbtImageDestruct( DfbtWidget *widget )
 {
   DfbtImageData *imageData = widget->data;
+  DfbtWidget    *walk, *last;
 
   DBGMSG( "_dfbImageDestruct (%p): \"%s\"", widget, imageData->cacheItem->uri );
+
+/*------------------------------------------------------------------------*\
+    Unlink from list of images
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &imageMutex );
+  for( walk=imageList,last=NULL; walk; last=walk,walk=NEXTIMAGE(walk) ) {
+    if( walk==widget ) {
+      if( !last )
+        imageList = NEXTIMAGE(walk);
+      else
+        NEXTIMAGE(last) = NEXTIMAGE(walk);
+      break;
+    }
+  }
+  if( !walk )
+    logerr( "_dfbtImageDestruct (%s): not in image list.", widget->name );
+  pthread_mutex_unlock( &imageMutex );
 
 /*------------------------------------------------------------------------*\
     Release cache item and free widget specific part
@@ -311,12 +341,11 @@ void _dfbtImageDraw( DfbtWidget *widget )
   }
 
 /*------------------------------------------------------------------------*\
-    We can do nothing if item is not complete, mark as dirty.
+    We can do nothing if item is not complete.
 \*------------------------------------------------------------------------*/
   if( cacheItem->state!=DfbtImageComplete ) {
     DBGMSG( "_dfbtImageDraw (%p,%s): drawing suspended, cache item not complete",
             widget, cacheItem->uri );
-    widget->needsUpdate = true;
     return;
   }
 
@@ -651,12 +680,28 @@ end:
 \*------------------------------------------------------------------------*/
   if( cacheItem->state == DfbtImageLoading )
     cacheItem->state = DfbtImageComplete;
-  pthread_cond_signal( &cacheItem->condIsComplete );
 
 /*------------------------------------------------------------------------*\
-    Trigger redraw
+    Mark all images referencing this item for redraw
 \*------------------------------------------------------------------------*/
-  // dfbtRedrawScreen( false );
+  DfbtWidget *walk;
+  pthread_mutex_lock( &imageMutex );
+  for( walk=imageList; walk; walk=NEXTIMAGE(walk) ) {
+    DfbtImageData  *imageData = walk->data;
+    if( imageData->cacheItem==cacheItem ) {
+      DBGMSG( "Image loader thread (%s): makring widget %p (%s) for update",
+              cacheItem->uri, walk, walk->name );
+      walk->needsUpdate = true;
+    }
+  }
+  pthread_mutex_unlock( &imageMutex );
+
+/*------------------------------------------------------------------------*\
+    Signal item completeness and set redraw flag
+\*------------------------------------------------------------------------*/
+  pthread_cond_signal( &cacheItem->condIsComplete );
+  if( _dfbtRedrawRequestPtr )
+    *_dfbtRedrawRequestPtr = true;
 
 /*------------------------------------------------------------------------*\
     That's all ...

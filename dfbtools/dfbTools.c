@@ -68,6 +68,7 @@ Remarks         : -
     Global symbols
 \*=========================================================================*/
 char *_dfbtResourcePath;
+bool *_dfbtRedrawRequestPtr;
 
 
 /*=========================================================================*\
@@ -96,7 +97,7 @@ static int _redraw( DfbtWidget *widget, IDirectFBSurface *surf );
 /*=========================================================================*\
     Init toolkit
 \*=========================================================================*/
-int dfbtInit( const char *resourcePath )
+int dfbtInit( const char *resourcePath, bool *redrawRequestFlag  )
 {
   DFBResult             drc;
   DFBSurfaceDescription sdsc;
@@ -105,9 +106,10 @@ int dfbtInit( const char *resourcePath )
   DBGMSG( "dfbtInit: \"%s\"", resourcePath );
 
 /*------------------------------------------------------------------------*\
-    Save resource path
+    Save resource path and redrawRequestFlag
 \*------------------------------------------------------------------------*/
-  _dfbtResourcePath = strdup( resourcePath );
+  _dfbtResourcePath     = strdup( resourcePath );
+  _dfbtRedrawRequestPtr = redrawRequestFlag;
 
 /*------------------------------------------------------------------------*\
     Get super interface
