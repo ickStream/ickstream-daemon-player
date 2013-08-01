@@ -94,15 +94,16 @@ typedef enum {
 
 // HMI elements
 typedef enum {
-  HmiElementCurrentItem    = 0x0001,
-  HmiElementPlaybackQueue  = 0x0002,
-  HmiElementConfiguration  = 0x0004,
-  HmiElementState          = 0x0008,
-  HmiElementPlaybackMode   = 0x0010,
-  HmiElementVolume         = 0x0020,
-  HmiElementFormat         = 0x0040,
-  HmiElementPositionSlider = 0x0080,
-  HmiElementPositionString = 0x0100,
+  HmiElementScreen         = 0x0001,
+  HmiElementCurrentItem    = 0x0002,
+  HmiElementPlaybackQueue  = 0x0004,
+  HmiElementConfiguration  = 0x0008,
+  HmiElementState          = 0x0010,
+  HmiElementPlaybackMode   = 0x0020,
+  HmiElementVolume         = 0x0040,
+  HmiElementFormat         = 0x0080,
+  HmiElementPositionSlider = 0x0100,
+  HmiElementPositionString = 0x0200,
   HmiElementAll            = 0xffff,
 } HmiElement;
 
@@ -158,6 +159,7 @@ static DFBColor cGray    = { 0xFF, 0x20, 0x20, 0x20 };
 \*=========================================================================*/
 static void        _hmiUpdateRequest( HmiElement updates, bool trigger );
 static void       *_hmiThread( void *arg );
+static void        _hmiRedrawRequest( void );
 static DfbtWidget *wPlaylistItem( PlaylistItem *item, int pos, int width, int height, bool isCursor );
 
 
@@ -370,7 +372,7 @@ void hmiNewPosition( double seekPos )
     Reset or start local counter or check and correct deviation
 \*------------------------------------------------------------------------*/
   if( seekPos==0.0 || (currentSeekPos==0.0&&seekPos>0.0) || fabs(seekPos-currentSeekPos)>0.5 ) {
-    if( currentSeekPos>0 && seekPos==0.0 )
+    if( currentSeekPos>0 && seekPos>0.0 )
       DBGMSG( "hmiNewPosition: correcting counter by %.3fs", seekPos-currentSeekPos );
     currentSeekPos = seekPos;
     updates |= HmiElementPositionSlider;
@@ -1098,6 +1100,17 @@ static int _hmiLockWaitForUpdateRequest( int timeout )
 
 
 /*=========================================================================*\
+    Callback for redraw requests from dfbt library
+\*=========================================================================*/
+static void _hmiRedrawRequest( void )
+{
+  DBGMSG( "_hmiRedrawRequest: called." );
+
+  _hmiUpdateRequest( HmiElementScreen, true );
+}
+
+
+/*=========================================================================*\
     Thread managing all direct front buffer actions
 \*=========================================================================*/
 static void *_hmiThread( void *arg )
@@ -1105,7 +1118,6 @@ static void *_hmiThread( void *arg )
   IDirectFB            *dfb;
   DfbtWidget           *screen;
   int                   width, height;
-  bool                  redrawRequestFlag = false;
   DFBResult             drc;
   DFBFontDescription    fdsc;
   double                lastTime;
@@ -1116,7 +1128,7 @@ static void *_hmiThread( void *arg )
 /*------------------------------------------------------------------------*\
     Init direct frame buffer and build up screen
 \*------------------------------------------------------------------------*/
-  if( dfbtInit("../resources",&redrawRequestFlag) ) {
+  if( dfbtInit("../resources",_hmiRedrawRequest) ) {
     hmiState = HmiTerminatedError;
     return NULL;
   }
@@ -1233,7 +1245,7 @@ static void *_hmiThread( void *arg )
     lastTime = now;
 
     // Forward position counter
-    if( currentSeekPos!=0.0 && playerGetState()==PlayerStatePlay ) {
+    if( currentSeekPos>0.0 && playerGetState()==PlayerStatePlay ) {
       currentSeekPos += delta;
       theUpdates |= HmiElementPositionSlider;
       // theUpdates |= HmiElementPositionString;
@@ -1244,7 +1256,7 @@ static void *_hmiThread( void *arg )
     DBGMSG( "hmiThread: Running Mainloop with updates %04x...", theUpdates );
 
     // Nothing to do?
-    if( !theUpdates && !redrawRequestFlag )
+    if( !theUpdates )
       continue;
 
     // Update current item
@@ -1285,7 +1297,6 @@ static void *_hmiThread( void *arg )
 
     // Redraw screen
     dfbtRedrawScreen( false );
-    redrawRequestFlag = false;
   }
 
 

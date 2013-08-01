@@ -118,7 +118,9 @@ static DfbtWidget       *imageList;
     Private prototypes
 \*=========================================================================*/
 static ImageCacheItem *_cacheGetImage( const char *theuri, bool isfile );
-void _cacheItemRelease( ImageCacheItem *dfbi );
+static void  _cacheItemRelease( ImageCacheItem *dfbi );
+static void _cacheGarbageCollection( void );
+static void _cacheItemDestruct( ImageCacheItem *cacheItem, bool lockList );
 
 
 static void *_imageLoaderThread( void *arg );
@@ -393,6 +395,39 @@ void _dfbtImageDraw( DfbtWidget *widget )
 
 
 /*=========================================================================*\
+    Release image cache
+\*=========================================================================*/
+void _dfbtImageFreeCache( void )
+{
+  ImageCacheItem *cacheItem;
+  int             items = 0;
+
+/*------------------------------------------------------------------------*\
+    The list of images should be ampty by now...
+\*------------------------------------------------------------------------*/
+  if( imageList )
+    logwarn( "_dfbtImageFreeCache: list of images not empty!" );
+
+/*------------------------------------------------------------------------*\
+    Release all cache items
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &cacheMutex );
+  while( cacheList ) {
+    cacheItem = cacheList;
+    cacheList = cacheList->next;
+    _cacheItemDestruct( cacheItem, false );
+    items++;
+  }
+  pthread_mutex_unlock( &cacheMutex );
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  DBGMSG( "_dfbtImageFreeCache: freed %d items.", items );
+}
+
+
+/*=========================================================================*\
     Get or create an cached image item
 \*=========================================================================*/
 static ImageCacheItem *_cacheGetImage( const char *uri, bool isfile )
@@ -503,18 +538,97 @@ void _cacheItemRelease( ImageCacheItem *dfbi )
 {
   DBGMSG( "_cacheItemRelease (%p, %s): Now %d references.", dfbi, dfbi->uri, dfbi->refCounter-1 );
 
+/*------------------------------------------------------------------------*\
+    Decrease ref. counter of requested item
+\*------------------------------------------------------------------------*/
   if( --dfbi->refCounter<0 )
     logerr( "_cacheItemRelease (%s): Reached negative reference counter %d",
             dfbi->uri, dfbi->refCounter );
 
-  // fixme: garbage collection
+/*------------------------------------------------------------------------*\
+    Do garbage collection
+\*------------------------------------------------------------------------*/
+  if( dfbi->refCounter<=0 )
+    _cacheGarbageCollection();
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+}
+
+
+/*=========================================================================*\
+    Do garbage collection of cache items
+\*=========================================================================*/
+void _cacheGarbageCollection( void )
+{
+  ImageCacheItem      *cacheItem;
+  ImageCacheItem     **unusedItems;
+  int                  i, countItems, countUnused;
+  bool                 swap;
+
+/*------------------------------------------------------------------------*\
+    Lock cache list and count items
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &cacheMutex );
+  countItems  = 0;
+  countUnused = 0;
+  for( cacheItem=cacheList; cacheItem; cacheItem=cacheItem->next ) {
+    DBGMSG( "_cacheGarbageCollection: item #%3d (%d refs) \"%s\"",
+        countItems, cacheItem->refCounter, cacheItem->uri );
+    countItems++;
+    if( cacheItem->refCounter<=0 )
+      countUnused++;
+  }
+  DBGMSG( "_cacheGarbageCollection: %d items, %d unused", countItems, countUnused );
+
+/*------------------------------------------------------------------------*\
+    Get list of unused items
+\*------------------------------------------------------------------------*/
+  unusedItems = calloc( countUnused, sizeof(ImageCacheItem*) );
+  if( !unusedItems ) {
+    logerr( "_cacheGarbageCollection: out of memory (%d elements)", countUnused );
+    pthread_mutex_unlock( &cacheMutex );
+    return;
+  }
+  for( i=countUnused-1,cacheItem=cacheList; cacheItem; cacheItem=cacheItem->next ) {
+    if( cacheItem->refCounter<=0 )
+      unusedItems[i--] = cacheItem;
+  }
+
+/*------------------------------------------------------------------------*\
+    Bubble sort by timestamp of last usage (low to high)
+\*------------------------------------------------------------------------*/
+  do {
+    swap=false;
+    for( i=0; i<countUnused-1; i++ ) {
+      if( unusedItems[i]->lastaccess>unusedItems[i+1]->lastaccess ) {
+        cacheItem        = unusedItems[i];
+        unusedItems[i]   = unusedItems[i+1];
+        unusedItems[i+1] = cacheItem;
+        swap = true;
+      }
+    }
+  } while( swap );
+
+/*------------------------------------------------------------------------*\
+    Release surplus elements, oldest access first
+\*------------------------------------------------------------------------*/
+  for( i=0; i<countUnused-DfbtImageGarbageThreshold; i++ )
+    _cacheItemDestruct( unusedItems[i], false );
+
+/*------------------------------------------------------------------------*\
+    Free temporary list, unlock cache list, that's all
+\*------------------------------------------------------------------------*/
+  Sfree( unusedItems );
+  pthread_mutex_unlock( &cacheMutex );
 }
 
 
 /*=========================================================================*\
     Destruct an image instance
 \*=========================================================================*/
-void _cacheItemDestruct( ImageCacheItem *cacheItem )
+static void _cacheItemDestruct( ImageCacheItem *cacheItem, bool lockList )
 {
   ImageCacheItem *walk;
   DBGMSG( "_cacheItemDestruct (%p, %s): %d references.",
@@ -524,20 +638,22 @@ void _cacheItemDestruct( ImageCacheItem *cacheItem )
     Check reference counter
 \*------------------------------------------------------------------------*/
   if( cacheItem->refCounter>0 )
-    logerr( "dfbImageDelete (%s): Reference counter still positive %d",
+    logerr( "_cacheItemDestruct (%s): Reference counter still positive %d",
             cacheItem->uri, cacheItem->refCounter );
 
 /*------------------------------------------------------------------------*\
     Unlink from list
 \*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &cacheMutex );
+  if( lockList )
+    pthread_mutex_lock( &cacheMutex );
   if( cacheItem==cacheList )
     cacheList = cacheList->next;
   else
     for( walk=cacheList; walk; walk=walk->next )
       if( walk->next==cacheItem )
         walk->next = walk->next->next;
-  pthread_mutex_unlock( &cacheMutex );
+  if( lockList )
+    pthread_mutex_unlock( &cacheMutex );
 
 /*------------------------------------------------------------------------*\
     Delete mutex and conditions
@@ -700,8 +816,8 @@ end:
     Signal item completeness and set redraw flag
 \*------------------------------------------------------------------------*/
   pthread_cond_signal( &cacheItem->condIsComplete );
-  if( _dfbtRedrawRequestPtr )
-    *_dfbtRedrawRequestPtr = true;
+  if( _dfbtRedrawRequest )
+    _dfbtRedrawRequest();
 
 /*------------------------------------------------------------------------*\
     That's all ...

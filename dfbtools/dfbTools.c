@@ -67,8 +67,8 @@ Remarks         : -
 /*=========================================================================*\
     Global symbols
 \*=========================================================================*/
-char *_dfbtResourcePath;
-bool *_dfbtRedrawRequestPtr;
+char              *_dfbtResourcePath;
+DfbtRedrawRequest  _dfbtRedrawRequest;
 
 
 /*=========================================================================*\
@@ -97,7 +97,7 @@ static int _redraw( DfbtWidget *widget, IDirectFBSurface *surf );
 /*=========================================================================*\
     Init toolkit
 \*=========================================================================*/
-int dfbtInit( const char *resourcePath, bool *redrawRequestFlag  )
+int dfbtInit( const char *resourcePath, DfbtRedrawRequest redrawRequest  )
 {
   DFBResult             drc;
   DFBSurfaceDescription sdsc;
@@ -108,8 +108,8 @@ int dfbtInit( const char *resourcePath, bool *redrawRequestFlag  )
 /*------------------------------------------------------------------------*\
     Save resource path and redrawRequestFlag
 \*------------------------------------------------------------------------*/
-  _dfbtResourcePath     = strdup( resourcePath );
-  _dfbtRedrawRequestPtr = redrawRequestFlag;
+  _dfbtResourcePath  = strdup( resourcePath );
+  _dfbtRedrawRequest = redrawRequest;
 
 /*------------------------------------------------------------------------*\
     Get super interface
@@ -174,6 +174,11 @@ void dfbtShutdown( void )
   dfbtContainerRemove( screen, NULL );
   dfbtRelease( screen );
   screen = NULL;
+
+/*------------------------------------------------------------------------*\
+  Free image cache
+\*------------------------------------------------------------------------*/
+  _dfbtImageFreeCache();
 
 /*------------------------------------------------------------------------*\
   Free dfb main interface

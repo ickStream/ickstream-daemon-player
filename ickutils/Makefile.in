@@ -61,7 +61,7 @@ $(LIBDIR)/$(LIBNAME).a: $(LIBOBJ)
 depend:
 	@echo '*************************************************************'
 	@echo "Creating dependencies:"
-	makedepend $(MKDEPFLAGS) -- $(INCLUDES) $(CFLAGS) -- $(SRC) 2>/dev/null
+	makedepend $(MKDEPFLAGS) -- $(INCLUDES) $(CFLAGS) -- $(LIBSRC) 2>/dev/null
 
 
 # How to clean temporary files

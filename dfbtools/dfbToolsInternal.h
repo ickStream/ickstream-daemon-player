@@ -61,6 +61,10 @@ Remarks         : -
        Macro and type definitions 
 \*=========================================================================*/
 
+// Number of unused elements in image buffer
+#define DfbtImageGarbageThreshold 100
+
+
 // A toolkit widget
 struct _dfbtwidget {
   DfbtWidgetType           type;
@@ -82,8 +86,8 @@ struct _dfbtwidget {
 /*=========================================================================*\
        Global symbols 
 \*=========================================================================*/
-extern char *_dfbtResourcePath;
-extern bool *_dfbtRedrawRequestPtr;
+extern char              *_dfbtResourcePath;
+extern DfbtRedrawRequest  _dfbtRedrawRequest;
 
 
 
@@ -101,6 +105,7 @@ void        _dfbtTextDraw( DfbtWidget *widget );
 
 void        _dfbtImageDestruct( DfbtWidget *widget );
 void        _dfbtImageDraw( DfbtWidget *widget );
+void        _dfbtImageFreeCache( void );
 
 
 #endif  /* __DFBTTOOLSINTERNAL_H */

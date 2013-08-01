@@ -62,6 +62,8 @@ Remarks         : -
 
 #define DFBRELEASE(a) ((a)->Release(a),(a)=NULL)
 
+typedef void (*DfbtRedrawRequest)( void );
+
 // A toolkit widget
 struct _dfbtwidget;
 typedef struct _dfbtwidget DfbtWidget;
@@ -114,7 +116,7 @@ typedef enum {
 /*=========================================================================*\
        Prototypes 
 \*=========================================================================*/
-int               dfbtInit( const char *resourcePath, bool *redrawRequestFlag );
+int               dfbtInit( const char *resourcePath, DfbtRedrawRequest redrawRequest );
 void              dfbtShutdown( void );
 IDirectFB        *dfbtGetDdb( void );
 DfbtWidget       *dfbtGetScreen( void );
