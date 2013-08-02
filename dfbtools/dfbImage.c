@@ -334,6 +334,11 @@ void _dfbtImageDraw( DfbtWidget *widget )
   DBGMSG( "_dfbtImageDraw (%p): \"%s\" ", widget, cacheItem->uri );
 
 /*------------------------------------------------------------------------*\
+    Count access
+\*------------------------------------------------------------------------*/
+  cacheItem->lastaccess = srvtime();
+
+/*------------------------------------------------------------------------*\
     We can do nothing if cache item in in error condition.
 \*------------------------------------------------------------------------*/
   if( cacheItem->state==DfbtImageError ) {
@@ -478,6 +483,7 @@ static ImageCacheItem *_cacheGetImage( const char *uri, bool isfile )
   cacheItem->refCounter = 1;
   cacheItem->state      = DfbtImageInitialized;
   cacheItem->uri        = theuri;   // already dupped
+  cacheItem->lastaccess = srvtime();
 
 /*------------------------------------------------------------------------*\
     Files: Try to read directly
@@ -574,8 +580,8 @@ void _cacheGarbageCollection( void )
   countItems  = 0;
   countUnused = 0;
   for( cacheItem=cacheList; cacheItem; cacheItem=cacheItem->next ) {
-    DBGMSG( "_cacheGarbageCollection: item #%3d (%d refs) \"%s\"",
-        countItems, cacheItem->refCounter, cacheItem->uri );
+    DBGMSG( "_cacheGarbageCollection: item #%3d (%d refs, last access %.4lf) \"%s\"",
+        countItems, cacheItem->refCounter, cacheItem->lastaccess, cacheItem->uri );
     countItems++;
     if( cacheItem->refCounter<=0 )
       countUnused++;

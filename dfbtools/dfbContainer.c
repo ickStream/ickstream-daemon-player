@@ -88,7 +88,7 @@ Remarks         : -
 \*=========================================================================*/
 #ifdef CONSISTENCYCHECKING
 #define CHKLIST( p ) _containerCheckList( __FILE__, __LINE__, (p) );
-static int _containerCheckList( const char *file, int line, DfbtWidget *widget );
+static void _containerCheckList( const char *file, int line, DfbtWidget *widget );
 #else
 #define CHKLIST( p ) {}
 #endif
@@ -455,7 +455,7 @@ DfbtWidget *dfbtContainerFind( DfbtWidget *root, DfbtWidget *widget )
 \*=========================================================================*/
 #ifdef CONSISTENCYCHECKING
 
-static int _containerCheckList( const char *file, int line, DfbtWidget *widget )
+static void _containerCheckList( const char *file, int line, DfbtWidget *widget )
 {
   DfbtWidget *walk;
   int         i;
