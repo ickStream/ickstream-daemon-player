@@ -148,6 +148,7 @@ static AudioFormat        currentFormat;
 
 
                           // A,    R,    G,    B
+static DFBColor cBlack   = { 0xFF, 0x00, 0x00, 0x00 };
 static DFBColor cWhite   = { 0xFF, 0xFF, 0xFF, 0xFF };
 static DFBColor cRed     = { 0xFF, 0x80, 0x00, 0x00 };
 static DFBColor cBlue    = { 0xFF, 0x00, 0x00, 0x80 };
@@ -1135,6 +1136,7 @@ static void *_hmiThread( void *arg )
   dfb = dfbtGetDdb();
   screen = dfbtGetScreen();
   dfbtGetSize( screen, &width, &height );
+  dfbtSetBackground( screen, &cBlack );
 
 /*------------------------------------------------------------------------*\
     Get fonts
@@ -1222,6 +1224,7 @@ static void *_hmiThread( void *arg )
 \*------------------------------------------------------------------------*/
   hmiState = HmiRunning;
   lastTime = srvtime();
+  _hmiUpdateRequest( HmiElementScreen, false );
   while( hmiState==HmiRunning ) {
     int        rc;
     double     now, delta;
