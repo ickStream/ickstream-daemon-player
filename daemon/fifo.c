@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-// #undef ICK_DEBUG
+#undef ICK_DEBUG
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -515,22 +515,109 @@ void fifoUnlockAfterWrite( Fifo *fifo, size_t size )
 }
 
 
+/*=========================================================================*\
+    Copy data to fifo and unlock - caller has to lock fifo first
+      returns the data actually copied
+\*=========================================================================*/
+size_t fifoFillAndUnlock( Fifo *fifo, const char *src, size_t bytes )
+{
+  size_t space;
+  size_t written = 0;
+  DBGMSG( "Fifo (%p,%s): fill with %ld bytes",
+                      fifo, fifo->name?fifo->name:"<unknown>", (long)bytes );
+
+/*------------------------------------------------------------------------*\
+    This is an error!
+\*------------------------------------------------------------------------*/
+  if( fifo->isDraining )
+    logerr( "Fifo (%s): writing %ld bytes in draining mode.",
+        fifo, fifo->name?fifo->name:"<unknown>", (long) bytes );
+
+/*------------------------------------------------------------------------*\
+    Get size of first trunk (up to end) and
+    check if there is actually something to do
+\*------------------------------------------------------------------------*/
+  space = fifoGetSize( fifo, FifoNextWritable );
+  if( space && bytes ) {
+
+/*------------------------------------------------------------------------*\
+    All data fits in as one piece
+\*------------------------------------------------------------------------*/
+    if( bytes<=space ) {
+
+      // Copy data and increment write pointer
+      memcpy( (char*)fifo->writep, src, bytes );
+      written       = bytes;
+      fifo->writep += written;
+
+      // wrapping?
+      if( fifo->writep>=fifo->buffer+fifo->size )
+        fifo->writep = fifo->buffer;
+    }
+
+/*------------------------------------------------------------------------*\
+    Need to split data in two parts
+\*------------------------------------------------------------------------*/
+    else {
+
+      // Copy first part till end of buffer, wrap write pointer
+      memcpy( (char*)fifo->writep, src, space );
+      written = space;
+      bytes  -= space;
+      src    += space;
+      fifo->writep = fifo->buffer;
+
+      // Copy second part
+      space = MIN( bytes, fifoGetSize(fifo,FifoNextWritable) );
+      memcpy( (char*)fifo->writep, src, space );
+      written      += space;
+      fifo->writep += space;
+    }
+
+/*------------------------------------------------------------------------*\
+    Is buffer full?
+\*------------------------------------------------------------------------*/
+    fifo->isFull = (fifo->writep==fifo->readp);
+  }
+
+/*------------------------------------------------------------------------*\
+    Release mutex
+\*------------------------------------------------------------------------*/
+  pthread_mutex_unlock( &fifo->mutex );
+
+/*------------------------------------------------------------------------*\
+    Check for conditions: read first
+\*------------------------------------------------------------------------*/
+  if( FifoIsReadable(fifo) )
+    pthread_cond_signal( &fifo->condIsReadable );
+  if( fifo->isDraining ) {
+    if( FifoIsEmpty(fifo) )
+      pthread_cond_signal( &fifo->condIsDrained );
+  }
+  else if( FifoIsWritable(fifo) )
+    pthread_cond_signal( &fifo->condIsWritable );
+
+/*------------------------------------------------------------------------*\
+    Return number of bytes written
+\*------------------------------------------------------------------------*/
+  return written;
+}
 
 
 /*=========================================================================*\
-      Get ring buffer sizes 
-        Note: the maximum fill size is size -1 
+      Get ring buffer sizes
+        Note: the maximum fill size is size -1
               (else wp==rp would indicate the empty condition)
 \*=========================================================================*/
 size_t fifoGetSize( Fifo *fifo, FifoSizeMode mode )
 {
   char *endp = fifo->buffer+fifo->size;
-  
+
 /*------------------------------------------------------------------------*\
-    Return size as requested by mode 
+    Return size as requested by mode
 \*------------------------------------------------------------------------*/
   switch( mode ) {
-  
+
     // Ring buffer size
     case FifoTotal:
       return fifo->size;
@@ -550,24 +637,24 @@ size_t fifoGetSize( Fifo *fifo, FifoSizeMode mode )
       if( fifo->readp<=fifo->writep )
         return (fifo->readp-fifo->buffer) + (endp-fifo->writep);
       return fifo->readp - fifo->writep;
-      
-    // Size of next readable chunk (takes wrapping into account) 
+
+    // Size of next readable chunk (takes wrapping into account)
     case FifoNextReadable:
       if( fifo->isFull || fifo->readp>fifo->writep )
         return endp - fifo->readp;
       return fifo->writep - fifo->readp;
-      
 
-    // Size of next writable chunk (takes wrapping into account) 
+
+    // Size of next writable chunk (takes wrapping into account)
     case FifoNextWritable:
       if( fifo->isFull || fifo->readp>fifo->writep )
         return fifo->readp - fifo->writep;
       return endp - fifo->writep;
-      
+
   }
-  
+
 /*------------------------------------------------------------------------*\
-    Unknown mode 
+    Unknown mode
 \*------------------------------------------------------------------------*/
   logerr( "Fifo (%s): unknown getSize mode %d",
            fifo->name?fifo->name:"<unknown>", mode );

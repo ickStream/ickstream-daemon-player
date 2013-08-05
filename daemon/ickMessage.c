@@ -156,14 +156,14 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
   // DBGMSG( "ickMessage from %s: parsed.", szDeviceId );
   
 /*------------------------------------------------------------------------*\
-    Get request ID
+    Get request ID - if there is  none this is a notification
 \*------------------------------------------------------------------------*/
   rpcId = json_object_get( jRoot, "id" );
   if( !rpcId ) {
-    logerr( "ickMessage from %s contains no id: %s", sourceUUID, message );
-    rpcErrCode    = RPC_INVALID_REQUEST;
-    rpcErrMessage = "RPC header contains no Id";
-    goto rpcError;
+    loginfo( "ickMessage from %s is a notification (no id): %s", sourceUUID, message );
+    json_decref( jRoot );
+    Sfree( message );
+    return;
   }
   // DBGMSG( "ickMessage from %s: found id.", szDeviceId );
 

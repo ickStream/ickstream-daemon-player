@@ -710,7 +710,7 @@ static size_t _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void 
     FD_ZERO( &wfds );
     FD_SET( feed->pipefd[1], &wfds);
     tv.tv_sec  = 0;
-    tv.tv_usec = 500;
+    tv.tv_usec = 500*1000;
     retval     = select( feed->pipefd[1]+1, NULL, &wfds, NULL, &tv);
     if( retval<0 ) {
       logerr( "Feeder thread (%s): select returned %s",

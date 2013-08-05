@@ -113,6 +113,7 @@ struct _codecInstance {
   void                        *instanceData;           // handled by individual codec
   int                          fdIn;
   Fifo                        *fifoOut;                // weak
+  long                         bytesDelivered;
   CodecFormatCallback          formatCallback;
   void                        *formatCallbackUserData; // weak
   CodecMetaCallback            metaCallback;

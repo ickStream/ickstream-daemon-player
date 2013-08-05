@@ -416,16 +416,25 @@ int codecSetVolume( CodecInstance *instance, double volume, bool muted )
 \*=========================================================================*/
 int codecGetSeekTime( CodecInstance *instance, double *pos )
 {
+  int          rc    = 0;
   const Codec *codec = instance->codec;
 
-  // Not supported?
-  if( !codec->getSeekTime ) {
-    logwarn( "codecGetSeekTime (%s): Seek position not supported.", codec->name );
-    return -1;
-  }
+/*------------------------------------------------------------------------*\
+    Use function supplied by codec (if any)
+\*------------------------------------------------------------------------*/
+  if( codec->getSeekTime )
+    rc = codec->getSeekTime( instance, pos );
 
-  // Call codec function
-  int rc = codec->getSeekTime( instance, pos );
+/*------------------------------------------------------------------------*\
+    Calculate position from bytes delivered
+\*------------------------------------------------------------------------*/
+  else
+    *pos = instance->bytesDelivered/(instance->format.channels*(instance->format.bitWidth/8))
+           / (double)instance->format.sampleRate;
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
   DBGMSG( "codecGetSeekTime (%s,%p): %.2lfs", codec->name, instance, *pos );
   return rc;
 }
@@ -438,7 +447,6 @@ const AudioFormat *codecGetAudioFormat( CodecInstance *instance )
 {
   return &instance->format;
 }
-
 
 
 /*=========================================================================*\
@@ -458,6 +466,7 @@ static void *_codecThread( void *arg )
   if( instance->codec->newInstance(instance) ) {
     logerr( "Codec thread (%s): Could not init instance.", codec->name );
     instance->state = CodecTerminatedError;
+    pthread_cond_signal( &instance->condEndOfTrack );
     return NULL;
   }
 
@@ -487,7 +496,8 @@ static void *_codecThread( void *arg )
 
     // Unlock fifo
     fifoUnlockAfterWrite( instance->fifoOut, size );
-    
+    instance->bytesDelivered += size;
+
     // Be verbose
     DBGMSG( "Codec thread (%s,%p): %ld bytes written to output (space=%ld, rc=%d)",
             codec->name, instance, (long)size, (long)space, rc );

@@ -96,6 +96,7 @@ int         fifoLockWaitDrained( Fifo *fifo, int timeout );
 void        fifoUnlock( Fifo *fifo );
 void        fifoUnlockAfterRead( Fifo *fifo, size_t size );
 void        fifoUnlockAfterWrite( Fifo *fifo, size_t size );
+size_t      fifoFillAndUnlock( Fifo *fifo, const char *src, size_t bytes );
 size_t      fifoGetSize( Fifo *fifo, FifoSizeMode mode );
 int         fifoDataWritten( Fifo *fifo, size_t size );
 int         fifoDataConsumed( Fifo *fifo, size_t size );

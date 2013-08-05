@@ -1431,17 +1431,17 @@ if( playlistItemGetType(item)==PlaylistItemStream &&
     logerr( "_playItem (%s): Could not scrobble track.", playlistItemGetText(item)  );
 
 /*------------------------------------------------------------------------*\
+    Get rid of feed
+\*------------------------------------------------------------------------*/
+  if( feed && audioFeedDelete(feed,true) )
+    logerr( "_playItem (%s): Could not delete feeder instance.", playlistItemGetText(item)  );
+
+/*------------------------------------------------------------------------*\
     Get rid of codec instance
 \*------------------------------------------------------------------------*/
   codecInstance = NULL;
   if( codecDeleteInstance(codecInst,true) )
     logerr( "_playItem (%s): Could not delete codec instance.", playlistItemGetText(item)  );
-
-/*------------------------------------------------------------------------*\
-    Get rid of feed
-\*------------------------------------------------------------------------*/
-  if( feed && audioFeedDelete(feed,true) )
-    logerr( "_playItem (%s): Could not delete feeder instance.", playlistItemGetText(item)  );
 
 /*------------------------------------------------------------------------*\
     That's it
@@ -1558,6 +1558,15 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, Audi
         refFormat.sampleRate = atoi( json_string_value(jObj) );
       else
         refFormat.sampleRate = -1;
+
+      // Get sample size (optional)
+      jObj = json_object_get( jStreamRef, "sampleSize" );
+      if( jObj && json_is_integer(jObj) )
+        refFormat.bitWidth = json_integer_value( jObj );
+      else if( jObj && json_is_string(jObj) )    // workaround
+        refFormat.bitWidth = atoi( json_string_value(jObj) );
+      else
+        refFormat.bitWidth = -1;
 
       // Get number of channels (optional)
       jObj = json_object_get( jStreamRef, "channels" );

@@ -74,6 +74,9 @@ Remarks         : -
 #ifdef ICK_MPG123
 #include "codecMpg123.h"
 #endif
+#ifdef ICK_FLAC
+#include "codecFlac.h"
+#endif
 
 
 /*=========================================================================*\
@@ -118,6 +121,10 @@ _audioRegister( audioNullDescriptor() );
   codecRegister( mpg123Descriptor() );
 #endif
   
+#ifdef ICK_FLAC
+  codecRegister( flacDescriptor() );
+#endif
+
 /*------------------------------------------------------------------------*\
     That's all if no device name is given
 \*------------------------------------------------------------------------*/

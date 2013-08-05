@@ -86,7 +86,6 @@ Remarks         : -
 static bool   _codecCheckType(const char *type, const AudioFormat *format );
 static int    _codecNewInstance( CodecInstance *instance ); 
 static int    _codecDeleteInstance( CodecInstance *instance ); 
-static int    _codecGetSeekTime( CodecInstance *instance, double *pos );  
 
 static FLAC__StreamDecoderReadStatus _read_callback( const FLAC__StreamDecoder *decoder, FLAC__byte buffer[], size_t *bytes, void *client_data );
 static FLAC__StreamDecoderWriteStatus _write_callback( const FLAC__StreamDecoder *decoder, const FLAC__Frame *frame, const FLAC__int32 * const buffer[], void *client_data );
@@ -116,7 +115,7 @@ Codec *flacDescriptor( void )
   codec.deleteInstance = &_codecDeleteInstance;
   codec.deliverOutput  = NULL;
   codec.setVolume      = NULL;
-  codec.getSeekTime    = &_codecGetSeekTime;
+  codec.getSeekTime    = NULL;
   
 /*------------------------------------------------------------------------*\
     That's it
@@ -178,7 +177,6 @@ static int _codecNewInstance( CodecInstance *instance )
 \*------------------------------------------------------------------------*/
   instance->instanceData = decoder;
 
-
 /*------------------------------------------------------------------------*\
     Set md5 checking
 \*------------------------------------------------------------------------*/
@@ -203,15 +201,25 @@ static int _codecNewInstance( CodecInstance *instance )
 \*------------------------------------------------------------------------*/
   if( !FLAC__stream_decoder_process_until_end_of_stream(decoder) ) {
     FLAC__StreamDecoderState state = FLAC__stream_decoder_get_state( decoder );
-    logerr( "flac: decoder returend with error (%s).",
+    logerr( "flac: decoder returned with error (%s).",
             FLAC__StreamDecoderStateString[state] );
     return -1;
   }
+
+/*------------------------------------------------------------------------*\
+    Have a brief look on the exit state in debug mode
+\*------------------------------------------------------------------------*/
 #ifdef ICK_DEBUG
   FLAC__StreamDecoderState state = FLAC__stream_decoder_get_state( decoder );
   DBGMSG( "flac (%p): decoder returned (%s).",
            instance, FLAC__StreamDecoderStateString[state] );
 #endif
+
+/*------------------------------------------------------------------------*\
+    Signal end of track
+\*------------------------------------------------------------------------*/
+  instance->state = CodecEndOfTrack;
+  pthread_cond_signal( &instance->condEndOfTrack );
 
 /*------------------------------------------------------------------------*\
     That's all
@@ -257,43 +265,6 @@ static int _codecDeleteInstance( CodecInstance *instance )
 
 
 /*=========================================================================*\
-      Get seek position (in seconds)
-\*=========================================================================*/
-static int _codecGetSeekTime( CodecInstance *instance, double *pos )
-{
-  FLAC__StreamDecoder *decoder = (FLAC__StreamDecoder*)instance->instanceData;
-  FLAC__bool    rc;
-  FLAC__uint64 bytepos;
-
-/*------------------------------------------------------------------------*\
-    Get position from library
-\*------------------------------------------------------------------------*/ 
-  pthread_mutex_lock( &instance->mutex ); 
-  rc = FLAC__stream_decoder_get_decode_position( decoder, &bytepos );
-  pthread_mutex_unlock( &instance->mutex );
-  if( !rc ) {
-    logerr( "flac: could not get decoder position." );
-    return -1;
-  }
-
-/*------------------------------------------------------------------------*\
-    Not yet started?
-\*------------------------------------------------------------------------*/
-  if( !audioFormatIsComplete(&instance->format) ) {
-    *pos = 0;
-    return 0;
-  }
-
-/*------------------------------------------------------------------------*\
-    Calculate value (samples/samplerate)
-\*------------------------------------------------------------------------*/  
-  *pos = bytepos/(instance->format.channels*(instance->format.bitWidth/8))
-         / (double)instance->format.sampleRate;
-  return 0; 
-}
-
-
-/*=========================================================================*\
        Callback for data input to codec
 \*=========================================================================*/
 static FLAC__StreamDecoderReadStatus _read_callback( const FLAC__StreamDecoder *decoder, FLAC__byte buffer[], size_t *bytes, void *client_data )
@@ -308,7 +279,7 @@ static FLAC__StreamDecoderReadStatus _read_callback( const FLAC__StreamDecoder *
 \*------------------------------------------------------------------------*/
   if( instance->state!=CodecRunning ) {
     DBGMSG( "flac (%p): detected cancellation.", instance );
-    return FLAC__STREAM_DECODER_READ_STATUS_END_OF_STREAM;
+    return FLAC__STREAM_DECODER_READ_STATUS_ABORT;
   }
 
 /*------------------------------------------------------------------------*\
@@ -401,7 +372,7 @@ static FLAC__StreamDecoderWriteStatus _write_callback( const FLAC__StreamDecoder
 \*=========================================================================*/
 static int _fifo_write_le( CodecInstance *instance, FLAC__int32 sample, unsigned int bytes )
 {
-  int    rc;
+  int rc;
 
 /*------------------------------------------------------------------------*\
     Loop while fifo not ready
@@ -421,27 +392,22 @@ static int _fifo_write_le( CodecInstance *instance, FLAC__int32 sample, unsigned
     }
 
     // Not enough space in fifo?
-    size_t space = fifoGetSize( instance->fifoOut, FifoNextWritable );
+    size_t space = fifoGetSize( instance->fifoOut, FifoTotalFree );
     if( space<bytes ) {
       fifoUnlockAfterWrite( instance->fifoOut, 0 );
-      DBGMSG( "flac(%p): not enough sapce in fifo %ld<%d bytes",
+      DBGMSG( "flac (%p): not enough space in fifo %ld<%d bytes",
               instance, (long)space, bytes );
       continue;
     }
 
     // Be verbose
-    DBGMSG( "flac(%p): writing %d bytes to output (space=%ld)",
-            instance, bytes, (long)space );
+    // DBGMSG( "flac(%p): writing %d bytes low end to output (space=%ld)", instance, bytes, (long)space );
 
-    // Transcript data
-    unsigned char *ptr = (unsigned char *) fifoGetWritePtr( instance->fifoOut );
-    while( bytes ) {
-      *ptr = sample&0xff;
-      sample >>= 8;
-    }
+    // Transcript data low end first
+    fifoFillAndUnlock( instance->fifoOut, (char*)&sample, bytes );
 
-    // Unlock fifo and leave wait loop
-    fifoUnlockAfterWrite( instance->fifoOut, bytes );
+    // Count bytes and leave wait loop
+    instance->bytesDelivered += bytes;
     break;
   }
 
@@ -450,6 +416,7 @@ static int _fifo_write_le( CodecInstance *instance, FLAC__int32 sample, unsigned
 \*------------------------------------------------------------------------*/
   return 0;
 }
+
 
 /*=========================================================================*\
        Callback for handling meta data
@@ -464,10 +431,10 @@ static void _metadata_callback( const FLAC__StreamDecoder *decoder, const FLAC__
     Info about stream content
 \*------------------------------------------------------------------------*/
   if( metadata->type==FLAC__METADATA_TYPE_STREAMINFO ) {
-    DBGMSG( "flac (%p): sample rate     %u Hz", metadata->data.stream_info.sample_rate );
-    DBGMSG( "flac (%p): channels        %u", metadata->data.stream_info.channels );
-    DBGMSG( "flac (%p): bits per sample %u", metadata->data.stream_info.bits_per_sample );
-    DBGMSG( "flac (%p): total samples   %" PRIu64, metadata->data.stream_info.bits_per_sample );
+    DBGMSG( "flac (%p): sample rate     %u Hz", instance, metadata->data.stream_info.sample_rate );
+    DBGMSG( "flac (%p): channels        %u", instance, metadata->data.stream_info.channels );
+    DBGMSG( "flac (%p): bits per sample %u", instance, metadata->data.stream_info.bits_per_sample );
+    DBGMSG( "flac (%p): total samples   %llu", instance, (long long unsigned)metadata->data.stream_info.bits_per_sample );
 
     // Set data
     instance->format.sampleRate = metadata->data.stream_info.sample_rate;
@@ -489,7 +456,10 @@ static void _metadata_callback( const FLAC__StreamDecoder *decoder, const FLAC__
 \*=========================================================================*/
 static void _error_callback( const FLAC__StreamDecoder *decoder, FLAC__StreamDecoderErrorStatus status, void *client_data )
 {
+  CodecInstance *instance = (CodecInstance *) client_data;
+
   logerr( "flac: Got error (%s).", FLAC__StreamDecoderErrorStatusString[status] );
+  instance->state = CodecTerminatedError;
 }
 
 
