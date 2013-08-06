@@ -222,24 +222,34 @@ void fifoLock( Fifo *fifo )
 /*=========================================================================*\
       Lock fifo and wait for writable (usedSize<lowWatermark) condition
         timeout is in ms, 0 or a negative values are treated as infinity
+        bytes is minimum size required (might be 0)
         returns 0 and locks fifo, if condition is met
                 std. errode (ETIMEDOUT in case of timeout) and no locking otherwise 
 \*=========================================================================*/
-int fifoLockWaitWritable( Fifo *fifo, int timeout )
+int fifoLockWaitWritable( Fifo *fifo, int timeout, size_t bytes )
 {
   struct timeval  now;
   struct timespec abstime;
   int             err = 0;
 
-  DBGMSG( "Fifo (%p,%s): waiting for writable: used=%ld <? low mark=%ld, timeout %dms",
-          fifo, fifo->name?fifo->name:"<unknown>",
-          (long)fifoGetSize(fifo,FifoTotalUsed), (long)fifo->lowWatermark, timeout ); 
+/*------------------------------------------------------------------------*\
+    Check limit
+\*------------------------------------------------------------------------*/
+  if( bytes>fifo->size ) {
+    logerr( "fifoLockWaitWritable: requested size (%ld) is larger then fifo (%ld).",
+        bytes, fifo->size );
+  }
 
 /*------------------------------------------------------------------------*\
     Lock mutex
 \*------------------------------------------------------------------------*/
    pthread_mutex_lock( &fifo->mutex );
-  
+
+   DBGMSG( "Fifo (%p,%s): waiting for writable: used=%ld <? low mark=%ld, timeout %dms, requested=%ld <? free=%ld",
+           fifo, fifo->name?fifo->name:"<unknown>",
+           (long)fifoGetSize(fifo,FifoTotalUsed), (long)fifo->lowWatermark, timeout,
+           (long)bytes, (long)fifoGetSize(fifo,FifoTotalFree) );
+
 /*------------------------------------------------------------------------*\
     Get absolute timestamp for timeout
 \*------------------------------------------------------------------------*/
@@ -254,9 +264,9 @@ int fifoLockWaitWritable( Fifo *fifo, int timeout )
   }
 
 /*------------------------------------------------------------------------*\
-    Loop while condition is not met (cope with "spurious  wakeups")
+    Loop while condition is not met (cope with "spurious wakeups")
 \*------------------------------------------------------------------------*/
-  while( !FifoIsWritable(fifo) ) {
+  while( !FifoIsWritable(fifo) || (bytes&&fifoGetSize(fifo,FifoTotalFree)<bytes) ) {
 
     // wait for condition
     err = timeout>0 ? pthread_cond_timedwait( &fifo->condIsWritable, &fifo->mutex, &abstime )

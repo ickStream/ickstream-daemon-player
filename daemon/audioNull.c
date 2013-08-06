@@ -232,6 +232,7 @@ static void *_ifThread( void *arg )
     Thread main loop  
 \*------------------------------------------------------------------------*/
   aif->state = AudioIfRunning;
+  pthread_cond_signal( &aif->condIsReady );
   while( aif->state==AudioIfRunning ) {
     int    rc;
         

@@ -380,8 +380,10 @@ static int _fifo_write_le( CodecInstance *instance, FLAC__int32 sample, unsigned
   while( instance->state==CodecRunning ) {
 
     // Wait max. 500 ms for free space in output fifo
-    rc = fifoLockWaitWritable( instance->fifoOut, 500 );
+    rc = fifoLockWaitWritable( instance->fifoOut, 500, bytes );
     if( rc==ETIMEDOUT ) {
+      DBGMSG( "flac (%p): timed out while waiting for write (%d bytes).",
+              instance, bytes );
       continue;
     }
     if( rc ) {
@@ -397,6 +399,7 @@ static int _fifo_write_le( CodecInstance *instance, FLAC__int32 sample, unsigned
       fifoUnlockAfterWrite( instance->fifoOut, 0 );
       DBGMSG( "flac (%p): not enough space in fifo %ld<%d bytes",
               instance, (long)space, bytes );
+
       continue;
     }
 

@@ -55,6 +55,9 @@ Remarks         : -
 #include <string.h>
 #include <ctype.h>
 #include <strings.h>
+#include <pthread.h>
+#include <sys/time.h>
+
 
 #include "ickutils.h"
 #include "codec.h"
@@ -573,12 +576,20 @@ AudioIf *audioIfNew( const AudioBackend *backend, const char *device, size_t fif
   }
 
 /*------------------------------------------------------------------------*\
+    Init mutex and conditions
+\*------------------------------------------------------------------------*/
+  ickMutexInit( &aif->mutex );
+  pthread_cond_init( &aif->condIsReady, NULL );
+
+/*------------------------------------------------------------------------*\
     Initialize instance 
 \*------------------------------------------------------------------------*/
   if( backend->newIf(aif) ) {	
     logerr( "audioIfNew (%s): Unable to init audio interface \"%s\"",
             backend->name, device );
     fifoDelete( aif->fifoIn );
+    pthread_mutex_destroy( &aif->mutex );
+    pthread_cond_destroy( &aif->condIsReady );
     Sfree( aif->devName );
     Sfree( aif );
     return NULL;
@@ -601,13 +612,91 @@ int audioIfDelete( AudioIf *aif, AudioTermMode mode )
   DBGMSG( "Audio instance (%p,%s): Deleting (mode %d).",
            aif, aif->backend->name, mode );
 
+/*------------------------------------------------------------------------*\
+    Call instance destructor
+\*------------------------------------------------------------------------*/
   rc = aif->backend->deleteIf( aif, mode );
 
+/*------------------------------------------------------------------------*\
+    Delete fifo
+\*------------------------------------------------------------------------*/
   if( aif->fifoIn )
     fifoDelete( aif->fifoIn );
+
+/*------------------------------------------------------------------------*\
+    Delete mutex and conditions
+\*------------------------------------------------------------------------*/
+  pthread_mutex_destroy( &aif->mutex );
+  pthread_cond_destroy( &aif->condIsReady );
+
+/*------------------------------------------------------------------------*\
+    Free header data and return
+\*------------------------------------------------------------------------*/
   Sfree( aif->devName );
   Sfree( aif );
   return rc;
+}
+
+
+/*=========================================================================*\
+    Wait till an audio device is initialized, i.e ready to play
+      timeout is in ms, 0 or a negative values are treated as infinity
+      blocks and returns 0 if device is ready
+                 or std. errcode (ETIMEDOUT in case of timeout) otherwise
+\*=========================================================================*/
+int audioIfWaitForInit( AudioIf *aif, int timeout )
+{
+  struct timeval  now;
+  struct timespec abstime;
+  int             err = 0;
+
+  DBGMSG( "Audio instance (%p,%s): Wait for init (timeout %dms).",
+           aif, aif->backend->name, timeout );
+
+/*------------------------------------------------------------------------*\
+    Lock mutex
+\*------------------------------------------------------------------------*/
+  pthread_mutex_lock( &aif->mutex );
+
+/*------------------------------------------------------------------------*\
+    Get absolute timestamp for timeout
+\*------------------------------------------------------------------------*/
+  if( timeout>0 ) {
+    gettimeofday( &now, NULL );
+    abstime.tv_sec  = now.tv_sec + timeout/1000;
+    abstime.tv_nsec = now.tv_usec*1000UL +(timeout%1000)*1000UL*1000UL;
+    if( abstime.tv_nsec>1000UL*1000UL*1000UL ) {
+      abstime.tv_nsec -= 1000UL*1000UL*1000UL;
+      abstime.tv_sec++;
+    }
+  }
+
+/*------------------------------------------------------------------------*\
+    Loop while condition is not met (cope with "spurious  wakeups")
+\*------------------------------------------------------------------------*/
+  while( aif->state<AudioIfRunning ) {
+
+    // wait for condition
+    err = timeout>0 ? pthread_cond_timedwait( &aif->condIsReady, &aif->mutex, &abstime )
+                    : pthread_cond_wait( &aif->condIsReady, &aif->mutex );
+
+    // Break on errors
+    if( err )
+      break;
+  }
+
+/*------------------------------------------------------------------------*\
+    Unlock mutex
+\*------------------------------------------------------------------------*/
+  if( !err)
+    pthread_mutex_unlock( &aif->mutex );
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  DBGMSG( "Audio instance (%p,%s): Waited for init (%s).",
+           aif, aif->backend->name, strerror(err) );
+  return err;
 }
 
 

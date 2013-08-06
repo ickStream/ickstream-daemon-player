@@ -147,6 +147,8 @@ struct _audioIf {
   bool                   muted;
   int                    framesize;
   pthread_t              thread;
+  pthread_mutex_t        mutex;
+  pthread_cond_t         condIsReady;
   void                  *ifData;           // handled by individual backend
 };
 
@@ -181,6 +183,7 @@ void                audioFreeAudioFormatList( AudioFormatList *list );
 AudioIf            *audioIfNew( const AudioBackend *backend, const char *device, size_t fifoSize );
 int                 audioIfDelete( AudioIf *aif, AudioTermMode mode );
 int                 audioIfPlay( AudioIf *aif, AudioFormat *format, AudioTermMode mode );
+int                 audioIfWaitForInit( AudioIf *aif, int timeout );
 int                 audioIfStop( AudioIf *aif, AudioTermMode mode );
 #define             audioIfSupportsPause( aif ) ((aif)->canPause)
 int                 audioIfSetPause( AudioIf *aif, bool pause );

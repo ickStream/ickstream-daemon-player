@@ -478,8 +478,8 @@ static void *_codecThread( void *arg )
     int    rc;
     size_t size = 0;
     
-    // Wait max. 500 ms for free space in output fifo
-    rc = fifoLockWaitWritable( instance->fifoOut, 500 );
+    // Wait max. 500 ms for any free space in output fifo
+    rc = fifoLockWaitWritable( instance->fifoOut, 500, 0 );
     if( rc==ETIMEDOUT ) {
       continue;
     }   

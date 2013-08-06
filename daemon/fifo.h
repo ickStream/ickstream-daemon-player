@@ -91,7 +91,7 @@ char       *fifoGetWritePtr( Fifo *fifo );
 void        fifoReset( Fifo *fifo );
 void        fifoLock( Fifo *fifo );
 int         fifoLockWaitReadable( Fifo *fifo, int timeout );
-int         fifoLockWaitWritable( Fifo *fifo, int timeout );
+int         fifoLockWaitWritable( Fifo *fifo, int timeout, size_t bytes );
 int         fifoLockWaitDrained( Fifo *fifo, int timeout );
 void        fifoUnlock( Fifo *fifo );
 void        fifoUnlockAfterRead( Fifo *fifo, size_t size );
