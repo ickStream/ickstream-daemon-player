@@ -326,7 +326,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     }
 
     // Construct result
-    jResult   = json_pack( "{sssi}",
+    jResult   = json_pack( "{ss si}",
                            "playlistId",       playlistGetId(plst),
                            "playbackQueuePos", pos );
     
@@ -902,7 +902,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
 
     // Sync mapping to changes of original playlist
     if( order==PlaylistOriginal )
-      playlistResetMapping( plst );
+      playlistResetMapping( plst, false );
 
     // Playback queue has changed
     playlistChanged = true;
@@ -963,6 +963,21 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     if( rangeStart<rangeEnd ) {
       if( !playlistShuffle(plst,rangeStart,rangeEnd,true) )
         result = 0;
+
+      // Need to sync original list?
+      switch( playerGetPlaybackMode() ) {
+        case PlaybackShuffle:
+        case PlaybackRepeatShuffle:
+          // No!
+          break;
+
+        case PlaybackQueue:
+        case PlaybackRepeatQueue:
+        case PlaybackRepeatItem:
+        case PlaybackDynamic:
+          playlistResetMapping( plst, true );
+          break;
+      }
 
       // Playback queue has changed
       playlistChanged = true;

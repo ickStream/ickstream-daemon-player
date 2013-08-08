@@ -241,21 +241,21 @@ Playlist *playlistFromJSON( json_t *jQueue )
   // Apply mapping
   if( !jObj ) {
     DBGMSG( "playlistFromJSON: found no mapping, using id.");
-    playlistResetMapping( plst );
+    playlistResetMapping( plst, false );
   }
   else for( i=0; i<json_array_size(jObj); i++ ) {
     json_t       *jPos = json_array_get( jObj, i );
     PlaylistItem *pItem;
     if( !json_is_integer(jPos) ) {
       logwarn( "Playlist: mapping item #%d is not an integer, using id mapping" );
-      playlistResetMapping( plst );
+      playlistResetMapping( plst, false );
       break;
     }
     pItem = playlistGetItem( plst, PlaylistOriginal, json_integer_value(jPos) );
     if( !pItem ) {
       logerr( "Playlist: could not find mapped item #%d (position %s), using id mapping",
                     i+1, json_integer_value(jPos) );
-      playlistResetMapping( plst );
+      playlistResetMapping( plst, false );
       break;
     }
     _playlistAddItemBefore( plst, NULL, PlaylistMapped, pItem );
@@ -360,35 +360,57 @@ void playlistReset( Playlist *plst, bool resetHeader )
 
 /*=========================================================================*\
        Init or reset mapping to id
+         if inverse is set, the mapping is transfered to the original list
 \*=========================================================================*/
-void playlistResetMapping( Playlist *plst )
+void playlistResetMapping( Playlist *plst, bool inverse )
 {
   PlaylistItem *walk;
 
-  DBGMSG( "playlistResetMapping: %p", plst );
+  DBGMSG( "playlistResetMapping (%p): inverse: %s", plst, inverse?"Yes":"No" );
 
 /*------------------------------------------------------------------------*\
-    Reset root pointers
+    Transcribe original index to mapped index
 \*------------------------------------------------------------------------*/
-  plst->firstItemMapped = plst->firstItemOriginal;
-  plst->lastItemMapped  = plst->lastItemOriginal;
+  if( !inverse ) {
 
-/*------------------------------------------------------------------------*\
-    Copy pointers off all elements
-\*------------------------------------------------------------------------*/
-  for( walk=plst->firstItemOriginal; walk; walk=walk->nextOriginal ) {
-    walk->nextMapped = walk->nextOriginal;
-    walk->prevMapped = walk->prevOriginal;
+    // Reset root pointers
+    plst->firstItemMapped = plst->firstItemOriginal;
+    plst->lastItemMapped  = plst->lastItemOriginal;
+
+    // Copy pointers off all elements
+    for( walk=plst->firstItemOriginal; walk; walk=walk->nextOriginal ) {
+      walk->nextMapped = walk->nextOriginal;
+      walk->prevMapped = walk->prevOriginal;
+    }
+
+    // Invalidate cursor index
+    plst->_cursorPos = -1;
   }
 
 /*------------------------------------------------------------------------*\
-    Invalidate cursor index and set timestamp
+    Transcribe mapped index to original index
 \*------------------------------------------------------------------------*/
-  plst->_cursorPos = -1;
+  else {
+
+    // Reset root pointers
+    plst->firstItemOriginal = plst->firstItemMapped;
+    plst->lastItemOriginal  = plst->lastItemMapped;
+
+    // Copy pointers off all elements
+    for( walk=plst->firstItemMapped; walk; walk=walk->nextMapped ) {
+      walk->nextOriginal = walk->nextMapped;
+      walk->prevOriginal = walk->prevMapped;
+    }
+
+  }
+
+/*------------------------------------------------------------------------*\
+    Set timestamp
+\*------------------------------------------------------------------------*/
   plst->lastChange = srvtime();
 
 /*------------------------------------------------------------------------*\
-    That's all
+    That's all - check list consistency
 \*------------------------------------------------------------------------*/
   CHKLIST( plst );
 }

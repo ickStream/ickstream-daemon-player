@@ -868,7 +868,7 @@ int playerSetPlaybackMode( PlayerPlaybackMode mode, bool broadcast )
     case PlaybackRepeatItem:
     case PlaybackDynamic:
       if( playerQueue ) {
-        playlistResetMapping( playerQueue );
+        playlistResetMapping( playerQueue, false );
         playlistChanged = true;
       }
       break;

@@ -103,7 +103,7 @@ void          playlistDelete( Playlist *plst );
 void          playlistLock( Playlist *plst );
 void          playlistUnlock( Playlist *plst );
 void          playlistReset( Playlist *plst, bool resetHeader );
-void          playlistResetMapping( Playlist *plst );
+void          playlistResetMapping( Playlist *plst, bool inverse );
 void          playlistSetId( Playlist *plst, const char *id );
 void          playlistSetName( Playlist *plst, const char *name );
 const char   *playlistGetId( Playlist *plst );
