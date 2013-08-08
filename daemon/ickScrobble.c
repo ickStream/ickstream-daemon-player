@@ -96,7 +96,7 @@ int ickScrobbleTrack( PlaylistItem *item, double seekPos )
 /*------------------------------------------------------------------------*\
     Need token...
 \*------------------------------------------------------------------------*/
-  token = playerGetToken();
+  token = ickCloudGetAccessToken();
   if( !token ) {
     logwarn( "ickScrobbleTrack (%s): No device token set.",
              playlistItemGetText(item) );

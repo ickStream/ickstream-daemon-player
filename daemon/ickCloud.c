@@ -57,6 +57,7 @@ Remarks         : -
 
 #include "ickpd.h"
 #include "ickutils.h"
+#include "persist.h"
 #include "player.h"
 #include "ickCloud.h"
 
@@ -80,6 +81,9 @@ typedef struct {
   void              *userData;     // weak
 } CloudRequest;
 
+static char *_cloudCoreUrl;
+static char *_accessToken;
+
 
 /*=========================================================================*\
     Private prototypes
@@ -89,11 +93,141 @@ static void   *_cloudRequestThread( void *arg );
 
 
 /*=========================================================================*\
+      Init cloud module
+\*=========================================================================*/
+int ickCloudInit( void )
+{
+  const char *val;
+  DBGMSG( "Initializing cloud module..." );
+
+/*------------------------------------------------------------------------*\
+    Get core URL
+\*------------------------------------------------------------------------*/
+  val = persistGetString( "IckCloudCoreUrl" );
+  if( !val )
+    val = IckCloudCoreURI;
+  if( ickCloudSetCoreUrl(val) )
+    return -1;
+
+/*------------------------------------------------------------------------*\
+    Get access Token
+\*------------------------------------------------------------------------*/
+   val = persistGetString( "IckAccessToken" );
+   if( val )
+     _accessToken = strdup( val );
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+  return 0;
+}
+
+
+/*=========================================================================*\
+    Shut down cloud module
+\*=========================================================================*/
+void ickCloudShutdown( void )
+{
+  DBGMSG( "Shutting down cloud module..." );
+
+}
+
+
+/*=========================================================================*\
+    Set cloud core URL to use
+\*=========================================================================*/
+int ickCloudSetCoreUrl( const char *url )
+{
+  DBGMSG( "ickCloudSetCoreUrl: %s", url );
+
+/*------------------------------------------------------------------------*\
+    Free old value (if any)
+\*------------------------------------------------------------------------*/
+  Sfree( _cloudCoreUrl );
+
+/*------------------------------------------------------------------------*\
+    Set new value (if any)
+\*------------------------------------------------------------------------*/
+  _cloudCoreUrl = strdup( url );
+  if( !_cloudCoreUrl ) {
+    logerr( "ickCloudSetCoreUrl: Out of memory." );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    Persist value
+\*------------------------------------------------------------------------*/
+  if( persistSetString("IckCloudCoreUrl",url) )
+    return -1;
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+  return 0;
+}
+
+
+/*=========================================================================*\
+    Get cloud core URL
+\*=========================================================================*/
+const char *ickCloudGetCoreUrl( void )
+{
+  DBGMSG( "ickCloudGetCoreUrl: \"%s\"", _cloudCoreUrl );
+  return _cloudCoreUrl;
+}
+
+
+/*=========================================================================*\
+    Set access token
+\*=========================================================================*/
+int ickCloudSetAccessToken( const char *token )
+{
+  DBGMSG( "ickCloudSetAccessToken: %s", token?token:"(nil)" );
+
+/*------------------------------------------------------------------------*\
+    Free old value (if any)
+\*------------------------------------------------------------------------*/
+  Sfree( _accessToken );
+
+/*------------------------------------------------------------------------*\
+    Set new value (if any)
+\*------------------------------------------------------------------------*/
+  if( token ) {
+    _accessToken = strdup( token );
+    if( !_accessToken ) {
+      logerr( "ickCloudSetAccessToken: Out of memory." );
+      return -1;
+    }
+  }
+
+/*------------------------------------------------------------------------*\
+    Persist value
+\*------------------------------------------------------------------------*/
+  if( persistSetString("IckAccessToken",token) )
+    return -1;
+
+/*------------------------------------------------------------------------*\
+    That's all
+\*------------------------------------------------------------------------*/
+  return 0;
+}
+
+
+/*=========================================================================*\
+    Get access token
+\*=========================================================================*/
+const char *ickCloudGetAccessToken( void )
+{
+  DBGMSG( "ickCloudGetAccessToken: \"%s\"", _accessToken?_accessToken:"(nil)" );
+  return _accessToken;
+}
+
+
+/*=========================================================================*\
     Set current device IP address
 \*=========================================================================*/
 int ickCloudSetDeviceAddress( void )
 {
-  const char *token;
   const char *deviceId;
   const char *deviceAddress;
   json_t     *jParams, *jResult;
@@ -101,8 +235,7 @@ int ickCloudSetDeviceAddress( void )
 /*------------------------------------------------------------------------*\
     Need token...
 \*------------------------------------------------------------------------*/
-  token = playerGetToken();
-  if( !token ) {
+  if( !_accessToken ) {
     logwarn( "ickCloudSetDeviceAdress: No device token set." );
     return -1;
   }
@@ -133,7 +266,7 @@ int ickCloudSetDeviceAddress( void )
 /*------------------------------------------------------------------------*\
     Interact with cloud
 \*------------------------------------------------------------------------*/
-  jResult = ickCloudRequestSync( NULL, playerGetToken(), "setDeviceAddress", jParams );
+  jResult = ickCloudRequestSync( NULL, _accessToken, "setDeviceAddress", jParams );
   json_decref( jParams );
 
 /*------------------------------------------------------------------------*\
@@ -310,10 +443,10 @@ int jsonRpcTransact( const char *uri, const char *oAuthToken, int id,
   int                rc;
 
 /*------------------------------------------------------------------------*\
-    Use default URI?
+    Use core URI?
 \*------------------------------------------------------------------------*/
   if( !uri )
-    uri = IckCloudCoreURI;
+    uri = ickCloudGetCoreUrl();
 
 /*------------------------------------------------------------------------*\
     Be verbose

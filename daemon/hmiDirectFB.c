@@ -64,6 +64,7 @@ Remarks         : -
 #include "ickutils.h"
 #include "playlist.h"
 #include "player.h"
+#include "ickCloud.h"
 #include "ickService.h"
 #include "dfbTools.h"
 
@@ -262,7 +263,7 @@ void hmiShutdown( void )
 void hmiNewConfig( void )
 {
   DBGMSG( "hmiNewConfig: %s, \"%s\", \"%s\".",
-      playerGetUUID(),  playerGetName(), playerGetToken()?"Cloud":"No Cloud" );
+      playerGetUUID(),  playerGetName(), ickCloudGetAccessToken()?"Cloud":"No Cloud" );
 
 /*------------------------------------------------------------------------*\
     Request updates for configuration, current item and playback queue
@@ -568,7 +569,7 @@ static void _hmiRenderConfig( void )
   dfbtRelease( wTxt );
   txt = malloc( 30+strlen(playerGetUUID())+strlen(playerGetName()) );
   sprintf( txt, "\"%s\", %s (%s)", playerGetName(),
-           playerGetToken()?"registered":"unregistered", playerGetUUID() );
+      ickCloudGetAccessToken()?"registered":"unregistered", playerGetUUID() );
   wTxt = dfbtText( txt, font3, &cWhite );
   dfbtContainerAdd( wConfig, wTxt, txt_x, txt_y, DfbtAlignBaseLeft );
   dfbtRelease( wTxt );

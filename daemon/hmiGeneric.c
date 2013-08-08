@@ -58,6 +58,7 @@ Remarks         : -
 #include "ickutils.h"
 #include "playlist.h"
 #include "player.h"
+#include "ickCloud.h"
 #include "ickService.h"
 
 /*=========================================================================*\
@@ -120,11 +121,11 @@ void hmiNewConfig( void )
   ServiceListItem *service;
 
   DBGMSG( "hmiNewConfig: %s, \"%s\", \"%s\".",
-      playerGetUUID(),  playerGetName(), playerGetToken()?"Cloud":"No Cloud" );
+      playerGetUUID(),  playerGetName(), ickCloudGetAccessToken()?"Cloud":"No Cloud" );
 
   printf( "HMI Player id        : %s\n", playerGetUUID() );
   printf( "HMI Player name      : \"%s\"\n", playerGetName() );
-  printf( "HMI Cloud status     : %s\n", playerGetToken()?"Registered":"Unregistered" );
+  printf( "HMI Cloud status     : %s\n", ickCloudGetAccessToken()?"Registered":"Unregistered" );
 
   for( service=ickServiceFind(NULL,NULL,NULL,0); service;
        service=ickServiceFind(service,NULL,NULL,0) )

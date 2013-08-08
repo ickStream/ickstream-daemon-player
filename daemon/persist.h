@@ -62,6 +62,7 @@ Remarks         : -
 int  persistSetFilename( const char *name );
 void persistShutdown( void );
 
+// all write activities will trigger a file dump if a name is set
 int  persistSetJSON( const char *key, json_t *jObj );
 int  persistSetJSON_new( const char *key, json_t *value );
 int  persistSetString( const char *key, const char *value );

@@ -60,6 +60,7 @@ Remarks         : -
 #include <ickDiscovery.h>
 #include <jansson.h>
 
+#include "ickpd.h"
 #include "ickutils.h"
 #include "hmi.h"
 #include "ickMessage.h"
@@ -236,11 +237,29 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     goto rpcError;
   }
 
+/*------------------------------------------------------------------------*\
+    Get versions of supported protocols
+\*------------------------------------------------------------------------*/
+  if( !strcasecmp(method,"getProtocolVersions") ) {
+
+    // Expect no parameters
+    if( jParams && json_object_size(jParams) ) {
+      logerr( "ickMessage from %s contains parameters: %s", sourceUUID, message );
+      rpcErrCode    = RPC_INVALID_REQUEST;
+      rpcErrMessage = "Unexpected parameters in RPC header";
+      goto rpcError;
+    }
+
+    // Get result
+    jResult = json_pack( "{ss ss}",
+                         "minVersion", ICK_MINVERSION,
+                         "maxVersion", ICK_MAXVERSION );
+  }
 
 /*------------------------------------------------------------------------*\
     Get player status 
 \*------------------------------------------------------------------------*/
-  if( !strcasecmp(method,"getPlayerStatus") ) {
+  else if( !strcasecmp(method,"getPlayerStatus") ) {
 
     // Expect no parameters
     if( jParams && json_object_size(jParams) ) {
@@ -1050,6 +1069,8 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     Set player configuration
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"setPlayerConfiguration") ) {
+    const char *accessToken = NULL;
+    const char *cloudUrl = NULL;
 
     // Expect parameters
     if( !jParams ) {
@@ -1073,13 +1094,34 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     // Get optional access token
     jObj = json_object_get( jParams, "accessToken" );
     if( jObj && json_is_string(jObj) )
-      playerSetToken( json_string_value(jObj) );
+      accessToken = json_string_value(jObj);
     else if( jObj ) {
       logerr( "ickMessage from %s contains non string field \"accessToken\": %s", sourceUUID, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"accessToken\": wrong type (no string)";
       goto rpcError;
     }
+
+    // Get optional cloud URL
+    jObj = json_object_get( jParams, "cloudCoreUrl" );
+    if( jObj && json_is_string(jObj) )
+      cloudUrl = json_string_value(jObj);
+    else if( jObj ) {
+      logerr( "ickMessage from %s contains non string field \"cloudCoreUrl\": %s", sourceUUID, message );
+      rpcErrCode    = RPC_INVALID_PARAMS;
+      rpcErrMessage = "Parameter \"cloudCoreUrl\": wrong type (no string)";
+      goto rpcError;
+    }
+
+    // Set cloud URL and reset access token if not given
+    if( cloudUrl ) {
+      ickCloudSetCoreUrl( json_string_value(jObj) );
+      ickCloudSetAccessToken( accessToken );
+    }
+
+    // Set or change access token
+    else if( accessToken )
+      ickCloudSetAccessToken( accessToken );
 
     // Register with the cloud core
     ickCloudSetDeviceAddress( );
@@ -1091,9 +1133,15 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     hmiNewConfig( );
 
     // report result 
-    jResult = json_pack( "{ssss}",
+    jResult = json_pack( "{ss ss}",
                          "playerName", playerGetName(), 
                          "playerModel", playerGetModel() );
+
+    // Append cloud URL if available
+    cloudUrl = ickCloudGetCoreUrl();
+    if( cloudUrl )
+      json_object_set_new( jResult, "hardwareId", json_string(cloudUrl) );
+
   }
 
 /*------------------------------------------------------------------------*\
@@ -1101,6 +1149,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"getPlayerConfiguration") ) {
     const char *hwid;
+    const char *cloudUrl;
 
     // Expect no parameters
     if( jParams && json_object_size(jParams) ) {
@@ -1111,7 +1160,7 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     }
 
     // Compile result
-    jResult = json_pack( "{ssss}",
+    jResult = json_pack( "{ss ss}",
                          "playerName",  playerGetName(), 
                          "playerModel", playerGetModel() );
 
@@ -1119,6 +1168,11 @@ void ickMessage( const char *sourceUUID, const char *ickMessage,
     hwid = playerGetHWID();
     if( hwid ) 
       json_object_set_new( jResult, "hardwareId", json_string(hwid) );
+
+    // Append cloud URL if available
+    cloudUrl = ickCloudGetCoreUrl();
+    if( cloudUrl )
+      json_object_set_new( jResult, "hardwareId", json_string(cloudUrl) );
   }  
   
 /*------------------------------------------------------------------------*\

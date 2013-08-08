@@ -116,7 +116,6 @@ static const char         *playerAudioDevice;
 static const char         *playerHWID;  
 static const char         *playerModel;  
 static const char         *playerName;
-static const char         *accessToken;
 static double              playerVolume;
 static bool                playerMuted;
 static Playlist           *playerQueue;
@@ -208,7 +207,7 @@ int playerInit( void )
 /*------------------------------------------------------------------------*\
     If possible tell cloud services about the current address
 \*------------------------------------------------------------------------*/
-  if( playerGetToken() )
+  if( ickCloudGetAccessToken() )
     ickCloudSetDeviceAddress( );
 
 /*------------------------------------------------------------------------*\
@@ -596,18 +595,6 @@ const char *playerGetName( void )
 
 
 /*=========================================================================*\
-    Get access token
-\*=========================================================================*/
-const char *playerGetToken( void )
-{
-  if( !accessToken )
-    accessToken = persistGetString( "IckAccessToken" );
-  DBGMSG( "playerGetToken: \"%s\"", accessToken?accessToken:"(null)" );
-  return accessToken;
-}
-
-
-/*=========================================================================*\
       Get Volume 
 \*=========================================================================*/
 double playerGetVolume( void )
@@ -729,17 +716,6 @@ void playerSetAudioDevice( const char *name )
   loginfo( "Setting audio device to \"%s\"", name );
   playerAudioDevice = name;  
   persistSetString( "PlayerAudioDevice", name );
-}
-
-
-/*=========================================================================*\
-    Set access Token
-\*=========================================================================*/
-void playerSetToken( const char *token )
-{
-  loginfo( "Setting ickstream access token to \"%s\"", token );
-  accessToken = token;  
-  persistSetString( "IckAccessToken", token );
 }
 
 
@@ -1540,7 +1516,7 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, Audi
       // Do we need authorization?
       jObj = json_object_get( jStreamRef, "intermediate" );
       if( json_is_true(jObj) ) {
-        oAuthToken = playerGetToken();
+        oAuthToken = ickCloudGetAccessToken();
         if( !oAuthToken ) {
           playlistItemLock( item );
           logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: Need token but device not yet registered.",

@@ -68,7 +68,14 @@ typedef void (*IckCloudCb)( const char *method, json_t *jParams, json_t *jResult
 /*=========================================================================*\
   Global symbols
 \*=========================================================================*/
-int     ickCloudSetDeviceAddress( void );
+int         ickCloudInit( void );
+void        ickCloudShutdown( void );
+int         ickCloudSetCoreUrl( const char *url );
+const char *ickCloudGetCoreUrl( void );
+int         ickCloudSetAccessToken( const char *token );
+const char *ickCloudGetAccessToken( void );
+
+int         ickCloudSetDeviceAddress( void );
 
 json_t *ickCloudRequestSync( const char *uri, const char *oAuthToken, const char *method, json_t *jParams );
 int     ickCloudNotify( const char *uri, const char *oAuthToken, const char *method, json_t *jParams );

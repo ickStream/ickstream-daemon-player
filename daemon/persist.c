@@ -131,7 +131,7 @@ void persistShutdown( void )
     Dump to file a last time
 \*------------------------------------------------------------------------*/
   if( repositoryFileName && jRepository )
-    _dumpRepository( repositoryFileName ); 
+    _dumpRepository( repositoryFileName );
   
 /*------------------------------------------------------------------------*\
     Free filename
@@ -147,6 +147,7 @@ void persistShutdown( void )
     That's all
 \*------------------------------------------------------------------------*/
 }
+
 
 /*=========================================================================*\
       Store JSON value in repository 
@@ -179,8 +180,7 @@ int persistSetJSON_new( const char *key, json_t *value )
     Create repository if not available
 \*------------------------------------------------------------------------*/
   if( !jRepository ) {
-    logwarn( "Set value in uninitialized repository: \"%s\"", 
-                         key );
+    logwarn( "Set value in uninitialized repository: \"%s\"", key );
     jRepository = json_object();
   }
   if( !jRepository ) {
@@ -205,13 +205,22 @@ int persistSetJSON_new( const char *key, json_t *value )
 
 /*=========================================================================*\
       Store string value in repository 
+        if value is NULL, the key is removed
 \*=========================================================================*/
 int persistSetString( const char *key, const char *value )
 {
   json_t *jObj;
 
-  DBGMSG( "persistSetString: (%s)=\"%s\"", key, value ); 
-    
+  DBGMSG( "persistSetString: (%s)=\"%s\"", key, value?value:"(nil)" );
+
+/*------------------------------------------------------------------------*\
+    Remove
+\*------------------------------------------------------------------------*/
+  if( !value ) {
+    persistRemove( key );
+    return 0;
+  }
+
 /*------------------------------------------------------------------------*\
     Convert value to JSON
 \*------------------------------------------------------------------------*/
@@ -222,7 +231,7 @@ int persistSetString( const char *key, const char *value )
   }
 
 /*------------------------------------------------------------------------*\
-    Add or replace value in repositiory, steal reference
+    Add or replace value in repository, steal reference
 \*------------------------------------------------------------------------*/
   return persistSetJSON_new( key, jObj );
 }
@@ -260,8 +269,8 @@ int persistSetReal( const char *key, double value )
 {
   json_t *jObj;
 
-  DBGMSG( "persistSetreal: (%s)=%g", key, value ); 
-    
+  DBGMSG( "persistSetReal: (%s)=%g", key, value );
+
 /*------------------------------------------------------------------------*\
     Convert value to JSON
 \*------------------------------------------------------------------------*/
@@ -305,11 +314,10 @@ int persistSetBool( const char *key, bool value )
 
 /*=========================================================================*\
       Remove a key:value entry from repository
-        return -1 if key was not found
+        return -1 if key was not found or on error
 \*=========================================================================*/
 int persistRemove( const char *key )
 {
-
   DBGMSG( "persistRemove: (%s)", key ); 
 
 /*------------------------------------------------------------------------*\
@@ -322,9 +330,17 @@ int persistRemove( const char *key )
   }
 
 /*------------------------------------------------------------------------*\
-    Remove entry
+    Store or replace value in repository, steal reference
 \*------------------------------------------------------------------------*/
-  return json_object_del( jRepository, key );
+  if( json_object_del(jRepository,key) ) {
+    logerr( "Cannot remove key \"%s\" from repository.", key );
+    return -1;
+  }
+
+/*------------------------------------------------------------------------*\
+    Dump repository, that's it
+\*------------------------------------------------------------------------*/
+  return _dumpRepository( repositoryFileName );
 }
 
 
@@ -334,7 +350,7 @@ int persistRemove( const char *key )
                  NULL on error or if key is not found
 \*=========================================================================*/
 json_t *persistGetJSON( const char *key )
-{    
+{
 
 /*------------------------------------------------------------------------*\
     Repository needs to be available

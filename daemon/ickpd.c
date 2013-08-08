@@ -75,6 +75,7 @@ Remarks         : -
 #include "config.h"
 #include "persist.h"
 #include "hmi.h"
+#include "ickCloud.h"
 #include "ickDevice.h"
 #include "ickMessage.h"
 #include "ickService.h"
@@ -399,6 +400,7 @@ int main( int argc, char *argv[] )
 /*------------------------------------------------------------------------*\
     Init player, announce state, get cloud services and inform HMI
 \*------------------------------------------------------------------------*/
+  ickCloudInit();
   playerInit();
   ickMessageNotifyPlaylist( NULL );
   ickMessageNotifyPlayerState( NULL );
@@ -430,6 +432,7 @@ int main( int argc, char *argv[] )
 \*------------------------------------------------------------------------*/
   hmiShutdown();
   playerShutdown();
+  ickCloudShutdown();
   audioShutdown( AudioDrain );
   persistShutdown();
 

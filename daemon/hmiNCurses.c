@@ -63,6 +63,7 @@ Remarks         : -
 #include "ickutils.h"
 #include "playlist.h"
 #include "player.h"
+#include "ickCloud.h"
 #include "ickService.h"
 
 /*=========================================================================*\
@@ -307,13 +308,13 @@ void hmiNewConfig( void )
   ServiceListItem *service;
 
   DBGMSG( "hmiNewConfig: %s, \"%s\", \"%s\".",
-      playerGetUUID(),  playerGetName(), playerGetToken()?"Cloud":"No Cloud" );
+      playerGetUUID(),  playerGetName(), ickCloudGetAccessToken()?"Cloud":"No Cloud" );
 
   pthread_mutex_lock( &mutex );
   wmove( winConfig, 0, 0 );
   wprintw( winConfig, "Player id    : %s\n", playerGetUUID() );
   wprintw( winConfig, "Player name  : \"%s\"\n", playerGetName() );
-  wprintw( winConfig, "Cloud status : %s\n", playerGetToken()?"Registered":"Unregistered" );
+  wprintw( winConfig, "Cloud status : %s\n", ickCloudGetAccessToken()?"Registered":"Unregistered" );
 
   for( service=ickServiceFind(NULL,NULL,NULL,0); service;
        service=ickServiceFind(service,NULL,NULL,0) )

@@ -59,6 +59,9 @@ Remarks         : -
         General constants
 \*=========================================================================*/
 #define ICKPD_VERSION      0.02
+#define ICK_MINVERSION     "1.0"
+#define ICK_MAXVERSION     "1.0"
+
 #define HttpAgentString    "ickpd-agent/0.02"
 
 

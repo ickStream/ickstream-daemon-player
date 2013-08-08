@@ -218,9 +218,9 @@ int ickServiceAddFromCloud( const char *type, bool reset )
 /*------------------------------------------------------------------------*\
     Need token for cloud access...
 \*------------------------------------------------------------------------*/
-  token = playerGetToken();
+  token = ickCloudGetAccessToken();
   if( !token ) {
-    logwarn( "ickServiceAddFromCloud: No device token set." );
+    logwarn( "ickServiceAddFromCloud: Device not registered (no access token)." );
     return -1;
   }
 
@@ -234,7 +234,7 @@ int ickServiceAddFromCloud( const char *type, bool reset )
 /*------------------------------------------------------------------------*\
     Interact with cloud
 \*------------------------------------------------------------------------*/
-  jResult = ickCloudRequestSync( NULL, playerGetToken(), "findServices", jParams );
+  jResult = ickCloudRequestSync( NULL, token, "findServices", jParams );
   json_decref( jParams );
   if( !jResult ) {
     DBGMSG( "ickServiceAddFromCloud: No answer from cloud." );
