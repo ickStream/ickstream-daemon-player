@@ -52,8 +52,7 @@ Remarks         : -
 /*=========================================================================*\
 	Includes needed by definitions from this file
 \*=========================================================================*/
-// none
-
+#include <ickP2p.h>
 
 /*=========================================================================*\
         General constants
@@ -69,6 +68,8 @@ Remarks         : -
    Some definitions
 \*========================================================================*/
 #define ICKPD_DEFAULTAUDIOFORMAT "2x44100x16S"
+
+extern ickP2pContext_t *_ictx;
 
 #endif  /* __ICKPD_H */
 

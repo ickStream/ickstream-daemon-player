@@ -56,7 +56,6 @@ Remarks         : -
 #include <strings.h>
 #include <pthread.h>
 #include <jansson.h>
-#include <ickDiscovery.h>
 
 #include "ickutils.h"
 #include "playlist.h"

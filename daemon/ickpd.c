@@ -68,7 +68,7 @@ Remarks         : -
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <syslog.h>
-#include <ickDiscovery.h>
+#include <ickP2p.h>
 
 #include "ickpd.h"
 #include "ickutils.h"
@@ -86,7 +86,7 @@ Remarks         : -
 /*=========================================================================*\
 	Global symbols
 \*=========================================================================*/
-// none
+ickP2pContext_t *_ictx;
 
 
 /*=========================================================================*\
@@ -101,44 +101,48 @@ static void sigHandler( int sig, siginfo_t *siginfo, void *context );
 \*========================================================================*/
 int main( int argc, char *argv[] )
 {
-  int         help_flag      = 0;
-  int         daemon_flag    = 0;
-  const char *cfg_fname      = NULL;
-  const char *pers_fname     = ".ickpd_persist";
-  const char *pid_fname      = "/var/run/ickpd.pid";
-  const char *player_uuid    = NULL;
-  const char *player_name    = NULL;
-  const char *if_name        = NULL;
-  const char *verb_arg       = "4";
-  const char *vers_flag      = NULL;
-  const char *adev_name      = NULL;
-  const char *adev_flag      = NULL;
-  const char *default_format = NULL;
-  char       *eptr;
-  int         cpid;
-  int         fd;
-  FILE       *fp;
-  int         retval = 0;
+  int              help_flag      = 0;
+  int              daemon_flag    = 0;
+  const char      *cfg_fname      = NULL;
+  const char      *pers_fname     = ".ickpd_persist";
+  const char      *pid_fname      = "/var/run/ickpd.pid";
+  const char      *player_uuid    = NULL;
+  const char      *player_name    = NULL;
+  const char      *if_name        = NULL;
+  const char      *verb_arg       = "4";
+  const char      *p2pVerb_arg    = "4";
+  const char      *vers_flag      = NULL;
+  const char      *adev_name      = NULL;
+  const char      *adev_flag      = NULL;
+  const char      *default_format = NULL;
+  char            *eptr;
+  int              cpid;
+  int              fd;
+  FILE            *fp;
+  int              retval = 0;
+  ickP2pContext_t *ictx;
+  ickErrcode_t     irc;
   
 /*-------------------------------------------------------------------------*\
 	Set up command line switches (leading * flags availability in config file)
 \*-------------------------------------------------------------------------*/
-  addarg( "help",     "-?",  &help_flag,   NULL,       "Show this help message and quit" );
-  addarg( "version",  "-V",  &vers_flag,   NULL,       "Show version and quit" );
-  addarg( "devices",  "-al", &adev_flag,   NULL,       "List audio devices and quit" );
-  addarg( "config",   "-c",  &cfg_fname,   "filename", "Set name of configuration file" );
-  addarg( "*pers",    "-p",  &pers_fname,  "filename", "Set name of persistence file" );
+  addarg( "help",        "-?",   &help_flag,   NULL,       "Show this help message and quit" );
+  addarg( "version",     "-V",   &vers_flag,   NULL,       "Show version and quit" );
+  addarg( "devices",     "-al",  &adev_flag,   NULL,       "List audio devices and quit" );
+  addarg( "config",      "-c",   &cfg_fname,   "filename", "Set name of configuration file" );
+  addarg( "*pers",       "-p",   &pers_fname,  "filename", "Set name of persistence file" );
 #ifdef ICK_DEBUG
-  addarg( "*uuid",    "-u",  &player_uuid, "uuid",     "Init/change UUID for this player" );
+  addarg( "*uuid",       "-u",   &player_uuid, "uuid",     "Init/change UUID for this player" );
 #endif
-  addarg( "*name",    "-n",  &player_name, "name",     "Init/change Name for this player" );
-  addarg( "*idev",    "-i",  &if_name,     "interface","Init/change network interface" );
-  addarg( "*adevice", "-ad", &adev_name,   "name",     "Init/change audio device name" );
+  addarg( "*name",       "-n",   &player_name, "name",     "Init/change Name for this player" );
+  addarg( "*idev",       "-i",   &if_name,     "interface","Init/change network interface" );
+  addarg( "*adevice",    "-ad",  &adev_name,   "name",     "Init/change audio device name" );
 #ifdef ICK_NOHMI
-  addarg( "daemon",   "-d",  &daemon_flag, NULL,       "Start in daemon mode" );
+  addarg( "daemon",      "-d",   &daemon_flag, NULL,       "Start in daemon mode" );
 #endif
-  addarg( "*pfile",   "-pid",&pid_fname,   "filename", "Filename to store process ID" );
-  addarg( "*verbose", "-v",  &verb_arg,    "level",    "Set logging level (0-7)" );
+  addarg( "*pfile",      "-pid", &pid_fname,   "filename", "Filename to store process ID" );
+  addarg( "*verbose",    "-v",   &verb_arg,    "level",    "Set logging level (0-7)" );
+  addarg( "*p2pverbose", "-vp",  &p2pVerb_arg, "level",    "Set p2plib logging level (0-7)" );
 
 /*-------------------------------------------------------------------------*\
 	Parse the arguments
@@ -153,8 +157,7 @@ int main( int argc, char *argv[] )
 \*-------------------------------------------------------------------------*/
   if( vers_flag ) {
     printf( "%s version %g (%s)\n", argv[0], ICKPD_VERSION, ICKPD_GITVERSION );
-    printf( "ickstream p2p library version %s (%s)\n",
-            ickDiscoveryGetVersion(NULL,NULL), ickDiscoveryGetGitVersion() );
+    printf( "ickstream p2p library version %s\n", ickP2pGetVersion(NULL,NULL) );
     printf( "<c> 2013 by //MAF, ickStream GmbH\n\n" );
     return 0;
   }
@@ -181,6 +184,20 @@ int main( int argc, char *argv[] )
                       argv[0], logGetStreamLevel() );
   }
 #endif
+
+/*------------------------------------------------------------------------*\
+    Set verbosity level for p2p lib
+\*------------------------------------------------------------------------*/
+  if( p2pVerb_arg ) {
+    int level = strtol( p2pVerb_arg, &eptr, 10 );
+    while( isspace(*eptr) )
+      eptr++;
+    if( *eptr || level<0 || level>7 ) {
+      fprintf( stderr, "Bad verbosity level: '%s'\n", p2pVerb_arg );
+      return 1;
+    }
+    ickP2pSetLogLevel( level );
+  }
 
 /*-------------------------------------------------------------------------*\
     List available audio devices and exit
@@ -390,12 +407,15 @@ int main( int argc, char *argv[] )
 /*------------------------------------------------------------------------*\
     Initalize ickstream environment...
 \*------------------------------------------------------------------------*/
-  ickDiscoverySetLogFacility( &_mylog );
-  ickDeviceRegisterMessageCallback( &ickMessage );
-  ickDeviceRegisterDeviceCallback( &ickDevice );
-  ickInitDiscovery( player_uuid, if_name, NULL );
-  ickDiscoverySetupConfigurationData( player_name, NULL );
-  ickDiscoveryAddService( ICKDEVICE_PLAYER );
+  ictx = ickP2pCreate( player_name, player_uuid, NULL, 0, NULL, if_name, 0, ICKP2P_SERVICE_PLAYER, &irc );
+  if( !ictx ) {
+    logerr( "ickP2pCreate: %s", ickStrError(irc) );
+    return -1;
+  }
+  _ictx = ictx;
+  ickP2pRegisterMessageCallback( ictx, &ickMessage );
+  ickP2pRegisterDiscoveryCallback( ictx, &ickDevice );
+  ickP2pResume( ictx );
 
 /*------------------------------------------------------------------------*\
     Init player, announce state, get cloud services and inform HMI
@@ -425,7 +445,7 @@ int main( int argc, char *argv[] )
     Stop player and close ickstream environment...
 \*------------------------------------------------------------------------*/
   playerSetState( PlayerStateStop, false );
-  ickEndDiscovery( 1 );
+  ickP2pEnd( ictx, NULL );
 
 /*------------------------------------------------------------------------*\
     ... and other modules.

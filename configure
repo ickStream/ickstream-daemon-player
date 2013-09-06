@@ -10,6 +10,7 @@
 # Date            : 13.02.2013
 #
 # Updates         : 28.03.2013 added help option, be less verbose  //MAF
+#                   04.09.2013 new libickp2p                       //MAF
 #
 # Author          : //maf
 #                  
@@ -161,27 +162,27 @@ fi
 
 # ----------------------------------------
 echo -n 'Check for ickstream libraries   : '
-for i in $ICK_ROOT $PWD/ickstream-p2p $PWD/../ickstream-p2p;
+for i in $ICK_ROOT $PWD/libickp2p $PWD/../libickp2p;
 do
   if readlink -f /dev/null >/dev/null; then
     i=$(readlink -f "$i")
   fi
-  if test -r $i/lib/libickstreamp2p.a\
-       -a -r $i/include/ickDiscovery.h; then
+  if test -r $i/lib/libickp2p.a\
+       -a -r $i/include/ickP2p.h; then
     _ICK_ROOT=$i
     break;
   fi
 done
 if [ -z "$_ICK_ROOT" ]; then
   echo please define '$ICK_ROOT' in your environment
-  echo "   ... or install the ickstream-p2p package in ./ickstream-p2p or ../ickstream-p2p"
-  echo "   you'll need lib/libickstreamp2p.a and include/ickDiscovery.h in this directory"
+  echo "   ... or install the libickp2p package in ./libickp2p or ../libickp2p"
+  echo "   you'll need lib/libickp2p.a and include/ickP2p.h in this directory"
   exit 1
 else
   echo $_ICK_ROOT
 fi
 ICK_ROOT=$_ICK_ROOT
-DEPLIBS="$DEPLIBS $ICK_ROOT/lib/libickstreamp2p.a"
+DEPLIBS="$DEPLIBS $ICK_ROOT/lib/libickp2p.a"
 
 # ----------------------------------------
 echo -n 'Check for cURL                  : '

@@ -52,13 +52,12 @@ Remarks         : -
 /*=========================================================================*\
 	Includes needed by definitions from this file
 \*=========================================================================*/
-#include <ickDiscovery.h> 
+#include <ickP2p.h>
 
 /*=========================================================================*\
        Global symbols 
 \*=========================================================================*/
-void ickDevice( const char *szDeviceId, enum ickDiscovery_command cmd,
-                 enum ickDevice_servicetype type );
+void ickDevice( ickP2pContext_t *ictx, const char *uuid, ickP2pDeviceState_t change, ickP2pServicetype_t type );
 
 
 #endif  /* __ICKDEVICE_H */

@@ -47,7 +47,7 @@ OBJECTS         = $(SRC:.c=.o)
 # Includes and libraris
 INCLUDES        = @includes@
 LIBDIRS         = -L@libdir@ -L$(ICKSTREAMDIR)/lib
-LIBS            = -lickstreamp2p -lickutils -ljansson -lpthread -lz @extralibs@
+LIBS            = -lickp2p -lickutils -ljansson -lwebsockets -lpthread -lz @extralibs@
 
 
 # How to compile c source files

@@ -52,7 +52,7 @@ Remarks         : -
 /*=========================================================================*\
 	Includes needed by definitions from this file
 \*=========================================================================*/
-#include <ickDiscovery.h> 
+#include <ickP2p.h>
 
 
 /*=========================================================================*\
@@ -78,11 +78,10 @@ typedef void (*IckCmdCallback)(const char *szDeviceId, json_t *jCmd, json_t *jRe
 /*========================================================================*\
    Prototypes
 \*========================================================================*/
-void ickMessage( const char *sourceUUID, const char *message,
-                 size_t message_size, ickMessageCommunicationstate_t state,
-                 ickDeviceServicetype_t service_type, const char *targetUUID );
-enum ickMessage_communicationstate  sendIckMessage( const char *szDeviceId, json_t *jMsg );
-enum ickMessage_communicationstate  sendIckCommand( const char *szDeviceId, const char *method, json_t *jParams, int *requestID, IckCmdCallback callBack );
+void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicetype_t sourceService,
+                  ickP2pServicetype_t targetServices, const char *message, size_t mSize );
+ickErrcode_t sendIckMessage( ickP2pContext_t *ictx, const char *szDeviceId, json_t *jMsg );
+ickErrcode_t sendIckCommand( ickP2pContext_t *ictx, const char *szDeviceId, const char *method, json_t *jParams, int *requestID, IckCmdCallback callBack );
 
 void ickMessageNotifyPlaylist( const char *szDeviceId );
 void ickMessageNotifyPlayerState( const char *szDeviceId );
