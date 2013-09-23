@@ -106,7 +106,7 @@ json_t *_jPlayerStatus( void );
   Handle messages for this device
 \*=========================================================================*/
 void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicetype_t sourceService,
-                  ickP2pServicetype_t targetServices, const char *message, size_t mSize )
+                  ickP2pServicetype_t targetServices, const char *message, size_t mSize, ickP2pMessageFlag_t mFlags )
 {
   json_t       *jRoot,
                *jObj,
@@ -120,14 +120,17 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
   bool          playlistChanged    = false;
   bool          playerStateChanged = false;
 
+  // Fixme: trim message for terminating zeros
+  while( mSize>0 && !message[mSize-1] )
+    mSize--;
 
-  loginfo( "ickMessage from %s  (type 0x%02x): \"%s\".",
-            sourceUuid, sourceService, message );
+  loginfo( "ickMessage from %s  (type 0x%02x): \"%.*s\".",
+            sourceUuid, sourceService, (int)mSize, message );
 
 /*------------------------------------------------------------------------*\
     Init JSON interpreter
 \*------------------------------------------------------------------------*/
-  jRoot = json_loads( message, 0, &error );
+  jRoot = json_loadb( message, mSize, 0, &error );
   if( !jRoot ) {
     logerr( "ickMessage from %s: corrupt line %d: %s",
              sourceUuid, error.line, error.text );
@@ -136,8 +139,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     goto rpcError;
   }
   if( !json_is_object(jRoot) ) {
-    logerr( "ickMessage from %s: could not parse to object: %s",
-            sourceUuid, message );
+    logerr( "ickMessage from %s: could not parse to object: %.*s",
+            sourceUuid, (int)mSize, message );
     rpcErrCode    = RPC_INVALID_REQUEST;
     rpcErrMessage = "Parse did not result in JSON object";
     goto rpcError;
@@ -149,7 +152,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 \*------------------------------------------------------------------------*/
   rpcId = json_object_get( jRoot, "id" );
   if( !rpcId ) {
-    loginfo( "ickMessage from %s is a notification (no id): %s", sourceUuid, message );
+    loginfo( "ickMessage from %s is a notification (no id): %.*s",
+              sourceUuid, (int)mSize, message );
     json_decref( jRoot );
     return;
   }
@@ -167,8 +171,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     
     // Get integer id from message
     if( json_getinteger(rpcId,&id) ) {
-      logwarn( "ickMessage from %s returned id in unknown format: %s", 
-               sourceUuid, message );
+      logwarn( "ickMessage from %s returned id in unknown format: %.*s",
+               sourceUuid, (int)mSize, message );
       json_decref( jRoot );
       return;
     }
@@ -189,8 +193,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Orphaned result?
     else 
-      logwarn( "Found no open request for ickMessage from %s : %s", 
-               sourceUuid, message );
+      logwarn( "Found no open request for ickMessage from %s : %.*s",
+               sourceUuid, (int)mSize, message );
 
     // Clean up and take the chance to check for timedout requests
     json_decref( jRoot ); 
@@ -205,8 +209,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 \*------------------------------------------------------------------------*/
   jObj = json_object_get( jRoot, "method" );
   if( !jObj || !json_is_string(jObj) ) {
-    logerr( "ickMessage from %s contains neither method or result: %s", 
-                     sourceUuid, message );
+    logerr( "ickMessage from %s contains neither method or result: %.*s",
+                     sourceUuid, (int)mSize, message );
     rpcErrCode    = RPC_INVALID_REQUEST;
     rpcErrMessage = "RPC header contains no method, result or error field";
     goto rpcError;
@@ -216,7 +220,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
   jParams = json_object_get( jRoot, "params" );
   if( jParams && !json_is_object(jParams) ) {
-    logerr( "ickMessage from %s contains bad parameter field: %s", sourceUuid, message );
+    logerr( "ickMessage from %s contains bad parameter field: %.*s",
+            sourceUuid, (int)mSize, message );
     rpcErrCode    = RPC_INVALID_REQUEST;
     rpcErrMessage = "Parameter filed in RPC header is of wrong type (no object)";
     goto rpcError;
@@ -229,7 +234,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Expect no parameters
     if( jParams && json_object_size(jParams) ) {
-      logerr( "ickMessage from %s contains parameters: %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains parameters: %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Unexpected parameters in RPC header";
       goto rpcError;
@@ -248,7 +254,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Expect no parameters
     if( jParams && json_object_size(jParams) ) {
-      logerr( "ickMessage from %s contains parameters: %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains parameters: %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Unexpected parameters in RPC header";
       goto rpcError;
@@ -266,7 +273,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Expect no parameters
     if( jParams && json_object_size(jParams) ) {
-      logerr( "ickMessage from %s contains parameters: %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains parameters: %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Unexpected parameters in RPC header";
       goto rpcError;
@@ -291,7 +299,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Expect parameters
     if( !jParams ) {
-      logerr( "ickMessage from %s contains no parameters: %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains no parameters: %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -304,7 +313,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     else if( json_is_integer(jObj) )
       pos = json_integer_value( jObj );
     else {
-      logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"playbackQueuePos\": wrong type (no integer)";
       goto rpcError;
@@ -334,7 +344,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Expect parameters
     if( !jParams ) {
-      logerr( "ickMessage from %s contains no parameters: %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains no parameters: %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -343,8 +354,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     // Get mandatory mode
     jObj = json_object_get( jParams, "playbackQueueMode" );
     if( !jObj || !json_is_string(jObj) )  {
-      logerr( "ickMessage from %s: missing field \"playbackQueueMode\": %s",
-                       sourceUuid, message );
+      logerr( "ickMessage from %s: missing field \"playbackQueueMode\": %.*s",
+                       sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"repeatMode\": missing or of wrong type";
       goto rpcError;
@@ -375,7 +386,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Expect parameters
     if( !jParams ) {
-      logerr( "ickMessage from %s contains no parameters: %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains no parameters: %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -384,8 +396,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     // Get mandatory position
     jObj = json_object_get( jParams, "playbackQueuePos" );
     if( !jObj || !json_is_integer(jObj) )  {
-      logerr( "ickMessage from %s: missing field \"playbackQueuePos\": %s",
-                       sourceUuid, message );
+      logerr( "ickMessage from %s: missing field \"playbackQueuePos\": %.*s",
+                       sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"playbackQueuePos\": missing or of wrong type";
       goto rpcError;
@@ -415,7 +427,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Expect parameters
     if( !jParams ) {
-      logerr( "ickMessage from %s contains no parameters: %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains no parameters: %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -424,8 +437,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     // Get mandatory mode
     jObj = json_object_get( jParams, "playing" );
     if( !jObj || !json_is_boolean(jObj) )  {
-      logerr( "ickMessage from %s: missing field \"playing\": %s", 
-                       sourceUuid, message );
+      logerr( "ickMessage from %s: missing field \"playing\": %.*s",
+                       sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"playing\": missing or of wrong type";
       goto rpcError;
@@ -447,7 +460,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Expect no parameters
     if( jParams && json_object_size(jParams) ) {
-      logerr( "ickMessage from %s contains parameters: %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains parameters: %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Unexpected parameters in RPC header";
       goto rpcError;
@@ -474,7 +488,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
       if( jObj && json_is_boolean(jObj) )
         muted = json_is_true( jObj );
       else if( jObj ) {
-        logerr( "ickMessage from %s contains non boolean field \"muted\": %s", sourceUuid, message );
+        logerr( "ickMessage from %s contains non boolean field \"muted\": %.*s",
+                sourceUuid, (int)mSize, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
         rpcErrMessage = "Parameter \"muted\": wrong type (no boolean)";
         goto rpcError;
@@ -485,7 +500,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
       if( jObj && json_is_real(jObj) )
         volume *= 1 + json_real_value( jObj );
       else if( jObj ) {
-        logerr( "ickMessage from %s contains non real field \"relativeVolumeLevel\": %s", sourceUuid, message );
+        logerr( "ickMessage from %s contains non real field \"relativeVolumeLevel\": %.*s",
+                sourceUuid, (int)mSize, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
         rpcErrMessage = "Parameter \"muted\": wrong type (no real)";
         goto rpcError;
@@ -496,7 +512,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
       if( jObj && json_is_real(jObj) )
         volume = json_real_value( jObj );
       else if( jObj ) {
-        logerr( "ickMessage from %s contains non real field \"volumeLevel\": %s", sourceUuid, message );
+        logerr( "ickMessage from %s contains non real field \"volumeLevel\": %.*s",
+                sourceUuid, (int)mSize, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
         rpcErrMessage = "Parameter \"muted\": wrong type (no real)";
         goto rpcError;
@@ -534,7 +551,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
       if( jObj && json_is_string(jObj) ) {
          order = playlistSortTypeFromStr( json_string_value(jObj) );
          if( order<0 || order>PlaylistHybrid ) {
-           logerr( "ickMessage from %s contains non field \"order\" with unknown value: %s", sourceUuid, message );
+           logerr( "ickMessage from %s contains non field \"order\" with unknown value: %.*s",
+                   sourceUuid, (int)mSize, message );
            rpcErrCode    = RPC_INVALID_PARAMS;
            rpcErrMessage = "Parameter \"order\": invalid value";
            playlistUnlock( plst );
@@ -542,7 +560,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
          }
       }
       else if( jObj ) {
-        logerr( "ickMessage from %s contains non string field \"order\": %s", sourceUuid, message );
+        logerr( "ickMessage from %s contains non string field \"order\": %.*s",
+                sourceUuid, (int)mSize, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
         rpcErrMessage = "Parameter \"order\": wrong type (no string)";
         playlistUnlock( plst );
@@ -554,7 +573,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
       if( jObj && json_is_integer(jObj) )
          offset = json_integer_value( jObj );
       else if( jObj ) {
-        logerr( "ickMessage from %s contains non integer field \"offset\": %s", sourceUuid, message );
+        logerr( "ickMessage from %s contains non integer field \"offset\": %.*s",
+                sourceUuid, (int)mSize, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
         rpcErrMessage = "Parameter \"offset\": wrong type (no integer)";
         playlistUnlock( plst );
@@ -566,7 +586,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
       if( jObj && json_is_integer(jObj) )
          count = json_integer_value( jObj );
       else if( jObj ) {
-        logerr( "ickMessage from %s contains non integer field \"count\": %s", sourceUuid, message );
+        logerr( "ickMessage from %s contains non integer field \"count\": %.*s",
+                sourceUuid, (int)mSize, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
         rpcErrMessage = "Parameter \"count\": wrong type (no integer)";
         playlistUnlock( plst );
@@ -589,7 +610,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Expect parameters
     if( !jParams ) {
-      logerr( "ickMessage from %s contains no parameters: %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains no parameters: %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -598,8 +620,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     // Get mandatory ID
     jObj = json_object_get( jParams, "playlistId" );
     if( !jObj || !json_is_string(jObj) )  {
-      logerr( "ickMessage from %s: missing field \"playlistId\": %s", 
-              sourceUuid, message );
+      logerr( "ickMessage from %s: missing field \"playlistId\": %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"playListId\": missing or of wrong type";
       goto rpcError;
@@ -609,8 +631,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     // Get mandatory name
     jObj = json_object_get( jParams, "playlistName" );
     if( !jObj || !json_is_string(jObj) ) {
-      logerr( "ickMessage from %s: missing field \"playlistName\": %s", 
-                       sourceUuid, message );
+      logerr( "ickMessage from %s: missing field \"playlistName\": %.*s",
+                       sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"playListName\": missing or of wrong type";
       goto rpcError;
@@ -651,7 +673,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
       if( jObj && json_is_integer(jObj) )
         pos    = json_integer_value( jObj );
       else if( jObj ) {
-        logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %s", sourceUuid, message );
+        logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %.*s",
+                sourceUuid, (int)mSize, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
         rpcErrMessage = "Parameter \"playbackQueuePos\": wrong type (no integer)";
         goto rpcError;
@@ -660,8 +683,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
       // Get optional list of new items
       jItems = json_object_get( jParams, "items" );
       if( jItems && !json_is_array(jItems) ) {
-        logerr( "ickMessage from %s: contains non array field \"items\": %s",
-                 sourceUuid, message );
+        logerr( "ickMessage from %s: contains non array field \"items\": %.*s",
+                 sourceUuid, (int)mSize, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
         rpcErrMessage = "Parameter \"items\": wrong type (no array)";
         goto rpcError;
@@ -671,8 +694,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     // Replace tracks in playback queue
     playlistLock( plst );
     if( playlistAddItems(plst,0,0,jItems,true) ) {
-      logerr( "ickMessage from %s: could not add/set items in playlist: %s",
-               sourceUuid, message );
+      logerr( "ickMessage from %s: could not add/set items in playlist: %.*s",
+               sourceUuid, (int)mSize, message );
       result = 0;
     }
 
@@ -706,7 +729,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
       // Expect parameters
       if( !jParams  ) {
-        logerr( "ickMessage from %s contains no parameters: %s", sourceUuid, message );
+        logerr( "ickMessage from %s contains no parameters: %.*s",
+                sourceUuid, (int)mSize, message );
         rpcErrCode    = RPC_INVALID_REQUEST;
         rpcErrMessage = "Missing parameters in RPC header";
         goto rpcError;
@@ -717,7 +741,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
       if( jObj && json_is_integer(jObj) )
         mPos = json_integer_value( jObj );
       else if( jObj ) {
-        logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %s", sourceUuid, message );
+        logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %.*s",
+                sourceUuid, (int)mSize, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
         rpcErrMessage = "Parameter \"playbackQueuePos\": wrong type (no integer)";
         goto rpcError;
@@ -726,8 +751,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
       // Get mandatory list of new items
       jItems = json_object_get( jParams, "items" );
       if( !jItems || !json_is_array(jItems) ) {
-        logerr( "ickMessage from %s: contains non array field \"items\": %s",
-                 sourceUuid, message );
+        logerr( "ickMessage from %s: contains non array field \"items\": %.*s",
+                 sourceUuid, (int)mSize, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
         rpcErrMessage = "Parameter \"items\": missing or of wrong type";
         goto rpcError;
@@ -752,8 +777,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
       // Add tracks to playback queue
       playlistLock( plst );
       if( playlistAddItems(plst,oPos,mPos,jItems,false) ) {
-        logerr( "ickMessage from %s: could not add/set items in playlist: %s",
-                 sourceUuid, message );
+        logerr( "ickMessage from %s: could not add/set items in playlist: %.*s",
+                 sourceUuid, (int)mSize, message );
         playlistUnlock( plst );
         result = 0;
       }
@@ -783,7 +808,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Expect parameters
     if( !jParams ) {
-      logerr( "ickMessage from %s contains no parameters: %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains no parameters: %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -792,8 +818,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     // Get list of items to be removed
     jItems = json_object_get( jParams, "items" );
     if( !jItems || !json_is_array(jItems) ) {
-      logerr( "ickMessage from %s: missing field \"items\": %s", 
-                       sourceUuid, message );
+      logerr( "ickMessage from %s: missing field \"items\": %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"items\": missing or of wrong type";
       goto rpcError;
@@ -802,8 +828,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     // Remove items from playlist
     playlistLock( plst );
     if( playlistDeleteItems(plst,jItems) ) {
-      logerr( "ickMessage from %s: could not remove items from playlist: %s", 
-               sourceUuid, message );
+      logerr( "ickMessage from %s: could not remove items from playlist: %.*s",
+               sourceUuid, (int)mSize, message );
       playlistUnlock( plst );
       result = 0;
     }
@@ -833,7 +859,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Expect parameters
     if( !jParams ) {
-      logerr( "ickMessage from %s contains no parameters: %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains no parameters: %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -844,7 +871,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     if( jObj && json_is_integer(jObj) )
       pos = json_integer_value( jObj );
     else if( jObj ) {
-      logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"playbackQueuePos\": wrong type (no integer)";
       goto rpcError;
@@ -853,8 +881,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     // Get mandatory list of items to move
     jItems = json_object_get( jParams, "items" );
     if( !jItems || !json_is_array(jItems) ) {
-      logerr( "ickMessage from %s: missing field \"items\": %s", 
-                       sourceUuid, message );
+      logerr( "ickMessage from %s: missing field \"items\": %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"items\": missing or of wrong type";
       goto rpcError;
@@ -880,8 +908,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Move tracks within playlist
     if( playlistMoveItems(plst,order,pos,jItems) ) {
-      logerr( "ickMessage from %s: could not move items in playlist: %s", 
-               sourceUuid, message );
+      logerr( "ickMessage from %s: could not move items in playlist: %.*s",
+               sourceUuid, (int)mSize, message );
       result = 0;
     }
 
@@ -924,7 +952,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
       if( jObj && json_is_integer(jObj) )
         rangeStart = json_integer_value( jObj );
       else if( jObj ) {
-        logerr( "ickMessage from %s contains non integer field \"playlistStartPos\": %s", sourceUuid, message );
+        logerr( "ickMessage from %s contains non integer field \"playlistStartPos\": %.*s",
+                sourceUuid, (int)mSize, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
         rpcErrMessage = "Parameter \"playlistStartPos\": wrong type (no integer)";
         playlistUnlock( plst );
@@ -935,7 +964,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
       if( jObj && json_is_integer(jObj) )
         rangeEnd = json_integer_value( jObj );
       else if( jObj ) {
-        logerr( "ickMessage from %s contains non integer field \"playlistEndPos\": %s", sourceUuid, message );
+        logerr( "ickMessage from %s contains non integer field \"playlistEndPos\": %.*s",
+                sourceUuid, (int)mSize, message );
         rpcErrCode    = RPC_INVALID_PARAMS;
         rpcErrMessage = "Parameter \"playlistEndPos\": wrong type (no integer)";
         playlistUnlock( plst );
@@ -991,7 +1021,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Expect parameters
     if( !jParams ) {
-      logerr( "ickMessage from %s contains no parameters: %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains no parameters: %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -1006,7 +1037,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     if( jObj && json_is_integer(jObj) )
       pos = json_integer_value( jObj );
     else if( jObj ) {
-      logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains non integer field \"playbackQueuePos\": %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"playbackQueuePos\": wrong type (no integer)";
       playlistUnlock( plst );
@@ -1018,7 +1050,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     if( jObj && json_is_boolean(jObj) )
       replaceFlag = json_is_true(jObj) ? true : false;
     else if( jObj ) {
-      logerr( "ickMessage from %s contains non boolean field \"replace\": %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains non boolean field \"replace\": %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"replace\": wrong type (no boolean)";
       playlistUnlock( plst );
@@ -1028,8 +1061,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     // Get mandatory new meta data
     jObj = json_object_get( jParams, "track" );
     if( !jObj || !json_is_object(jObj) ) {
-      logerr( "ickMessage from %s: missing field \"track\": %s",
-                       sourceUuid, message );
+      logerr( "ickMessage from %s: missing field \"track\": %-*s",
+                       sourceUuid, (int)mSize, message );
       playlistUnlock( plst );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"track\": missing or of wrong type";
@@ -1039,8 +1072,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     // Address item of interest
     pItem = playlistGetItem( plst, PlaylistMapped, pos );
     if( !pItem ) {
-      logwarn( "ickMessage from %s: no item found at queue position %d: %s",
-               sourceUuid, pos, message );
+      logwarn( "ickMessage from %s: no item found at queue position %d: %.*s",
+               sourceUuid, pos, (int)mSize, message );
       result = 0;
     }
 
@@ -1074,7 +1107,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Expect parameters
     if( !jParams ) {
-      logerr( "ickMessage from %s contains no parameters: %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains no parameters: %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Missing parameters in RPC header";
       goto rpcError;
@@ -1083,8 +1117,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     // Get mandatory player name
     jObj = json_object_get( jParams, "playerName" );
     if( !jObj || !json_is_string(jObj) ) {
-      logerr( "ickMessage from %s: item missing field \"playerName\": %s", 
-                       sourceUuid, message );
+      logerr( "ickMessage from %s: item missing field \"playerName\": %.*s",
+                       sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"playerName\": missing or of wrong type";
       goto rpcError;
@@ -1096,7 +1130,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     if( jObj && json_is_string(jObj) )
       accessToken = json_string_value(jObj);
     else if( jObj ) {
-      logerr( "ickMessage from %s contains non string field \"accessToken\": %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains non string field \"accessToken\": %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"accessToken\": wrong type (no string)";
       goto rpcError;
@@ -1107,7 +1142,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     if( jObj && json_is_string(jObj) )
       cloudUrl = json_string_value(jObj);
     else if( jObj ) {
-      logerr( "ickMessage from %s contains non string field \"cloudCoreUrl\": %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains non string field \"cloudCoreUrl\": %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"cloudCoreUrl\": wrong type (no string)";
       goto rpcError;
@@ -1153,7 +1189,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Expect no parameters
     if( jParams && json_object_size(jParams) ) {
-      logerr( "ickMessage from %s contains parameters: %s", sourceUuid, message );
+      logerr( "ickMessage from %s contains parameters: %.*s",
+              sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_REQUEST;
       rpcErrMessage = "Unexpected parameters in RPC header";
       goto rpcError;
@@ -1189,8 +1226,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 \*------------------------------------------------------------------------*/
 rpcError:
   if( rpcErrCode!=RPC_NO_ERROR ) {
-    logwarn( "ickMessage from %s: error code %d (%s) (message was: %s)",
-             sourceUuid, rpcErrCode, rpcErrMessage, message);
+    logwarn( "ickMessage from %s: error code %d (%s) (message was: %.*s)",
+             sourceUuid, rpcErrCode, rpcErrMessage, (int)mSize, message);
     jResult = json_pack( "{siss}",
                          "code",    rpcErrCode,
                          "message", rpcErrMessage);

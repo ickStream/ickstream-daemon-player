@@ -79,7 +79,7 @@ typedef void (*IckCmdCallback)(const char *szDeviceId, json_t *jCmd, json_t *jRe
    Prototypes
 \*========================================================================*/
 void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicetype_t sourceService,
-                  ickP2pServicetype_t targetServices, const char *message, size_t mSize );
+                  ickP2pServicetype_t targetServices, const char *message, size_t mSize, ickP2pMessageFlag_t mFlags );
 ickErrcode_t sendIckMessage( ickP2pContext_t *ictx, const char *szDeviceId, json_t *jMsg );
 ickErrcode_t sendIckCommand( ickP2pContext_t *ictx, const char *szDeviceId, const char *method, json_t *jParams, int *requestID, IckCmdCallback callBack );
 

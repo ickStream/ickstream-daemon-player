@@ -407,12 +407,18 @@ int main( int argc, char *argv[] )
 /*------------------------------------------------------------------------*\
     Initalize ickstream environment...
 \*------------------------------------------------------------------------*/
-  ictx = ickP2pCreate( player_name, player_uuid, NULL, 0, NULL, if_name, 0, ICKP2P_SERVICE_PLAYER, &irc );
+  ictx = ickP2pCreate( player_name, player_uuid, NULL, 0, 0, ICKP2P_SERVICE_PLAYER, &irc );
   if( !ictx ) {
     logerr( "ickP2pCreate: %s", ickStrError(irc) );
     return -1;
   }
   _ictx = ictx;
+  irc = ickP2pAddInterface( ictx, if_name, NULL );
+  if( irc ) {
+    logerr( "Could not add interface \"%s\" (%s)", if_name, ickStrError(irc) );
+    ickP2pEnd( ictx, NULL );
+    return 1;
+  }
   ickP2pRegisterMessageCallback( ictx, &ickMessage );
   ickP2pRegisterDiscoveryCallback( ictx, &ickDevice );
   ickP2pResume( ictx );

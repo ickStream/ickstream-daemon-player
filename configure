@@ -162,7 +162,7 @@ fi
 
 # ----------------------------------------
 echo -n 'Check for ickstream libraries   : '
-for i in $ICK_ROOT $PWD/libickp2p $PWD/../libickp2p;
+for i in $ICK_ROOT $PWD/ickstream-p2p $PWD/../ickstream-p2p;
 do
   if readlink -f /dev/null >/dev/null; then
     i=$(readlink -f "$i")
