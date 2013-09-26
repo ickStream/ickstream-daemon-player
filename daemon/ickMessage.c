@@ -121,8 +121,10 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
   bool          playerStateChanged = false;
 
   // Fixme: trim message for terminating zeros
-  while( mSize>0 && !message[mSize-1] )
+  while( mSize>0 && !message[mSize-1] ) {
+    loginfo( "ickMessage from %s: removing trailing zero", sourceUuid );
     mSize--;
+  }
 
   loginfo( "ickMessage from %s  (type 0x%02x): \"%.*s\".",
             sourceUuid, sourceService, (int)mSize, message );
@@ -1413,7 +1415,7 @@ ickErrcode_t sendIckMessage( ickP2pContext_t *ictx, const char *szDeviceId, json
 \*------------------------------------------------------------------------*/
   loginfo( "ickMessage to %s: %s", szDeviceId?szDeviceId:"ALL", message );
   irc = ickP2pSendMsg( ictx, szDeviceId, ICKP2P_SERVICE_ANY,
-                       ickP2pGetServices(ictx), message, 0 );
+                       ickP2pGetServices(ictx), message, strlen(message) );
   
 /*------------------------------------------------------------------------*\
     Clean up and that's all
