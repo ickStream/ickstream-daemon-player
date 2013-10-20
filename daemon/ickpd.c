@@ -196,7 +196,7 @@ int main( int argc, char *argv[] )
       fprintf( stderr, "Bad verbosity level: '%s'\n", p2pVerb_arg );
       return 1;
     }
-    ickP2pSetLogLevel( level );
+    ickP2pSetLogging( level, stderr, 500 );
   }
 
 /*-------------------------------------------------------------------------*\

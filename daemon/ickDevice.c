@@ -81,11 +81,12 @@ void ickDevice( ickP2pContext_t *ictx, const char *uuid,
                 ickP2pDeviceState_t cmd, ickP2pServicetype_t type )
 {
   
+  loginfo( "ickDevice \"%s\" (type %d: %s) %s",
+            uuid, type, _ickDeviceServiceTypeToStr(type), ickLibDeviceState2Str(cmd) );
+
   switch( cmd ) {
 
     case ICKP2P_CONNECTED:
-      loginfo( "ickDevice %s (type %d: %s) connected",
-                uuid, type, _ickDeviceServiceTypeToStr(type) );
 
       // New server found: request service descriptor
       if( type==ICKP2P_SERVICE_SERVER_GENERIC ) {
@@ -100,46 +101,23 @@ void ickDevice( ickP2pContext_t *ictx, const char *uuid,
       break;
 
     case ICKP2P_DISCONNECTED:
-      loginfo( "ickDevice %s (type %d: %s) disconnected",
-               uuid, type,_ickDeviceServiceTypeToStr(type)  );
 
       // Remove service(s) for this device
       ickServiceRemove( uuid, NULL, ServiceDevice );
 
       break;
 
+    case ICKP2P_INITIALIZED:
     case ICKP2P_ERROR:
-      loginfo( "ickDevice %s (type %d: %s): error",
-               uuid, type,_ickDeviceServiceTypeToStr(type)  );
-      break;
-
-    case ICKP2P_LEGACY:
-      loginfo( "ickDevice %s (type %d: %s): discovered (legacy)",
-               uuid, type,_ickDeviceServiceTypeToStr(type)  );
-      break;
-
-    case ICKP2P_NEW:
-      loginfo( "ickDevice %s (type %d: %s): discovered (new)",
-               uuid, type,_ickDeviceServiceTypeToStr(type)  );
-      break;
-
-    case ICKP2P_REMOVED:
-      loginfo( "ickDevice %s (type %d: %s): byebye",
-               uuid, type,_ickDeviceServiceTypeToStr(type)  );
-      break;
-
+    case ICKP2P_INVENTORY:
+    case ICKP2P_DISCOVERED:
+    case ICKP2P_BYEBYE:
     case ICKP2P_EXPIRED:
-      loginfo( "ickDevice %s (type %d: %s): expired",
-               uuid, type,_ickDeviceServiceTypeToStr(type)  );
-      break;
-
     case ICKP2P_TERMINATE:
-      loginfo( "ickDevice %s (type %d: %s): terminate",
-               uuid, type,_ickDeviceServiceTypeToStr(type)  );
       break;
 
     default:
-      logwarn( "ickDeviceCallback: Unhandled message %d", cmd );
+      logwarn( "ickDeviceCallback: Unknown message %d", cmd );
       break;
   }
 
