@@ -419,6 +419,12 @@ int main( int argc, char *argv[] )
     ickP2pEnd( ictx, NULL );
     return 1;
   }
+  irc = ickP2pAddInterface( ictx, "127.0.0.1", NULL );
+  if( irc ) {
+    logerr( "Could not add interface \"%s\" (%s)", "127.0.0.1", ickStrError(irc) );
+    ickP2pEnd( ictx, NULL );
+    return 1;
+  }
   ickP2pRegisterMessageCallback( ictx, &ickMessage );
   ickP2pRegisterDiscoveryCallback( ictx, &ickDevice );
   ickP2pResume( ictx );

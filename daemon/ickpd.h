@@ -58,6 +58,7 @@ Remarks         : -
         General constants
 \*=========================================================================*/
 #define ICKPD_VERSION      0.02
+#define ICKPD_APPID        "22B8C184-FF57-4C98-A3A3-8AAE2905B30C"
 #define ICK_MINVERSION     "1.0"
 #define ICK_MAXVERSION     "1.0"
 

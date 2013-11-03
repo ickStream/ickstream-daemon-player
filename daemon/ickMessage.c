@@ -150,7 +150,7 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
   // DBGMSG( "ickMessage from %s: parsed.", szDeviceId );
   
 /*------------------------------------------------------------------------*\
-    Get request ID - if there is  none this is a notification
+    Get request ID - if there is none this is a notification
 \*------------------------------------------------------------------------*/
   rpcId = json_object_get( jRoot, "id" );
   if( !rpcId ) {
@@ -1104,8 +1104,8 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     Set player configuration
 \*------------------------------------------------------------------------*/
   else if( !strcasecmp(method,"setPlayerConfiguration") ) {
-    const char *accessToken = NULL;
-    const char *cloudUrl = NULL;
+    const char *registrationToken = NULL;
+    const char *cloudUrl          = NULL;
 
     // Expect parameters
     if( !jParams ) {
@@ -1127,12 +1127,12 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     } 
     playerSetName( json_string_value(jObj), true );
 
-    // Get optional access token
-    jObj = json_object_get( jParams, "accessToken" );
+    // Get optional registration token
+    jObj = json_object_get( jParams, "deviceRegistrationToken" );
     if( jObj && json_is_string(jObj) )
-      accessToken = json_string_value(jObj);
+      registrationToken = json_string_value(jObj);
     else if( jObj ) {
-      logerr( "ickMessage from %s contains non string field \"accessToken\": %.*s",
+      logerr( "ickMessage from %s contains non string field \"deviceRegistrationToken\": %.*s",
               sourceUuid, (int)mSize, message );
       rpcErrCode    = RPC_INVALID_PARAMS;
       rpcErrMessage = "Parameter \"accessToken\": wrong type (no string)";
@@ -1151,16 +1151,17 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
       goto rpcError;
     }
 
-    // Set cloud URL and reset access token if not given
+    // Set cloud URL and reinit registration or reset registration if token is not given
     if( cloudUrl ) {
       ickCloudSetCoreUrl( json_string_value(jObj) );
-      ickCloudSetAccessToken( accessToken );
+      ickCloudRegisterDevice( registrationToken );
     }
 
     // Set or change access token
-    else if( accessToken )
-      ickCloudSetAccessToken( accessToken );
+    else if( registrationToken )
+      ickCloudRegisterDevice( registrationToken );
 
+  /*
     // Register with the cloud core
     ickCloudSetDeviceAddress( );
 
@@ -1169,7 +1170,7 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
 
     // Inform HMI
     hmiNewConfig( );
-
+*/
     // report result 
     jResult = json_pack( "{ss ss}",
                          "playerName", playerGetName(), 
@@ -1178,7 +1179,7 @@ void  ickMessage( ickP2pContext_t *ictx, const char *sourceUuid, ickP2pServicety
     // Append cloud URL if available
     cloudUrl = ickCloudGetCoreUrl();
     if( cloudUrl )
-      json_object_set_new( jResult, "hardwareId", json_string(cloudUrl) );
+      json_object_set_new( jResult, "cloudCoreUrl", json_string(cloudUrl) );
 
   }
 
@@ -1370,13 +1371,14 @@ json_t *_jPlayerStatus( void )
   cursorPos = playlistGetCursorPos( plst );
   pChange   = playlistGetLastChange( plst );
   aChange   = playerGetLastChange( );
-  jResult   = json_pack( "{sb sf si sf sb ss sf}",
+  jResult   = json_pack( "{sb sf si sf sb ss ss sf}",
                          "playing",           playerGetState()==PlayerStatePlay,
                          "seekPos",           playerGetSeekPos(),
                          "playbackQueuePos",  cursorPos,
                          "volumeLevel",       playerGetVolume(),
                          "muted",             playerGetMuting(),
                          "playbackQueueMode", playerPlaybackModeToStr(playerGetPlaybackMode()),
+                         "cloudCoreStatus",   ickCloudGetAccessToken()?"REGISTERED":"UNREGISTERED",
                          "lastChanged",       MAX(aChange,pChange) );
 
 /*------------------------------------------------------------------------*\

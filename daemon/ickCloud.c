@@ -59,6 +59,7 @@ Remarks         : -
 #include "ickutils.h"
 #include "persist.h"
 #include "player.h"
+#include "ickMessage.h"
 #include "ickCloud.h"
 
 
@@ -88,6 +89,8 @@ static char *_accessToken;
 /*=========================================================================*\
     Private prototypes
 \*=========================================================================*/
+static void _registerDeviceCb( const char *method, json_t *jParams, json_t *jResult, int rc, void *userData );
+
 static size_t  _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void *userp );
 static void   *_cloudRequestThread( void *arg );
 
@@ -220,6 +223,133 @@ const char *ickCloudGetAccessToken( void )
 {
   DBGMSG( "ickCloudGetAccessToken: \"%s\"", _accessToken?_accessToken:"(nil)" );
   return _accessToken;
+}
+
+
+/*=========================================================================*\
+    Init registration for this device with the cloud.
+      token - temporary registration token as received from the controller
+              if NULL, the local regsitration state is set to unregistered
+    returns 0 on success
+\*=========================================================================*/
+int ickCloudRegisterDevice( const char *token )
+{
+  json_t     *jParams;
+  int         rc;
+  const char *deviceAddress;
+  const char *hwid;
+
+  DBGMSG( "ickCloudRegisterDevice: %s", token?token:"(nil)" );
+
+/*------------------------------------------------------------------------*\
+    Reset old access token
+\*------------------------------------------------------------------------*/
+  if( ickCloudSetAccessToken(NULL) )
+    return -1;
+
+/*------------------------------------------------------------------------*\
+    Prepare cloud request parameters
+\*------------------------------------------------------------------------*/
+  jParams = json_object();
+
+  // Device IP (optional)
+  deviceAddress = playerGetIpAddress();
+  if( deviceAddress )
+    json_object_set( jParams, "address", json_string(deviceAddress) );
+
+  // Hardware Id
+  hwid = playerGetHWID();
+  if( hwid )
+    json_object_set_new( jParams, "hardwareId", json_string(hwid) );
+
+  // Application ID
+  json_object_set_new( jParams, "applicationId", json_string(ICKPD_APPID) );
+
+/*------------------------------------------------------------------------*\
+    Fire off request, set callback
+\*------------------------------------------------------------------------*/
+  rc = ickCloudRequestAsync( NULL, token, "addDevice", jParams, _registerDeviceCb, NULL );
+  if( rc )
+    logerr( "ickCloudRegisterDevice: Could not register device (%d).", rc );
+
+/*------------------------------------------------------------------------*\
+    Clean up, that's it
+\*------------------------------------------------------------------------*/
+  json_decref( jParams );
+  return 0;
+}
+
+
+static void _registerDeviceCb( const char *method, json_t *jParams, json_t *jResult, int rc, void *userData )
+{
+  json_t *jObj;
+
+/*------------------------------------------------------------------------*\
+    Error?
+\*------------------------------------------------------------------------*/
+  if( rc || !jResult ) {
+    loginfo( "_registerDeviceCb: cloud transaction unsuccessful" );
+    ickMessageNotifyPlayerState( NULL );
+    return;
+  }
+
+/*------------------------------------------------------------------------*\
+    Server indicated error?
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( jResult, "error" );
+  if( jObj ) {
+    loginfo( "_registerDeviceCb: Error %s.", json_rpcerrstr(jObj) );
+    ickMessageNotifyPlayerState( NULL );
+    return;
+  }
+
+/*------------------------------------------------------------------------*\
+    Interpret result
+\*------------------------------------------------------------------------*/
+  jResult = json_object_get( jResult, "result" );
+  if( !jResult ) {
+    logerr( "_registerDeviceCb: No \"result\" object in answer." );
+    ickMessageNotifyPlayerState( NULL );
+    return;
+  }
+
+/*------------------------------------------------------------------------*\
+    Get new access token
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( jResult, "accessToken" );
+  if( !jObj || !json_is_string(jObj) )  {
+    logerr( "_registerDeviceCb: missing field \"accessToken\"." );
+    ickMessageNotifyPlayerState( NULL );
+    return;
+  }
+  if( ickCloudSetAccessToken(json_string_value(jObj)) ) {
+    logerr( "_registerDeviceCb: could not set \"accessToken\"." );
+    ickMessageNotifyPlayerState( NULL );
+    return;
+  }
+
+/*------------------------------------------------------------------------*\
+    Get new player name
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( jResult, "name" );
+  if( jObj && json_is_string(jObj) )
+    playerSetName( json_string_value(jObj), false );
+  else if( jObj )
+    logerr( "_registerDeviceCb: field \"name\" is not a string" );
+
+  /*
+  "id": < The unique identity for this device which should be used in any further communication >,
+  "accessToken": < The device access token which should be used in any further communication >,
+  "name": < The new user friendly name of the device >,
+  "model": < Model identification for this device >,
+  "address": < Optional,current local IP-address of this device >,
+  "publicAddress": < current public IP-address of this device, only available if address is specified >
+  */
+
+/*------------------------------------------------------------------------*\
+    Send notification about new device state, that's all
+\*------------------------------------------------------------------------*/
+  ickMessageNotifyPlayerState( NULL );
 }
 
 

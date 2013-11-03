@@ -736,6 +736,7 @@ void playerSetName( const char *name, bool broadcast )
     Update timestamp and broadcast new player state
 \*------------------------------------------------------------------------*/
   lastChange = srvtime( );
+  hmiNewConfig();
   if( broadcast )
     ickMessageNotifyPlayerState( NULL );
 }
