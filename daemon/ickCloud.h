@@ -62,7 +62,7 @@ Remarks         : -
 /*------------------------------------------------------------------------*\
     Signatures for function pointers
 \*------------------------------------------------------------------------*/
-typedef void (*IckCloudCb)( const char *method, json_t *jParams, json_t *jResult, int rc, void *userData  );
+typedef void (*IckCloudCb)( const char *method, json_t *jParams, json_t *jResult, int rc, int httpCode, void *userData  );
 
 
 /*=========================================================================*\
@@ -78,12 +78,12 @@ const char *ickCloudGetAccessToken( void );
 
 int         ickCloudSetDeviceAddress( void );
 
-json_t *ickCloudRequestSync( const char *uri, const char *oAuthToken, const char *method, json_t *jParams );
+json_t *ickCloudRequestSync( const char *uri, const char *oAuthToken, const char *method, json_t *jParams, int *httpCode );
 int     ickCloudNotify( const char *uri, const char *oAuthToken, const char *method, json_t *jParams );
 int     ickCloudRequestAsync( const char *uri, const char *oAuthToken, const char *method,
                               json_t *jParams, IckCloudCb callback, void *userData );
 int     jsonRpcTransact( const char *uri, const char *oAuthToken, int id,
-                         const char *method, json_t *jParams, json_t **jResult );
+                         const char *method, json_t *jParams, json_t **jResult, int *httpCode );
 
 
 #endif  /* __ICKCLOUD_H */

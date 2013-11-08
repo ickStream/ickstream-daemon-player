@@ -234,7 +234,7 @@ int ickServiceAddFromCloud( const char *type, bool reset )
 /*------------------------------------------------------------------------*\
     Interact with cloud
 \*------------------------------------------------------------------------*/
-  jResult = ickCloudRequestSync( NULL, token, "findServices", jParams );
+  jResult = ickCloudRequestSync( NULL, token, "findServices", jParams, NULL );
   json_decref( jParams );
   if( !jResult ) {
     DBGMSG( "ickServiceAddFromCloud: No answer from cloud." );

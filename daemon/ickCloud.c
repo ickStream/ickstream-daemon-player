@@ -89,7 +89,7 @@ static char *_accessToken;
 /*=========================================================================*\
     Private prototypes
 \*=========================================================================*/
-static void _registerDeviceCb( const char *method, json_t *jParams, json_t *jResult, int rc, void *userData );
+static void _registerDeviceCb( const char *method, json_t *jParams, json_t *jResult, int rc, int httpCode, void *userData );
 
 static size_t  _curlWriteCallback( void *buffer, size_t size, size_t nmemb, void *userp );
 static void   *_cloudRequestThread( void *arg );
@@ -280,7 +280,7 @@ int ickCloudRegisterDevice( const char *token )
 }
 
 
-static void _registerDeviceCb( const char *method, json_t *jParams, json_t *jResult, int rc, void *userData )
+static void _registerDeviceCb( const char *method, json_t *jParams, json_t *jResult, int rc, int httpCode, void *userData )
 {
   json_t *jObj;
 
@@ -361,6 +361,7 @@ int ickCloudSetDeviceAddress( void )
   const char *deviceId;
   const char *deviceAddress;
   json_t     *jParams, *jResult;
+  int         httpCode;
 
 /*------------------------------------------------------------------------*\
     Need token...
@@ -396,8 +397,18 @@ int ickCloudSetDeviceAddress( void )
 /*------------------------------------------------------------------------*\
     Interact with cloud
 \*------------------------------------------------------------------------*/
-  jResult = ickCloudRequestSync( NULL, _accessToken, "setDeviceAddress", jParams );
+  jResult = ickCloudRequestSync( NULL, _accessToken, "setDeviceAddress", jParams, &httpCode );
   json_decref( jParams );
+
+/*------------------------------------------------------------------------*\
+    Not authorized
+\*------------------------------------------------------------------------*/
+  if( httpCode==401 ) {
+    loginfo( "ickCloudSetDeviceAddress: not authorized" );
+    ickCloudSetAccessToken( NULL );
+    ickMessageNotifyPlayerState( NULL );
+    return 0;
+  }
 
 /*------------------------------------------------------------------------*\
     That's it
@@ -412,7 +423,7 @@ int ickCloudSetDeviceAddress( void )
     Send a JSON request (synchronous mode)
       uri can b NULL to use the standard ickstream cloud endpoint
 \*=========================================================================*/
-json_t *ickCloudRequestSync( const char *uri, const char *oAuthToken, const char *method, json_t *jParams )
+json_t *ickCloudRequestSync( const char *uri, const char *oAuthToken, const char *method, json_t *jParams, int *httpCode )
 {
   json_t *jResult;
   long    id;
@@ -422,7 +433,7 @@ json_t *ickCloudRequestSync( const char *uri, const char *oAuthToken, const char
   id = getAndIncrementCounter();
 
   // Do transaction
-  rc = jsonRpcTransact( uri, oAuthToken, id, method, jParams, &jResult );
+  rc = jsonRpcTransact( uri, oAuthToken, id, method, jParams, &jResult, httpCode );
   if( rc )
     return NULL;
 
@@ -437,7 +448,7 @@ json_t *ickCloudRequestSync( const char *uri, const char *oAuthToken, const char
 \*=========================================================================*/
 int ickCloudNotify( const char *uri, const char *oAuthToken, const char *method, json_t *jParams )
 {
-  return jsonRpcTransact( uri, oAuthToken, 0, method, jParams, NULL );
+  return jsonRpcTransact( uri, oAuthToken, 0, method, jParams, NULL, NULL );
 }
 
 
@@ -510,6 +521,7 @@ static void *_cloudRequestThread( void *arg )
   CloudRequest *request = (CloudRequest*)arg;
   int           rc;
   json_t       *jResult = NULL;
+  int           httpCode;
 
   DBGMSG( "Cloud Request thread (%p,%s): starting.", request, request->method );
   PTHREADSETNAME( "cloudReq" );
@@ -518,7 +530,7 @@ static void *_cloudRequestThread( void *arg )
     Do the transaction
 \*------------------------------------------------------------------------*/
   rc = jsonRpcTransact( request->uri, request->oAuthToken, request->id,
-                        request->method, request->jParams, &jResult );
+                        request->method, request->jParams, &jResult, &httpCode );
   DBGMSG( "Cloud Request thread (%p,%s): Performed request (%d).",
           request, request->method, rc );
 
@@ -528,7 +540,7 @@ static void *_cloudRequestThread( void *arg )
   if( request->callback ) {
     DBGMSG( "Cloud Request thread (%p,%s): Calling call back function.",
             request, request->method, rc );
-    request->callback( request->method, request->jParams, jResult, rc, request->userData );
+    request->callback( request->method, request->jParams, jResult, rc, httpCode, request->userData );
   }
 
 /*------------------------------------------------------------------------*\
@@ -552,17 +564,18 @@ static void *_cloudRequestThread( void *arg )
 
 /*=========================================================================*\
     Perform a generic JSON-RPC transaction
-      uri     - server HTTP interface address,
-                if NULL the default ickstream endpoint is used
-      oAuth   - oAuth header token (NULL for none)
-      method  - method name
-      id      - JSON-RPC id (0 for notifications)
-      jParams - parameters (NULL for none)
-      jResult - pointer to result (can be NULL for notifications)
+      uri      - server HTTP interface address,
+                 if NULL the default ickstream endpoint is used
+      oAuth    - oAuth header token (NULL for none)
+      method   - method name
+      id       - JSON-RPC id (0 for notifications)
+      jParams  - parameters (NULL for none)
+      jResult  - pointer to result (can be NULL for notifications)
+      httpCode - pointer to http status code (might be NULL)
     returns -1 on error
 \*=========================================================================*/
 int jsonRpcTransact( const char *uri, const char *oAuthToken, int id,
-                     const char *method, json_t *jParams, json_t **jResult )
+                     const char *method, json_t *jParams, json_t **jResult, int *httpCode )
 {
   json_t            *jCmd         = NULL;
   char              *cmdStr       = NULL;
@@ -571,6 +584,7 @@ int jsonRpcTransact( const char *uri, const char *oAuthToken, int id,
   char              *receivedData = NULL;
   int                retval       = 0;
   int                rc;
+  int                code         = 0;
 
 /*------------------------------------------------------------------------*\
     Use core URI?
@@ -638,6 +652,14 @@ int jsonRpcTransact( const char *uri, const char *oAuthToken, int id,
     goto end;
   }
 
+  // We are interested in the HTTP response header
+  rc = curl_easy_setopt( curlHandle, CURLOPT_HEADER, 1 );
+  if( rc ) {
+    logerr( "jsonRpcTransact (%s): Unable to set header mode.", uri );
+    retval = -1;
+    goto end;
+  }
+
   // Construct and set HTTP header lines
   headers = curl_slist_append( headers, "Content-Type: application/json; charset=UTF-8" );
   if( oAuthToken ) {
@@ -696,12 +718,40 @@ int jsonRpcTransact( const char *uri, const char *oAuthToken, int id,
     retval = -1;
     goto end;
   }
+  if( !receivedData ) {
+    logerr( "jsonRpcTransact (%s): No data.", uri );
+    retval = -1;
+    goto end;
+  }
+
+/*------------------------------------------------------------------------*\
+    Check for last http code in header
+\*------------------------------------------------------------------------*/
+  long headerSize = 0;
+  curl_easy_getinfo( curlHandle, CURLINFO_HEADER_SIZE, &headerSize );
+  char *ptr = receivedData;
+  for(;;) {
+    char *ptr1 = strstr( ptr, "HTTP/1.1 " );
+    if( !ptr1 || ptr1>=receivedData+headerSize )
+      break;
+    ptr = ptr1 + strlen( "HTTP/1.1 " );
+  }
+  if( ptr==receivedData ) {
+    logerr( "jsonRpcTransact (%s): bad HTML header \"%.20s...\"", uri, receivedData );
+    retval = -1;
+    goto end;
+  }
+  code = atoi( ptr );
+  DBGMSG( "jsonRpcTransact (%s): HTTP code is %d", uri, code );
+  DBGMSG( "jsonRpcTransact (%s): HTTP content is \"%.20s\"...", uri, receivedData+headerSize );
+  if( code!=200 )
+    goto end;
 
 /*------------------------------------------------------------------------*\
     Notification: expect no data
 \*------------------------------------------------------------------------*/
   if( !id ) {
-    if( receivedData )
+    if( receivedData[headerSize] )
       logwarn( "jsonRpcTransact (%s): Received data for notification (%s).",
                uri, receivedData );
   }
@@ -709,7 +759,7 @@ int jsonRpcTransact( const char *uri, const char *oAuthToken, int id,
 /*------------------------------------------------------------------------*\
     Request: expect data
 \*------------------------------------------------------------------------*/
-  else if( !receivedData ) {
+  else if( !receivedData[headerSize] ) {
     logerr( "jsonRpcTransact (%s): Received no data for request.", uri );
     retval = -1;
   }
@@ -723,7 +773,7 @@ int jsonRpcTransact( const char *uri, const char *oAuthToken, int id,
   }
   else {
     json_error_t  error;
-    *jResult = json_loads( receivedData, 0, &error );
+    *jResult = json_loads( receivedData+headerSize, 0, &error );
     if( !*jResult ) {
       logerr( "jsonRpcTransact (%s): corrupt line %d: %s",
                uri, error.line, error.text );
@@ -731,7 +781,7 @@ int jsonRpcTransact( const char *uri, const char *oAuthToken, int id,
     }
     else if( !json_is_object(*jResult) ) {
       logerr( "jsonRpcTransact (%s): could not parse to object: %s",
-               uri, receivedData );
+               uri, receivedData+headerSize );
       json_decref( *jResult );
       *jResult = NULL;
       retval = -1;
@@ -761,6 +811,9 @@ end:
     curl_slist_free_all( headers );
   Sfree( cmdStr );
   Sfree( receivedData );
+
+  if( httpCode )
+    *httpCode = code;
   return retval;
 }
 
