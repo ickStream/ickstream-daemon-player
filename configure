@@ -234,6 +234,16 @@ else
 fi
 
 # ----------------------------------------
+echo -n 'Check for PCM                   : '
+if true; then
+  CFLAGS="$CFLAGS -DICK_PCM"
+  EXTRASRCS="$EXTRASRCS codecPCM.c"
+  echo "found"
+else
+  echo "not found"
+fi
+
+# ----------------------------------------
 echo -n 'Check for mpg123                : '
 if echo "#include <mpg123.h>" | gcc -o /dev/null -E -x c - 2>/dev/null; then
   CFLAGS="$CFLAGS -DICK_MPG123"

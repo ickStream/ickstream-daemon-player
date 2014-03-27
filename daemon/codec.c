@@ -196,7 +196,7 @@ CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, 
   }
 
 /*------------------------------------------------------------------------*\
-    INitialize with parameters
+    Initialize with parameters
 \*------------------------------------------------------------------------*/
   instance->state       = CodecInitialized;
   instance->codec       = codec;
@@ -284,7 +284,7 @@ int codecDeleteInstance( CodecInstance *instance, bool wait )
 /*------------------------------------------------------------------------*\
     That's it  
 \*------------------------------------------------------------------------*/
-  return 0;	
+  return 0;
 }
 
 

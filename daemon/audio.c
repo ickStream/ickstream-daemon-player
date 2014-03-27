@@ -80,6 +80,9 @@ Remarks         : -
 #ifdef ICK_FLAC
 #include "codecFlac.h"
 #endif
+#ifdef ICK_PCM
+#include "codecPCM.h"
+#endif
 
 
 /*=========================================================================*\
@@ -126,6 +129,10 @@ _audioRegister( audioNullDescriptor() );
   
 #ifdef ICK_FLAC
   codecRegister( flacDescriptor() );
+#endif
+
+#ifdef ICK_PCM
+  codecRegister( pcmDescriptor() );
 #endif
 
 /*------------------------------------------------------------------------*\
