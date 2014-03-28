@@ -2,9 +2,9 @@
 
 Name            : -
 
-Source File     : codecPCM.c
+Source File     : codecSndFile.c
 
-Description     : Wrapper for PCM codec library
+Description     : Wrapper for libsndfile codec library
 
 Comments        : -
 
@@ -58,11 +58,12 @@ Remarks         : -
 #include <errno.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <sndfile.h>
 
 #include "ickutils.h"
 #include "audio.h"
 #include "codec.h"
-#include "codecPCM.h"
+#include "codecSndFile.h"
 
 
 /*=========================================================================*\
@@ -88,7 +89,7 @@ static int    _codecDeliverOutput( CodecInstance *instance, void *data, size_t m
 /*=========================================================================*\
       return descriptor for this codec 
 \*=========================================================================*/
-Codec *pcmDescriptor( void )
+Codec *sndFileDescriptor( void )
 {
   static Codec codec;
   
@@ -119,11 +120,11 @@ Codec *pcmDescriptor( void )
       Check if codec supports audio type and format
         Only check valid components of format
 \*=========================================================================*/
-static bool _codecCheckType(const char *type, const AudioFormat *format )
+static bool _codecCheckType( const char *type, const AudioFormat *format )
 {
 
   // type not supported?
-  if( strcmp(type,"pcm") && strcmp(type,"audio/pcm") )
+  if( strcmp(type,"wav") && strcmp(type,"audio/wav") )
     return false;
 
   // Check number of channels (only mono and stereo)
@@ -144,16 +145,49 @@ static bool _codecCheckType(const char *type, const AudioFormat *format )
 \*=========================================================================*/
 static int _codecNewInstance( CodecInstance *instance )
 {
-  DBGMSG( "pcm (%p): init instance.", instance );
-  
+  SNDFILE *sf;
+  SF_INFO  sfinfo;
+  memset( &sfinfo, 0, sizeof(sfinfo) );
+
+  DBGMSG( "sndfile (%p): init instance (%s)", instance, instance->type );
+
 /*------------------------------------------------------------------------*\
-    We don't do anything here
+  Try to open stream in readonly mode
 \*------------------------------------------------------------------------*/
-  // nope
-  
+  sf = sf_open_fd( instance->fdIn, SFM_READ, &sfinfo, false ) ;
+  if( !sf ) {
+    logerr( "sndfile: could not open sound file (%s).", sf_strerror(NULL) );
+    return -1;
+  }
+  DBGMSG( "sndfile (%p): format is %x", instance, sfinfo.format );
+  DBGMSG( "sndfile (%p): %d channels @ %d Hz", instance, sfinfo.channels, sfinfo.samplerate );
+  DBGMSG( "sndfile (%p): %ld frame, %d sections", instance, sfinfo.frames, sfinfo.sections );
+
 /*------------------------------------------------------------------------*\
-    That's all
+  Do we actually support this format?
 \*------------------------------------------------------------------------*/
+  // fixme
+
+/*------------------------------------------------------------------------*\
+  Check format consistency
+\*------------------------------------------------------------------------*/
+  if( sfinfo.channels != instance->format.channels ) {
+    logerr( "sndfile: channel mismatch (header %d, item descriptor %d).",
+            sfinfo.channels, instance->format.channels );
+    return -1;
+  }
+  if( sfinfo.samplerate != instance->format.sampleRate ) {
+    logerr( "sndfile: sample rate mismatch (header %d, item descriptor %d).",
+            sfinfo.samplerate, instance->format.sampleRate );
+    return -1;
+  }
+  // fixme: check bit width and signage, int/float type
+  // we might complete the format here according
+
+/*------------------------------------------------------------------------*\
+  Store sound file library descriptor, that's all
+\*------------------------------------------------------------------------*/
+  instance->instanceData = sf;
   return 0;
 }
 
@@ -166,10 +200,18 @@ static int _codecDeleteInstance( CodecInstance *instance )
   int rc = 0;
 
 /*------------------------------------------------------------------------*\
+    Close sound file library descriptor, if any
+\*------------------------------------------------------------------------*/
+  if( instance->instanceData  ) {
+    sf_close( instance->instanceData );
+    instance->instanceData = NULL;
+  }
+
+/*------------------------------------------------------------------------*\
     Close data source (reading pipe end)
 \*------------------------------------------------------------------------*/
   if( close(instance->fdIn)<0 ) {
-    logerr( "pcm: could not close feeder file handle %d (%s).", instance->fdIn,
+    logerr( "sndfile: could not close feeder file handle %d (%s).", instance->fdIn,
             strerror(errno) );
     rc = -1;
   }
@@ -189,33 +231,35 @@ static int _codecDeleteInstance( CodecInstance *instance )
 \*=========================================================================*/
 static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxLength, size_t *realSize )
 {
-  ssize_t bytes;
+//   SNDFILE *sf = instance->instanceData;
+  ssize_t     bytes;
 
 /*------------------------------------------------------------------------*\
-    Get data from input file handle
+    Get data from sound file library handle till buffer is full
 \*------------------------------------------------------------------------*/
   *realSize = 0;
-  pthread_mutex_lock( &instance->mutex );
+  // pthread_mutex_lock( &instance->mutex );
+  // fixme: use sf_read functions!
   bytes = read( instance->fdIn, data, maxLength );
-  pthread_mutex_unlock( &instance->mutex );
+  // pthread_mutex_unlock( &instance->mutex );
 
 /*------------------------------------------------------------------------*\
     Interpret result
 \*------------------------------------------------------------------------*/
   if( bytes<0 ) {
-    logerr( "pcm: could not deliver data (avail %ld bytes): %s",
+    logerr( "sndfile: could not deliver data (avail %ld bytes): %s",
             (long)maxLength, strerror(errno) );
     return -1;
   }
   else if( !bytes ) {
-    DBGMSG( "pcm (%p): read returned 0.",
+    DBGMSG( "sndfile (%p): read returned 0.",
            instance );
     instance->state = CodecEndOfTrack;
     pthread_cond_signal( &instance->condEndOfTrack );
     return 0;
   }
   *realSize = (size_t)bytes;
-  DBGMSG( "pcm (%p): delivered data (%ld/%ld bytes).",
+  DBGMSG( "sndfile (%p): delivered data (%ld/%ld bytes).",
           instance, (long)*realSize, (long)maxLength );
 
 /*------------------------------------------------------------------------*\

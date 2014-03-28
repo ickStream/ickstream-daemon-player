@@ -109,6 +109,7 @@ typedef void   (*CodecMetaCallback)( CodecInstance *instance, CodecMetaType mTyp
 struct _codecInstance {
   CodecInstance               *next;
   volatile CodecInstanceState  state;
+  char                        *type;                   // strong
   const Codec                 *codec;                  // weak
   void                        *instanceData;           // handled by individual codec
   int                          fdIn;
@@ -148,7 +149,7 @@ int    codecRegister( Codec *codec );
 void   codecShutdown( bool force );
 Codec *codecFind( const char *type, AudioFormat *format, Codec *codec );
 
-CodecInstance      *codecNewInstance( const Codec *codec, const AudioFormat *format, int fd, Fifo *fifo );
+CodecInstance      *codecNewInstance( const Codec *codec, const char *type, const AudioFormat *format, int fd, Fifo *fifo );
 void                codecSetFormatCallback( CodecInstance *instance, CodecFormatCallback callback, void *userData );
 void                codecSetIcyInterval( CodecInstance *instance, long icyInterval );
 void                codecSetMetaCallback( CodecInstance *instance, CodecMetaCallback callback, void *userData );

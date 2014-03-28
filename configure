@@ -234,10 +234,11 @@ else
 fi
 
 # ----------------------------------------
-echo -n 'Check for PCM                   : '
-if true; then
-  CFLAGS="$CFLAGS -DICK_PCM"
-  EXTRASRCS="$EXTRASRCS codecPCM.c"
+echo -n 'Check for libsndfile            : '
+if echo "#include <sndfile.h>" | gcc -o /dev/null -E -x c - 2>/dev/null; then
+  CFLAGS="$CFLAGS -DICK_LIBSNDFILE"
+  EXTRASRCS="$EXTRASRCS codecSndFile.c"
+  EXTRALIBS="$EXTRALIBS -lsndfile"
   echo "found"
 else
   echo "not found"

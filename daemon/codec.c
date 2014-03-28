@@ -176,15 +176,16 @@ Codec *codecFind( const char *type, AudioFormat *format, Codec *codec )
 /*=========================================================================*\
     Create a new instance of a codec
        fifo        - the output link to the audio backend (PCM format)
-       format      - the prfered output format
+       type        - the data type (MIME)
+       format      - the preferred output format
        fd          - file descriptor for input data (close on EOF!)
     Returns NULL on error
 \*=========================================================================*/
-CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, int fd, Fifo *fifo )
+CodecInstance *codecNewInstance( const Codec *codec, const char *type, const AudioFormat *format, int fd, Fifo *fifo )
 {
   CodecInstance       *instance;
 
-  DBGMSG( "codecNewInstance (%s): creating new instance.", codec->name );
+  DBGMSG( "codecNewInstance (%s): creating new instance for type \"%s\".", codec->name, type );
 
 /*------------------------------------------------------------------------*\
     Create header 
@@ -203,6 +204,12 @@ CodecInstance *codecNewInstance( const Codec *codec, const AudioFormat *format, 
   instance->fifoOut     = fifo;
   instance->fdIn        = fd;
   memcpy( &instance->format, format, sizeof(AudioFormat) );
+  instance->type        = strdup( type );
+  if( !instance->type ) {
+    Sfree( instance );
+    logerr( "codecNewInstance (%s): Out of memory!", codec->name );
+    return NULL;
+  }
 
 /*------------------------------------------------------------------------*\
     Init mutex and conditions
@@ -254,7 +261,6 @@ int codecStartInstance( CodecInstance *instance )
 }
 
 
-
 /*=========================================================================*\
       Delete a codec instance
 \*=========================================================================*/
@@ -279,6 +285,7 @@ int codecDeleteInstance( CodecInstance *instance, bool wait )
 /*------------------------------------------------------------------------*\
     Free header  
 \*------------------------------------------------------------------------*/
+  Sfree( instance->type );
   Sfree( instance );
 
 /*------------------------------------------------------------------------*\

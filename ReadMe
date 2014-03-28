@@ -6,15 +6,16 @@ the underlying concept and architecture might and will change at any time!
 
 Before configuring make sure that the following libs are installed in 
 development version (i.e. including headers):
-- libickstreamp2p (and libwebsockets)
+- libickstreamp2p (requires libwebsockets)
 - libjansson
 - libcurl
 - libuuid
-- libasound (optional, recommended)
-- libpulse  (optional)
-- libmpg123 (optional, recommended)
-- libFLAC   (optional)
-- libcurses (optional, for hmi=NCurses)
+- libasound  (optional, recommended)
+- libpulse   (optional)
+- libmpg123  (optional, recommended)
+- libsndfile (optional, recommended)
+- libFLAC    (optional)
+- libcurses  (optional, for hmi=NCurses)
 
 Configure the package by running configure, e.g.
 ./configure

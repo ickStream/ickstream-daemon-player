@@ -141,7 +141,7 @@ static CodecInstance              *codecInstance;
 static int        _playerSetVolume( double volume, bool muted );
 static void      *_playbackThread( void *arg );
 static int        _playItem( PlaylistItem *item, AudioFormat *format );
-static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, AudioFormat *format, int timeout );
+static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, const char **type, AudioFormat *format, int timeout );
 static int        _audioFeedCallback( AudioFeed *feed, void* usrData );
 static int        _codecNewFormatCallback( CodecInstance *instance, void *userData );
 #ifdef ICK_RAWMETA
@@ -1199,6 +1199,7 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
 {
   AudioFeed     *feed;
   Codec         *codec;
+  const char    *type;
   CodecInstance *codecInst;   // mirrored to global variable codecInstance
   double         seekPos = 0;
   double         pos     = 0;
@@ -1231,7 +1232,7 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
   DBGMSG( "_playItem (%s \"%s\"): Get feed.",
             playlistItemGetType(item)==PlaylistItemStream?"stream":"track",
             playlistItemGetText(item) );
-  feed = _feedFromPlayListItem( item, &codec, format, 5000 );
+  feed = _feedFromPlayListItem( item, &codec, &type, format, 5000 );
   if( !feed ) {
     playlistItemLock( item );
     lognotice( "_playItem (%s \"%s\"): Unavailable or format %s unsupported.",
@@ -1276,7 +1277,7 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
   DBGMSG( "_playItem (%s,\"%s\"): Init instance for codec %s (format %s).",
             playlistItemGetType(item)==PlaylistItemStream?"stream":"track",
             playlistItemGetText(item), codec->name, audioFormatStr(NULL,format) );
-  codecInst = codecNewInstance( codec, format, audioFeedGetFd(feed), audioIf->fifoIn );
+  codecInst = codecNewInstance( codec, type, format, audioFeedGetFd(feed), audioIf->fifoIn );
   if( !codecInst ) {
     logerr( "_playItem (%s \"%s\"): Could not get instance of codec %s (format %s).",
             playlistItemGetType(item)==PlaylistItemStream?"Stream":"Track",
@@ -1432,11 +1433,12 @@ if( playlistItemGetType(item)==PlaylistItemStream &&
       Select an audio feed for a playlist item
         return opened feed on success, NULL on error
         *codec is set to the first matching codec
+        *type  cen be used to access the item format string
         format can be used to supply a preferred format and will be set to
                the streamRef hints (if available)
         timeout is the connection timeout in milliseconds
 \*=========================================================================*/
-static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, AudioFormat *format, int timeout )
+static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, const char **type, AudioFormat *format, int timeout )
 {
   int          i;
   json_t      *jStreamingRefs;
@@ -1475,7 +1477,7 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, Audi
     for( i=0; !feed&&i<json_array_size(jStreamingRefs); i++ ) {
       json_t      *jStreamRef = json_array_get( jStreamingRefs, i );
       json_t      *jObj;
-      const char  *type;
+      const char  *thetype;
       char        *uri;
       const char  *oAuthToken = NULL;
 
@@ -1491,7 +1493,9 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, Audi
         playlistItemUnlock( item );
         continue;
       }
-      type = json_string_value( jObj );
+      thetype = json_string_value( jObj );
+      if( type )
+        *type = thetype;
 
       // Get URI
       jObj = json_object_get( jStreamRef, "url" );
@@ -1561,11 +1565,11 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, Audi
       }
 
       // Get first codec matching type and format
-      *codec = codecFind( type, &refFormat, NULL );
+      *codec = codecFind( thetype, &refFormat, NULL );
       if( !*codec ) {
         logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: No codec found for %s, %s.",
                  playlistItemGetText(item), playlistItemGetId(item), i,
-                 type, audioFormatStr(NULL,&refFormat) );
+                 thetype, audioFormatStr(NULL,&refFormat) );
         Sfree( uri );
         continue;
       }

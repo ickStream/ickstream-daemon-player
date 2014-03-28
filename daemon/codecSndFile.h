@@ -2,9 +2,9 @@
 
 Name            : -
 
-Source File     : codecPCM.h
+Source File     : codecSndFile.h
 
-Description     : Main include file for PCM codec wrapper
+Description     : Main include file for libsndfile codec wrapper
 
 Comments        : -
 
@@ -46,8 +46,8 @@ Remarks         : -
 \************************************************************************/
 
 
-#ifndef __CODECPCM_H
-#define __CODECPCM_H
+#ifndef __CODECSNDFILE_H
+#define __CODECSNDFILE_H
 
 /*=========================================================================*\
 	Includes needed by definitions from this file
@@ -64,9 +64,9 @@ Remarks         : -
 /*=========================================================================*\
        Prototypes 
 \*=========================================================================*/
-Codec *pcmDescriptor( );
+Codec *sndFileDescriptor( );
 
-#endif  /* __CODECPCM_H */
+#endif  /* __CODECSNDFILE_H */
 
 
 /*========================================================================*\

@@ -80,8 +80,8 @@ Remarks         : -
 #ifdef ICK_FLAC
 #include "codecFlac.h"
 #endif
-#ifdef ICK_PCM
-#include "codecPCM.h"
+#ifdef ICK_LIBSNDFILE
+#include "codecSndFile.h"
 #endif
 
 
@@ -131,8 +131,8 @@ _audioRegister( audioNullDescriptor() );
   codecRegister( flacDescriptor() );
 #endif
 
-#ifdef ICK_PCM
-  codecRegister( pcmDescriptor() );
+#ifdef ICK_LIBSNDFILE
+  codecRegister( sndFileDescriptor() );
 #endif
 
 /*------------------------------------------------------------------------*\
