@@ -111,7 +111,7 @@ Fifo *fifoCreate( const char *name, size_t size )
 \*------------------------------------------------------------------------*/
   fifo = calloc( 1, sizeof(Fifo) );
   if( !fifo ) {
-  	logerr( "fifoCreate: out of memory!" );
+    logerr( "fifoCreate: out of memory!" );
     return NULL;
   }
   if( name ) {
@@ -122,7 +122,7 @@ Fifo *fifoCreate( const char *name, size_t size )
       return NULL;
     }
   }
-  
+
 /*------------------------------------------------------------------------*\
     Allocate buffer and init pointers 
 \*------------------------------------------------------------------------*/
@@ -276,7 +276,7 @@ int fifoLockWaitWritable( Fifo *fifo, int timeout, size_t bytes )
     if( err )
       break; 
   }
-  
+
 /*------------------------------------------------------------------------*\
     In case of error: unlock mutex
 \*------------------------------------------------------------------------*/
@@ -285,7 +285,7 @@ int fifoLockWaitWritable( Fifo *fifo, int timeout, size_t bytes )
     if( FifoIsReadable(fifo) )
       pthread_cond_signal( &fifo->condIsReadable );		
   }
-  
+
 /*------------------------------------------------------------------------*\
     That's it
 \*------------------------------------------------------------------------*/
@@ -463,7 +463,7 @@ void fifoUnlockAfterRead( Fifo *fifo, size_t size )
     Adjust pointers
 \*------------------------------------------------------------------------*/
   fifoDataConsumed( fifo, size );
-  
+
 /*------------------------------------------------------------------------*\
     Release mutex
 \*------------------------------------------------------------------------*/
@@ -680,6 +680,7 @@ const char *fifoGetReadPtr( Fifo *fifo )
   return (const char *) fifo->readp;
 }
 
+
 /*=========================================================================*\
     Get pointer to write position
 \*=========================================================================*/
@@ -687,6 +688,7 @@ char *fifoGetWritePtr( Fifo *fifo )
 {
   return (char *) fifo->writep;
 }
+
 
 /*=========================================================================*\
       New data was written, adjust write pointer
@@ -709,7 +711,7 @@ int fifoDataWritten( Fifo *fifo, size_t size )
                      (long) (fifo->writep-eptr+size) );
     return -1;
   }
-  
+
 /*------------------------------------------------------------------------*\
     Increment read pointer modulo buffer size 
 \*------------------------------------------------------------------------*/  
@@ -727,9 +729,9 @@ int fifoDataWritten( Fifo *fifo, size_t size )
     That's all 
 \*------------------------------------------------------------------------*/      
   return 0;
-}    
-    
-    
+}
+
+
 /*=========================================================================*\
       Data was consumed, adjust read pointer
         fifo should be locked
@@ -751,7 +753,7 @@ int fifoDataConsumed( Fifo *fifo, size_t size )
                      (long) (fifo->readp+size-eptr) );
     return -1;
   }
-  
+
 /*------------------------------------------------------------------------*\
     Increment read pointer modulo buffer size 
 \*------------------------------------------------------------------------*/  

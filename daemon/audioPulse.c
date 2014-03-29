@@ -50,7 +50,7 @@ Remarks         : -
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \************************************************************************/
 
-#undef ICK_DEBUG
+// #undef ICK_DEBUG
 
 #include <stdio.h>
 #include <string.h>
