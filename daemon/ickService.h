@@ -55,6 +55,8 @@ Remarks         : -
 #include <stdbool.h>
 #include <jansson.h> 
 
+#include "playlist.h"
+
 
 /*========================================================================n
   Macro and type definitions
@@ -82,6 +84,8 @@ void             ickServiceRemove( const char *id, const char *type, ServiceOrig
 ServiceListItem *ickServiceFind( ServiceListItem *item, const char *id, const char *type, ServiceOrigin origin );
 
 char            *ickServiceResolveURI( const char* uri, const char* type );
+json_t          *ickServiceGetStreamingRef( PlaylistItem *item );
+
 
 json_t          *ickServiceGetJSON( const ServiceListItem *item );
 const char      *ickServiceGetId( const ServiceListItem *item );

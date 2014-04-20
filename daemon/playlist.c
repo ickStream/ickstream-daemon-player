@@ -1923,14 +1923,9 @@ static int _playlistItemFillHeader( PlaylistItem *pItem )
   }
 
 /*------------------------------------------------------------------------*\
-    Extract streaming data list for quick access (weak ref.)
+    Extract streaming data list for quick access (weak ref.), optional
 \*------------------------------------------------------------------------*/
-  jObj = json_object_get( pItem->jItem, "streamingRefs" );
-  if( !jObj || !json_is_array(jObj) ) {
-    logerr( "_playlistItemFillHeader: Field \"streamingRefs\" missing or of wrong type." );
-    return -1;
-  }
-  pItem->jStreamingRefs = jObj;
+  pItem->jStreamingRefs = json_object_get( pItem->jItem, "streamingRefs" );
 
 /*------------------------------------------------------------------------*\
     That's all

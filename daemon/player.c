@@ -1467,11 +1467,22 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, cons
     feedFlags = FeedIcy;
 
 /*------------------------------------------------------------------------*\
-    Get stream hints 
+    Get streaming hints for local content service
 \*------------------------------------------------------------------------*/
   playlistItemLock( item );
   jStreamingRefs = playlistItemGetStreamingRefs( item );
+  json_incref( jStreamingRefs );
   playlistItemUnlock( item );
+
+/*------------------------------------------------------------------------*\
+    Get streaming hints for online content service
+\*------------------------------------------------------------------------*/
+  if( !jStreamingRefs )
+    jStreamingRefs = ickServiceGetStreamingRef( item );
+
+/*------------------------------------------------------------------------*\
+    Still no hints?
+\*------------------------------------------------------------------------*/
   if( !jStreamingRefs ) {
     logerr( "_feedFromPlayListItem (%s,%s): No streaming references found.",
               playlistItemGetText(item), playlistItemGetId(item) );
@@ -1575,7 +1586,7 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, cons
       // Get first codec matching type and format
       *codec = codecFind( thetype, &refFormat, NULL );
       if( !*codec ) {
-        logwarn( "_feedFromPlayListItem (%s,%s), StreamRef #%d: No codec found for %s, %s.",
+        DBGMSG( "_feedFromPlayListItem (%s,%s), StreamRef #%d: No codec found for %s, %s.",
                  playlistItemGetText(item), playlistItemGetId(item), i,
                  thetype, audioFormatStr(NULL,&refFormat) );
         Sfree( uri );
@@ -1610,6 +1621,7 @@ static AudioFeed *_feedFromPlayListItem( PlaylistItem *item, Codec **codec, cons
 /*------------------------------------------------------------------------*\
     Return result (if any)
 \*------------------------------------------------------------------------*/
+  json_decref( jStreamingRefs );
   if( feed )
     memcpy( format, &refFormat, sizeof(AudioFormat) );
   return feed;

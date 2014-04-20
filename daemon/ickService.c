@@ -388,6 +388,137 @@ char *ickServiceResolveURI( const char* uri, const char* type )
 
 
 /*=========================================================================*\
+    Get streaming reference for an item from cloud
+      item - the item to be resolved
+      returns a json list containing one element
+              (equivalent to streamingRefs feature of items)
+      returns NULL on error
+\*=========================================================================*/
+json_t *ickServiceGetStreamingRef( PlaylistItem *item )
+{
+  const char      *token;
+  char            *sid;
+  ServiceListItem *service;
+  json_t          *jParams;
+  json_t          *jResult;
+  json_t          *jObj;
+  json_t          *jStreamingRefs;
+
+  DBGMSG( "ickServiceGetStreamingRef: Item \"%s\" (%s)",
+      playlistItemGetText(item), playlistItemGetId(item) );
+
+/*------------------------------------------------------------------------*\
+    Need token for cloud access...
+\*------------------------------------------------------------------------*/
+  token = ickCloudGetAccessToken();
+  if( !token ) {
+    logwarn( "ickServiceGetStreamingRef: Device not registered (no access token)." );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+  Get service id from item id
+\*------------------------------------------------------------------------*/
+  if( !playlistItemGetId(item) ) {
+    playlistItemLock( item );
+    logwarn( "ickServiceGetStreamingRef (%s): Item contains no id!",
+             playlistItemGetText(item) );
+    playlistItemUnlock( item );
+    return NULL;
+  }
+  sid = strdup( playlistItemGetId(item) );
+  if( !sid ) {
+    logwarn( "ickServiceGetStreamingRef: out of memory!" );
+    return NULL;
+  }
+  if( !strchr(sid,':') ) {
+    playlistItemLock( item );
+    logwarn( "ickServiceGetStreamingRef (%s,%s): Malformed id (missing ':')!",
+            playlistItemGetText(item), playlistItemGetId(item) );
+    playlistItemUnlock( item );
+    Sfree ( sid );
+    return NULL;
+  }
+  *strchr( sid, ':' ) = 0;
+
+/*------------------------------------------------------------------------*\
+  Find service descriptor
+\*------------------------------------------------------------------------*/
+  service = ickServiceFind( NULL, sid, NULL, ServiceCloud );
+  if( !service ) {
+    playlistItemLock( item );
+    logwarn( "ickServiceGetStreamingRef (%s,%s): No such service \"%s\"!",
+            playlistItemGetText(item), playlistItemGetId(item), sid );
+    playlistItemUnlock( item );
+    Sfree ( sid );
+    return NULL;
+  }
+  Sfree ( sid );
+  DBGMSG( "ickServiceGetStreamingRef (%s,%s): using service \"%s\" (%s)",
+          playlistItemGetText(item), playlistItemGetId(item),
+          service->name, service->type );
+
+/*------------------------------------------------------------------------*\
+    Collect parameters
+\*------------------------------------------------------------------------*/
+  jParams = json_object();
+  json_object_set_new( jParams, "itemId", json_string(playlistItemGetId(item)) );
+  //Fixme: collect supported formats
+
+/*------------------------------------------------------------------------*\
+    Interact with cloud
+\*------------------------------------------------------------------------*/
+  jResult = ickCloudRequestSync( service->url, token, "getItemStreamingRef", jParams, NULL );
+  json_decref( jParams );
+  if( !jResult ) {
+    logwarn( "ickServiceGetStreamingRef: No answer from cloud." );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Server indicated error?
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( jResult, "error" );
+  if( jObj ) {
+    logwarn( "ickServiceGetStreamingRef: Error %s.", json_rpcerrstr(jObj) );
+    json_decref( jResult );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Get result
+\*------------------------------------------------------------------------*/
+  jObj = json_object_get( jResult, "result" );
+  if( !jObj ) {
+    logerr( "ickServiceGetStreamingRef: No \"result\" object in answer." );
+    json_decref( jResult );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    Convert to list to be compatible with streamingRefs feature of items
+\*------------------------------------------------------------------------*/
+  jStreamingRefs = json_array();
+  if( !jObj ) {
+    logerr( "ickServiceGetStreamingRef: out of memory!" );
+    json_decref( jResult );
+    return NULL;
+  }
+  if( json_array_append(jStreamingRefs,jObj) ) {
+    logerr( "ickServiceGetStreamingRef: json_arry_append() failed." );
+    json_decref( jResult );
+    return NULL;
+  }
+
+/*------------------------------------------------------------------------*\
+    That's it
+\*------------------------------------------------------------------------*/
+  json_decref( jResult );
+  return jStreamingRefs;
+}
+
+
+/*=========================================================================*\
     Get JSON object defining a service
 \*=========================================================================*/
 json_t *ickServiceGetJSON( const ServiceListItem *item )

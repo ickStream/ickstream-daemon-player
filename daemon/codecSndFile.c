@@ -133,8 +133,7 @@ static bool _codecCheckType( const char *type, const AudioFormat *format )
 {
 
   // type not supported?
-  if( strcmp(type,"wav") && strcmp(type,"audio/wav") &&
-      strcmp(type,"aiff") && strcmp(type,"audio/x-aiff") )
+  if( strcmp(type,"audio/wav") && strcmp(type,"audio/x-aiff") )
     return false;
 
   // Check number of channels (only mono and stereo)

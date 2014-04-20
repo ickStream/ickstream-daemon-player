@@ -178,7 +178,7 @@ static bool _codecCheckType(const char *type, const AudioFormat *format )
 {
 
   // type not supported?
-  if( strcmp(type,"mp3") && strcmp(type,"audio/mpeg") )
+  if( strcmp(type,"audio/mpeg") )
     return false;
 
   // Check number of channels (only mono and stereo)
