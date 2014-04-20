@@ -1054,7 +1054,7 @@ int playerSetState( PlayerState state, bool broadcast )
       hmiNewQueue( playerQueue );
 
       // Stop audio interface (if not done by _playbackThread() )
-      if( audioIf ) {
+      if( !audioIf ) {
         DBGMSG( "playerSetState (stop): No audio interface to drop." );
       }
       else {
