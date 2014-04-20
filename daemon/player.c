@@ -1053,11 +1053,15 @@ int playerSetState( PlayerState state, bool broadcast )
       */
       hmiNewQueue( playerQueue );
 
-      // not yet initialized?
-      if( !audioIf ) {
-        loginfo( "playerSetState (stop): Audio device not yet initialized." );
-        rc = -1;
-        break;
+      // Stop audio interface (if not done by _playbackThread() )
+      if( audioIf ) {
+        DBGMSG( "playerSetState (stop): No audio interface to drop." );
+      }
+      else {
+        if( audioIfStop(audioIf,AudioDrop) )
+          logerr( "playerSetState (stop): Could not drop audio interface \"%s\".", audioIf->devName );
+        else
+          audioIf = NULL;
       }
 
       // request thread to stop playback and set new player state
@@ -1161,10 +1165,14 @@ static void *_playbackThread( void *arg )
   DBGMSG( "Player thread: End of playback loop (state %d).", playbackThreadState );
 
 /*------------------------------------------------------------------------*\
-    Stop audio interface
+    Stop audio interface in draining mode if at end of item list
 \*------------------------------------------------------------------------*/
-  if( audioIfStop(audioIf,playbackThreadState==PlayerThreadRunning?AudioDrain:AudioDrop) )
-    logerr( "Player thread: Could not stop audio interface \"%s\".", audioIf->devName );
+  if( playbackThreadState==PlayerThreadRunning ) {
+    if( audioIfStop(audioIf,AudioDrain) )
+      logerr( "Player thread: Could not stop audio interface \"%s\".", audioIf->devName );
+    else
+      audioIf = NULL;
+  }
 
 /*------------------------------------------------------------------------*\
     Set and broadcast new player state
@@ -1409,17 +1417,17 @@ if( playlistItemGetType(item)==PlaylistItemStream &&
     logerr( "_playItem (%s): Could not scrobble track.", playlistItemGetText(item)  );
 
 /*------------------------------------------------------------------------*\
-    Get rid of feed
-\*------------------------------------------------------------------------*/
-  if( feed && audioFeedDelete(feed,true) )
-    logerr( "_playItem (%s): Could not delete feeder instance.", playlistItemGetText(item)  );
-
-/*------------------------------------------------------------------------*\
     Get rid of codec instance
 \*------------------------------------------------------------------------*/
   codecInstance = NULL;
   if( codecDeleteInstance(codecInst,true) )
     logerr( "_playItem (%s): Could not delete codec instance.", playlistItemGetText(item)  );
+
+/*------------------------------------------------------------------------*\
+    Get rid of feed
+\*------------------------------------------------------------------------*/
+  if( feed && audioFeedDelete(feed,true) )
+    logerr( "_playItem (%s): Could not delete feeder instance.", playlistItemGetText(item)  );
 
 /*------------------------------------------------------------------------*\
     That's it
