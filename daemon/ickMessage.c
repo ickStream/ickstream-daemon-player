@@ -1440,8 +1440,10 @@ ickErrcode_t sendIckCommand( ickP2pContext_t *ictx, const char *szDeviceId,
     Create an init list element for callbacks
 \*------------------------------------------------------------------------*/
   OpenRequest *request = calloc( 1, sizeof(OpenRequest) );
-  if( !request )
+  if( !request ) {
+    logerr( "sendIckCommand: out of memory" );
     return -1;
+  }
     
   request->szDeviceId = strdup( szDeviceId );  
   request->id         = getAndIncrementCounter();
