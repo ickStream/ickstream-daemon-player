@@ -214,7 +214,8 @@ CodecInstance *codecNewInstance( const Codec *codec, const char *type, const Aud
 /*------------------------------------------------------------------------*\
     Init mutex and conditions
 \*------------------------------------------------------------------------*/
-  ickMutexInit( &instance->mutex );
+  ickMutexInit( &instance->mutex_access );
+  ickMutexInit( &instance->mutex_state );
   pthread_cond_init( &instance->condEndOfTrack, NULL );
 
 /*------------------------------------------------------------------------*\
@@ -279,7 +280,8 @@ int codecDeleteInstance( CodecInstance *instance, bool wait )
 /*------------------------------------------------------------------------*\
     Delete mutex and conditions
 \*------------------------------------------------------------------------*/
-  pthread_mutex_destroy( &instance->mutex );
+  pthread_mutex_destroy( &instance->mutex_access );
+  pthread_mutex_destroy( &instance->mutex_state );
   pthread_cond_destroy( &instance->condEndOfTrack );
   
 /*------------------------------------------------------------------------*\
@@ -345,6 +347,7 @@ int codecWaitForEnd( CodecInstance *instance, int timeout )
   struct timeval  now;
   struct timespec abstime;
   int             err = 0;
+  int             perr;
 
   DBGMSG( "codecWaitForEnd (%s,%p): Waiting for end (timeout %dms).",
           instance->codec->name, instance, timeout );
@@ -352,8 +355,10 @@ int codecWaitForEnd( CodecInstance *instance, int timeout )
 /*------------------------------------------------------------------------*\
     Lock mutex
 \*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &instance->mutex );
-  
+  perr = pthread_mutex_lock( &instance->mutex_state );
+  if( perr )
+    logerr( "codecWaitForEnd: locking state mutex: %s", strerror(perr) );
+
 /*------------------------------------------------------------------------*\
     Get absolut timestamp for timeout
 \*------------------------------------------------------------------------*/
@@ -373,8 +378,8 @@ int codecWaitForEnd( CodecInstance *instance, int timeout )
   while( instance->state!=CodecTerminatedOk && instance->state!=CodecTerminatedError ) {
 
     // wait for condition
-    err = timeout>0 ? pthread_cond_timedwait( &instance->condEndOfTrack, &instance->mutex, &abstime )
-                    : pthread_cond_wait( &instance->condEndOfTrack, &instance->mutex );
+    err = timeout>0 ? pthread_cond_timedwait( &instance->condEndOfTrack, &instance->mutex_state, &abstime )
+                    : pthread_cond_wait( &instance->condEndOfTrack, &instance->mutex_state );
     
     // Break on errors
     if( err )
@@ -384,8 +389,9 @@ int codecWaitForEnd( CodecInstance *instance, int timeout )
 /*------------------------------------------------------------------------*\
     Unlock mutex
 \*------------------------------------------------------------------------*/
-  if( !err)
-    pthread_mutex_unlock( &instance->mutex );
+  perr = pthread_mutex_unlock( &instance->mutex_state );
+  if( perr )
+    logerr( "codecWaitForEnd: unlocking state mutex: %s", strerror(perr) );
 
   DBGMSG( "codecWaitForEnd (%s,%p): Waited for end (%s)",
           instance->codec->name, instance, strerror(err) );

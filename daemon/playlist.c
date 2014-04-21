@@ -108,7 +108,7 @@ struct _playlist {
 \*=========================================================================*/
 static int  _playlistItemFillHeader( PlaylistItem *pItem );
 static void _playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem, PlaylistSortType order, PlaylistItem *newItem );
-static void _playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem, PlaylistSortType order, PlaylistItem *newItem );
+//static void _playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem, PlaylistSortType order, PlaylistItem *newItem );
 static void _playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem, PlaylistSortType order );
 
 #ifdef CONSISTENCYCHECKING
@@ -273,13 +273,16 @@ Playlist *playlistFromJSON( json_t *jQueue )
 \*=========================================================================*/
 void playlistDelete( Playlist *plst )
 {
+  int perr;
   DBGMSG( "playlistDelete: %p", plst );
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
     Lock mutex
 \*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &plst->mutex );
+  perr = pthread_mutex_lock( &plst->mutex );
+  if( perr )
+    logerr( "playlistDelete: locking list mutex: %s", strerror(perr) );
 
 /*------------------------------------------------------------------------*\
     Free all items and reset header
@@ -289,7 +292,10 @@ void playlistDelete( Playlist *plst )
 /*------------------------------------------------------------------------*\
     Destroy mutex and free header
 \*------------------------------------------------------------------------*/
-  pthread_mutex_destroy( &plst->mutex );
+  perr = pthread_mutex_destroy( &plst->mutex );
+  if( perr )
+    logerr( "playlistDelete: destroxing list mutex: %s", strerror(perr) );
+
   Sfree( plst );
 }
 
@@ -299,8 +305,12 @@ void playlistDelete( Playlist *plst )
 \*=========================================================================*/
 void playlistLock( Playlist *plst )
 {
+  int perr;
   DBGMSG( "playlist (%p): lock", plst );
-  pthread_mutex_lock( &plst->mutex );
+  perr = pthread_mutex_lock( &plst->mutex );
+  if( perr )
+    logerr( "playlistLock: %s", strerror(perr) );
+
 }
 
 /*=========================================================================*\
@@ -308,8 +318,11 @@ void playlistLock( Playlist *plst )
 \*=========================================================================*/
 void playlistUnlock( Playlist *plst )
 {
+  int perr;
   DBGMSG( "playlist (%p): unlock", plst );
-  pthread_mutex_unlock( &plst->mutex );
+  perr = pthread_mutex_unlock( &plst->mutex );
+  if( perr )
+    logerr( "playlistUnlock: %s", strerror(perr) );
 }
 
 
@@ -1420,6 +1433,7 @@ static void _playlistAddItemBefore( Playlist *plst, PlaylistItem *anchorItem,
        Note that the caller is responsible for synchronizing the lists and
        for adjusting the meta data (cursorPos and muberOfItems)
 \*=========================================================================*/
+#if 0
 static void _playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem,
                                     PlaylistSortType order, PlaylistItem *newItem )
 {
@@ -1488,7 +1502,7 @@ static void _playlistAddItemAfter( Playlist *plst, PlaylistItem *anchorItem,
       That's it
   \*------------------------------------------------------------------------*/
 }
-
+#endif
 
 /*=========================================================================*\
        Unlink an item from list(s)
@@ -1615,8 +1629,12 @@ void playlistItemDelete( PlaylistItem *pItem )
 \*=========================================================================*/
 void playlistItemLock( PlaylistItem *item )
 {
+  int perr;
   DBGMSG( "playlistItem (%p): lock", item );
-  pthread_mutex_lock( &item->mutex );
+  perr = pthread_mutex_lock( &item->mutex );
+  if( perr )
+    logerr( "playlistItemLock: %s", strerror(perr) );
+
 }
 
 
@@ -1625,8 +1643,11 @@ void playlistItemLock( PlaylistItem *item )
 \*=========================================================================*/
 void playlistItemUnlock( PlaylistItem *item )
 {
+  int perr;
   DBGMSG( "playlistItem (%p): unlock", item );
-  pthread_mutex_unlock( &item->mutex );
+  perr = pthread_mutex_unlock( &item->mutex );
+  if( perr )
+    logerr( "playlistItemUnlock: %s", strerror(perr) );
 }
 
 

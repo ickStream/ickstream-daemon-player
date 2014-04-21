@@ -971,6 +971,7 @@ static int _paLockWaitWritable( const AudioIf *aif, int timeout )
   struct timeval  now;
   struct timespec abstime;
   int             err = 0;
+  int             perr;
   PulseData      *ifData = aif->ifData;
 
   DBGMSG( "_paLockWaitWritable (%s): waiting for writable: timeout %dms",
@@ -979,7 +980,9 @@ static int _paLockWaitWritable( const AudioIf *aif, int timeout )
 /*------------------------------------------------------------------------*\
     Lock mutex
 \*------------------------------------------------------------------------*/
-   pthread_mutex_lock( &ifData->mutex );
+   perr = pthread_mutex_lock( &ifData->mutex );
+   if( perr )
+     logerr( "_paLockWaitWritable: locking interface mutex: %s", strerror(perr) );
 
 /*------------------------------------------------------------------------*\
     Get absolute timestamp for timeout
@@ -1009,10 +1012,11 @@ static int _paLockWaitWritable( const AudioIf *aif, int timeout )
   }
 
 /*------------------------------------------------------------------------*\
-    In case of error: unlock mutex
+    Unlock mutex
 \*------------------------------------------------------------------------*/
-  if( err )
-    pthread_mutex_unlock( &ifData->mutex );
+  perr = pthread_mutex_unlock( &ifData->mutex );
+  if( perr )
+    logerr( "_paLockWaitWritable: unlocking interface mutex: %s", strerror(perr) );
 
 /*------------------------------------------------------------------------*\
     That's it

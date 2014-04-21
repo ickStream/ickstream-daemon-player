@@ -656,6 +656,7 @@ int audioIfWaitForInit( AudioIf *aif, int timeout )
   struct timeval  now;
   struct timespec abstime;
   int             err = 0;
+  int             perr;
 
   DBGMSG( "Audio instance (%p,%s): Wait for init (timeout %dms).",
            aif, aif->backend->name, timeout );
@@ -663,7 +664,9 @@ int audioIfWaitForInit( AudioIf *aif, int timeout )
 /*------------------------------------------------------------------------*\
     Lock mutex
 \*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &aif->mutex );
+  perr = pthread_mutex_lock( &aif->mutex );
+  if( perr )
+    logerr( "audioIfWaitForInit: locking interface mutex: %s", strerror(perr) );
 
 /*------------------------------------------------------------------------*\
     Get absolute timestamp for timeout
@@ -695,8 +698,9 @@ int audioIfWaitForInit( AudioIf *aif, int timeout )
 /*------------------------------------------------------------------------*\
     Unlock mutex
 \*------------------------------------------------------------------------*/
-  if( !err)
-    pthread_mutex_unlock( &aif->mutex );
+  perr = pthread_mutex_unlock( &aif->mutex );
+  if( perr )
+    logerr( "audioIfWaitForInit: unlocking interface mutex: %s", strerror(perr) );
 
 /*------------------------------------------------------------------------*\
     That's it

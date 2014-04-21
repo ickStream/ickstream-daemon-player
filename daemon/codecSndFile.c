@@ -283,12 +283,12 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
 {
   SndFileDscr *sfd = instance->instanceData;
   int          i;
+  int          perr;
   sf_count_t   samples;
   int          sampleBuff[16];  // max 16 channels...
 
   DBGMSG( "sndfile (%p): data requested (max. %ld bytes).",
           instance, (long)maxLength );
-
 
 /*------------------------------------------------------------------------*\
     Calculate size of a sample and collect data
@@ -338,9 +338,13 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
     }
 
     // get sample vector for next frame
-    pthread_mutex_lock( &instance->mutex );
+    perr = pthread_mutex_lock( &instance->mutex_access );
+    if( perr )
+      logerr( "_codecDeliverOutput: locking codec access mutex: %s", strerror(perr) );
     samples = sf_read_int( sfd->sf, sampleBuff, instance->format.channels );
-    pthread_mutex_unlock( &instance->mutex );
+    perr = pthread_mutex_unlock( &instance->mutex_access );
+    if( perr )
+      logerr( "_codecDeliverOutput: unlocking codec access mutex: %s", strerror(perr) );
 
     // End of file or error?
     if( !samples ) {

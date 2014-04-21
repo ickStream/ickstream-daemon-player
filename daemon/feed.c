@@ -226,8 +226,13 @@ int audioFeedDelete( AudioFeed *feed, bool wait )
 \*=========================================================================*/
 void audioFeedLock( AudioFeed *feed )
 {
+  int perr;
+
   DBGMSG( "Audiofeed (%p,%s): lock.", feed, feed->uri );
-  pthread_mutex_lock( &feed->mutex );
+  perr = pthread_mutex_lock( &feed->mutex );
+  if( perr )
+    logerr( "audioFeedLock: %s", strerror(perr) );
+
 }
 
 
@@ -236,8 +241,11 @@ void audioFeedLock( AudioFeed *feed )
 \*=========================================================================*/
 void audioFeedUnlock( AudioFeed *feed )
 {
+  int perr;
   DBGMSG( "Audiofeed (%p,%s): unlock.", feed, feed->uri );
-  pthread_mutex_unlock( &feed->mutex );
+  perr = pthread_mutex_unlock( &feed->mutex );
+  if( perr )
+    logerr( "audioFeedUnlock: %s", strerror(perr) );
 }
 
 
@@ -252,6 +260,7 @@ int audioFeedLockWaitForConnection( AudioFeed *feed, int timeout )
   struct timeval  now;
   struct timespec abstime;
   int             err = 0;
+  int             perr;
 
   DBGMSG( "Audiofeed (%p,%s): waiting for connection (timeout %dms)",
           feed, feed->uri, timeout );
@@ -259,7 +268,10 @@ int audioFeedLockWaitForConnection( AudioFeed *feed, int timeout )
 /*------------------------------------------------------------------------*\
     Lock mutex
 \*------------------------------------------------------------------------*/
-   pthread_mutex_lock( &feed->mutex );
+   perr = pthread_mutex_lock( &feed->mutex );
+   if( perr )
+     logerr( "audioFeedLockWaitForConnection: locking feed mutex: %s", strerror(perr) );
+
 
 /*------------------------------------------------------------------------*\
     Get absolute timestamp for timeout
@@ -286,6 +298,15 @@ int audioFeedLockWaitForConnection( AudioFeed *feed, int timeout )
     // Break on errors
     if( err )
       break;
+  }
+
+/*------------------------------------------------------------------------*\
+    In case of error: unlock mutex
+\*------------------------------------------------------------------------*/
+  if( err ) {
+    perr = pthread_mutex_unlock( &feed->mutex );
+    if( perr )
+      logerr( "audioFeedLockWaitForConnection: unlocking feed mutex: %s", strerror(perr) );
   }
 
 /*------------------------------------------------------------------------*\

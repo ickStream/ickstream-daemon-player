@@ -187,13 +187,18 @@ void fifoDelete( Fifo *fifo )
 \*=========================================================================*/
 void fifoReset( Fifo *fifo )
 {
+  int perr;
+
   DBGMSG( "Fifo %p (%s, %ld bytes) reset", fifo,
                      fifo->name?fifo->name:"<unknown>", (long)fifo->size );
 
 /*------------------------------------------------------------------------*\
     Lock fifo
 \*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &fifo->mutex );
+  perr = pthread_mutex_lock( &fifo->mutex );
+  if( perr )
+    logerr( "fifoReset: locking fifo mutex: %s", strerror(perr) );
+
 
 /*------------------------------------------------------------------------*\
     reset pointers and state
@@ -205,7 +210,9 @@ void fifoReset( Fifo *fifo )
 /*------------------------------------------------------------------------*\
     Unlock fifo
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &fifo->mutex );
+  perr = pthread_mutex_unlock( &fifo->mutex );
+  if( perr )
+    logerr( "fifoReset: unlocking fifo mutex: %s", strerror(perr) );
 }
 
 
@@ -214,8 +221,12 @@ void fifoReset( Fifo *fifo )
 \*=========================================================================*/
 void fifoLock( Fifo *fifo )
 {
+  int perr;
   DBGMSG( "Fifo (%p,%s): lock.", fifo, fifo->name?fifo->name:"<unknown>" );
-  pthread_mutex_lock( &fifo->mutex );
+  perr = pthread_mutex_lock( &fifo->mutex );
+  if( perr )
+    logerr( "fifoLock: %s", strerror(perr) );
+
 }
 
 
@@ -231,6 +242,7 @@ int fifoLockWaitWritable( Fifo *fifo, int timeout, size_t bytes )
   struct timeval  now;
   struct timespec abstime;
   int             err = 0;
+  int             perr;
 
 /*------------------------------------------------------------------------*\
     Check limit
@@ -243,7 +255,9 @@ int fifoLockWaitWritable( Fifo *fifo, int timeout, size_t bytes )
 /*------------------------------------------------------------------------*\
     Lock mutex
 \*------------------------------------------------------------------------*/
-   pthread_mutex_lock( &fifo->mutex );
+   perr = pthread_mutex_lock( &fifo->mutex );
+   if( perr )
+     logerr( "fifoLockWaitWritable: locking fifo mutex: %s", strerror(perr) );
 
    DBGMSG( "Fifo (%p,%s): waiting for writable: used=%ld <? low mark=%ld, timeout %dms, requested=%ld <? free=%ld",
            fifo, fifo->name?fifo->name:"<unknown>",
@@ -281,7 +295,9 @@ int fifoLockWaitWritable( Fifo *fifo, int timeout, size_t bytes )
     In case of error: unlock mutex
 \*------------------------------------------------------------------------*/
   if( err ) {
-    pthread_mutex_unlock( &fifo->mutex );
+    perr = pthread_mutex_unlock( &fifo->mutex );
+    if( perr )
+      logerr( "fifoLockWaitWritable: unlocking fifo mutex: %s", strerror(perr) );
     if( FifoIsReadable(fifo) )
       pthread_cond_signal( &fifo->condIsReadable );		
   }
@@ -306,6 +322,7 @@ int fifoLockWaitDrained( Fifo *fifo, int timeout )
   struct timeval  now;
   struct timespec abstime;
   int             err = 0;
+  int             perr;
 
   DBGMSG( "Fifo (%p,%s): waiting for drained: used=%ld, timeout %dms",
           fifo, fifo->name?fifo->name:"<unknown>",
@@ -319,7 +336,9 @@ int fifoLockWaitDrained( Fifo *fifo, int timeout )
 /*------------------------------------------------------------------------*\
     Lock mutex
 \*------------------------------------------------------------------------*/
-   pthread_mutex_lock( &fifo->mutex );
+   perr = pthread_mutex_lock( &fifo->mutex );
+   if( perr )
+     logerr( "fifoLockWaitDrained: locking fifo mutex: %s", strerror(perr) );
 
 /*------------------------------------------------------------------------*\
     Get absolute timestamp for timeout
@@ -352,7 +371,9 @@ int fifoLockWaitDrained( Fifo *fifo, int timeout )
     In case of error: unlock mutex
 \*------------------------------------------------------------------------*/
   if( err ) {
-    pthread_mutex_unlock( &fifo->mutex );
+    perr = pthread_mutex_unlock( &fifo->mutex );
+    if( perr )
+      logerr( "fifoLockWaitDrained: unlocking fifo mutex: %s", strerror(perr) );
     if( FifoIsReadable(fifo) )
       pthread_cond_signal( &fifo->condIsReadable );
   }
@@ -378,6 +399,7 @@ int fifoLockWaitReadable( Fifo *fifo, int timeout )
   struct timeval  now;
   struct timespec abstime;
   int             err = 0;
+  int             perr;
 
   DBGMSG( "Fifo (%p,%s): waiting for readable: used=%ld >? high mark=%ld, timeout %dms",
           fifo, fifo->name?fifo->name:"<unknown>",
@@ -386,8 +408,10 @@ int fifoLockWaitReadable( Fifo *fifo, int timeout )
 /*------------------------------------------------------------------------*\
     Lock mutex
 \*------------------------------------------------------------------------*/
-   pthread_mutex_lock( &fifo->mutex );
-  
+   perr = pthread_mutex_lock( &fifo->mutex );
+   if( perr )
+     logerr( "fifoLockWaitReadable: locking fifo mutex: %s", strerror(perr) );
+
 /*------------------------------------------------------------------------*\
     Get absolut timestamp for timeout
 \*------------------------------------------------------------------------*/
@@ -419,7 +443,9 @@ int fifoLockWaitReadable( Fifo *fifo, int timeout )
     In case of error: unlock mutex
 \*------------------------------------------------------------------------*/
   if( err ) {
-    pthread_mutex_unlock( &fifo->mutex );
+    perr = pthread_mutex_unlock( &fifo->mutex );
+    if( perr )
+      logerr( "fifoLockWaitReadable: unlocking fifo mutex: %s", strerror(perr) );
     if( fifo->isDraining ) {
       if( FifoIsEmpty(fifo) )
         pthread_cond_signal( &fifo->condIsDrained );
@@ -443,8 +469,11 @@ int fifoLockWaitReadable( Fifo *fifo, int timeout )
 \*=========================================================================*/
 void fifoUnlock( Fifo *fifo )
 {
+  int perr;
   DBGMSG( "Fifo (%p,%s): unlock.", fifo, fifo->name?fifo->name:"<unknown>" );
-  pthread_mutex_unlock( &fifo->mutex );
+  perr = pthread_mutex_unlock( &fifo->mutex );
+  if( perr )
+    logerr( "fifoUnlock: %s", strerror(perr) );
 }
 
 
@@ -453,6 +482,7 @@ void fifoUnlock( Fifo *fifo )
 \*=========================================================================*/
 void fifoUnlockAfterRead( Fifo *fifo, size_t size )
 {
+  int perr;
   DBGMSG( "Fifo (%p,%s): unlocked after read of %ld byte: %s %s (used=%ld)",
                       fifo, fifo->name?fifo->name:"<unknown>", (long) size,
                       FifoIsWritable(fifo) ? "isWritable" : "", 
@@ -467,7 +497,9 @@ void fifoUnlockAfterRead( Fifo *fifo, size_t size )
 /*------------------------------------------------------------------------*\
     Release mutex
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &fifo->mutex );
+  perr = pthread_mutex_unlock( &fifo->mutex );
+  if( perr )
+    logerr( "fifoUnlockAfterRead: %s", strerror(perr) );
 
 /*------------------------------------------------------------------------*\
     Check for conditions: write/draining first
@@ -488,6 +520,7 @@ void fifoUnlockAfterRead( Fifo *fifo, size_t size )
 \*=========================================================================*/
 void fifoUnlockAfterWrite( Fifo *fifo, size_t size )
 {
+  int perr;
   DBGMSG( "Fifo (%p,%s): unlocked after write of %ld bytes: %s %s (used=%ld)",
                       fifo, fifo->name?fifo->name:"<unknown>", (long) size,
                       FifoIsWritable(fifo) ? "isWritable" : "", 
@@ -509,7 +542,9 @@ void fifoUnlockAfterWrite( Fifo *fifo, size_t size )
 /*------------------------------------------------------------------------*\
     Release mutex
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &fifo->mutex );
+  perr = pthread_mutex_unlock( &fifo->mutex );
+  if( perr )
+    logerr( "fifoUnlockAfterRead: %s", strerror(perr) );
 
 /*------------------------------------------------------------------------*\
     Check for conditions: read first
@@ -533,6 +568,7 @@ size_t fifoFillAndUnlock( Fifo *fifo, const char *src, size_t bytes )
 {
   size_t space;
   size_t written = 0;
+  int    perr;
   DBGMSG( "Fifo (%p,%s): fill with %ld bytes",
                       fifo, fifo->name?fifo->name:"<unknown>", (long)bytes );
 
@@ -593,7 +629,9 @@ size_t fifoFillAndUnlock( Fifo *fifo, const char *src, size_t bytes )
 /*------------------------------------------------------------------------*\
     Release mutex
 \*------------------------------------------------------------------------*/
-  pthread_mutex_unlock( &fifo->mutex );
+  perr = pthread_mutex_unlock( &fifo->mutex );
+  if( perr )
+    logerr( "fifoFillAndUnlock: %s", strerror(perr) );
 
 /*------------------------------------------------------------------------*\
     Check for conditions: read first

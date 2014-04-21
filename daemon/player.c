@@ -900,6 +900,7 @@ int playerSetPlaybackMode( PlayerPlaybackMode mode, bool broadcast )
 int playerSetState( PlayerState state, bool broadcast )
 {
   int           rc = 0;
+  int           perr;
   PlaylistItem *newTrack;
   const char   *newTrackId;
   
@@ -908,7 +909,9 @@ int playerSetState( PlayerState state, bool broadcast )
 /*------------------------------------------------------------------------*\
     Lock player, we don't want concurrent modifications going on...
 \*------------------------------------------------------------------------*/
-  pthread_mutex_lock( &playerMutex );
+  perr = pthread_mutex_lock( &playerMutex );
+  if( perr )
+    logerr( "playerSetState: locking player mutex: %s", strerror(perr) );
 
 /*------------------------------------------------------------------------*\
     Get current playback item to detect changes in the queue 
@@ -1086,7 +1089,9 @@ int playerSetState( PlayerState state, bool broadcast )
     Update timestamp, unlock player and broadcast new player state
 \*------------------------------------------------------------------------*/
   lastChange = srvtime( );
-  pthread_mutex_unlock( &playerMutex );
+  perr = pthread_mutex_unlock( &playerMutex );
+  if( perr )
+    logerr( "playerSetState: unlocking player mutex: %s", strerror(perr) );
   hmiNewState( playerState );
   if( broadcast )
     ickMessageNotifyPlayerState( NULL );

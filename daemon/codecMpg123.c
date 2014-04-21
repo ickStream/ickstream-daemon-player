@@ -339,17 +339,22 @@ static int _codecDeliverOutput( CodecInstance *instance, void *data, size_t maxL
   int            channels, encoding;
   int            metaVector;
   int            rc;
+  int            perr;
   int            err = 0;
   
 /*------------------------------------------------------------------------*\
     Get data from decoder
 \*------------------------------------------------------------------------*/  
   *realSize = 0;
-  pthread_mutex_lock( &instance->mutex );
+  perr = pthread_mutex_lock( &instance->mutex_access );
+  if( perr )
+    logerr( "_codecDeliverOutput: locking codec access mutex: %s", strerror(perr) );
   rc         = mpg123_read( mh, data, maxLength, realSize );
   metaVector = mpg123_meta_check( mh );
-  pthread_mutex_unlock( &instance->mutex );
-  
+  perr = pthread_mutex_unlock( &instance->mutex_access );
+  if( perr )
+    logerr( "_codecDeliverOutput: unlocking codec access mutex: %s", strerror(perr) );
+
   DBGMSG( "mpg123 (%p): delivered data (%ld/%ld bytes), meta=%d (%s).",
           instance, (long)*realSize, (long)maxLength, metaVector, MPG123ERRSTR(rc,mh) );
 
@@ -468,13 +473,18 @@ static int _codecSetVolume( CodecInstance *instance, double volume, bool muted )
 {
   mpg123_handle *mh = (mpg123_handle*)instance->instanceData;
   int            rc;
+  int            perr;
 
 /*------------------------------------------------------------------------*\
     Call library
 \*------------------------------------------------------------------------*/ 
-  pthread_mutex_lock( &instance->mutex ); 
+  perr = pthread_mutex_lock( &instance->mutex_access );
+  if( perr )
+    logerr( "_codecSetVolume: unlocking codec access mutex: %s", strerror(perr) );
   rc = mpg123_volume( mh, muted?0.0:volume );
-  pthread_mutex_unlock( &instance->mutex );
+  perr = pthread_mutex_unlock( &instance->mutex_access );
+  if( perr )
+    logerr( "_codecSetVolume: unlocking codec access mutex: %s", strerror(perr) );
   if( rc )
     logerr( "mpg123: could not set volume to %f %s (%s).",
              volume, muted?"(muted)":"(unmuted)", MPG123ERRSTR(rc,mh) );
@@ -493,13 +503,18 @@ static int _codecGetSeekTime( CodecInstance *instance, double *pos )
 {
   mpg123_handle *mh = (mpg123_handle*)instance->instanceData;
   off_t          samples;
+  int            perr;
 
 /*------------------------------------------------------------------------*\
     Call library
 \*------------------------------------------------------------------------*/ 
-  pthread_mutex_lock( &instance->mutex ); 
+  perr = pthread_mutex_lock( &instance->mutex_access );
+  if( perr )
+    logerr( "_codecGetSeekTime: locking codec access mutex: %s", strerror(perr) );
   samples = mpg123_tell( mh );
-  pthread_mutex_unlock( &instance->mutex );
+  perr = pthread_mutex_unlock( &instance->mutex_access );
+  if( perr )
+    logerr( "_codecGetSeekTime: unlocking codec access mutex: %s", strerror(perr) );
                        
 /*------------------------------------------------------------------------*\
     return calculated value (samples/samplerate)

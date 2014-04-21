@@ -533,15 +533,13 @@ int ickMutexInit( pthread_mutex_t *mutex )
   pthread_mutexattr_t  attr;
   pthread_mutexattr_init( &attr );
 
-#if defined ICK_DEBUG && defined ICK_HASMUTEXERRORCHECK
+//#if defined ICK_DEBUG && defined ICK_HASMUTEXERRORCHECK
+#ifdef ICK_HASMUTEXERRORCHECK
   pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_ERRORCHECK );
 #endif
 
   return pthread_mutex_init( mutex, &attr );
 }
-
-
-
 
 
 /*========================================================================*\

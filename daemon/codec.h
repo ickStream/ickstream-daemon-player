@@ -122,7 +122,8 @@ struct _codecInstance {
   AudioFormat                  format;
   long                         icyInterval;
   pthread_t                    thread;
-  pthread_mutex_t              mutex;
+  pthread_mutex_t              mutex_access;
+  pthread_mutex_t              mutex_state;
   pthread_cond_t               condEndOfTrack;
 };
  
