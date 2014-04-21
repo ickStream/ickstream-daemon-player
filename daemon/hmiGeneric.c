@@ -186,7 +186,7 @@ void hmiNewPlaybackMode( PlayerPlaybackMode mode )
     case PlaybackDynamic:       modeStr = "Dynamic Playlist"; break;
   }
 
-  printf( "HMI playback mode    : %s\n", modeStr );
+  printf( "HMI Playback mode    : %s\n", modeStr );
 }
 
 
@@ -210,7 +210,7 @@ void hmiNewFormat( const char *type, AudioFormat *format )
 
   DBGMSG( "hmiNewFormat: %s %s.", type, audioFormatStr(NULL,format) );
 
-  printf( "HMI Playback format  : %s %s\n", type, audioFormatStr(buffer,format) );
+  printf( "HMI Playback format  : %s (%s)\n", audioFormatStr(buffer,format), type );
 }
 
 
