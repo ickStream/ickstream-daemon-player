@@ -338,7 +338,7 @@ double playerGetLastChange( void )
 \*=========================================================================*/
 PlayerState playerGetState( void )
 {
-  DBGMSG( "playerGetState: %d", playerState );
+  DBGMSG( "playerGetState: %d (%s)", playerState, playerStateToStr(playerState) );
   return playerState;
 }
 
@@ -936,7 +936,23 @@ int playerSetState( PlayerState state, bool broadcast )
         rc = -1;
        break;
       }
-      
+
+      // Try to setup audio interface if not yet done
+      if( !audioIf ) {
+        const char         *device;
+        const AudioBackend *backend = audioBackendByDeviceString( playerAudioDevice, &device );
+        if( backend )
+          audioIf = audioIfNew( backend, device, AudioFifoDefaultSize );
+        if( !audioIf ) {
+          logerr( "playerSetState (start): Could not open audio device \"%s\".", playerAudioDevice );
+          rc = -1;
+          break;
+        }
+        if( _playerSetVolume(playerVolume,playerMuted) )
+          logwarn( "playerSetState (start): Could not set volume to %.2lf%% (%s).",
+                   playerVolume*100, playerMuted?"muted":"unmuted" );
+      }
+
       // Unpausing current track?
       playlistItemLock( newTrack );
       newTrackId = playlistItemGetId( newTrack );
@@ -968,31 +984,13 @@ int playerSetState( PlayerState state, bool broadcast )
 
         // Stop audio interface (if not done by _playbackThread() )
         if( !audioIf ) {
-          DBGMSG( "playerSetState (play): No audio interface to drop." );
+          logerr( "playerSetState (play): No audio interface to drop." );
         }
         else {
           DBGMSG( "playerSetState (play): Drop existing audio interface." );
           if( audioIfStop(audioIf,AudioDrop) )
             logerr( "playerSetState (play): Could not drop audio interface \"%s\".", audioIf->devName );
-          else
-            audioIf = NULL;
         }
-      }
-
-      // Try to setup audio interface if not yet done
-      if( !audioIf ) {
-        const char         *device;
-        const AudioBackend *backend = audioBackendByDeviceString( playerAudioDevice, &device );
-        if( backend )
-          audioIf = audioIfNew( backend, device, AudioFifoDefaultSize );
-        if( !audioIf ) {
-          logerr( "playerSetState (start): Could not open audio device \"%s\".", playerAudioDevice );
-          rc = -1;
-          break;
-        }
-        if( _playerSetVolume(playerVolume,playerMuted) )
-          logwarn( "playerSetState (start): Could not set volume to %.2lf%% (%s).",
-                   playerVolume*100, playerMuted?"muted":"unmuted" );
       }
 
       // Create new playback thread
@@ -1068,16 +1066,14 @@ int playerSetState( PlayerState state, bool broadcast )
       */
       hmiNewQueue( playerQueue );
 
-      // Stop audio interface (if not done by _playbackThread() )
+      // Stop audio interface
       if( !audioIf ) {
-        DBGMSG( "playerSetState (stop): No audio interface to drop." );
+        DBGMSG( "playerSetState (stop): No audio interface to delete." );
       }
       else {
         DBGMSG( "playerSetState (stop): Drop existing audio interface." );
         if( audioIfStop(audioIf,AudioDrop) )
-          logerr( "playerSetState (stop): Could not drop audio interface \"%s\".", audioIf->devName );
-        else
-          audioIf = NULL;
+          logerr( "playerSetState (stop): Could not stop audio interface \"%s\".", audioIf->devName );
       }
 
       // request thread to stop playback and set new player state
@@ -1085,7 +1081,6 @@ int playerSetState( PlayerState state, bool broadcast )
       if( playerState==PlayerStatePlay || playerState==PlayerStatePause )
         pthread_join( playbackThread, NULL );
       playerState = PlayerStateStop;
-
 
       break; 
 
@@ -1213,14 +1208,11 @@ static void *_playbackThread( void *arg )
   DBGMSG( "Player thread: End of playback loop (state %d).", playbackThreadState );
 
 /*------------------------------------------------------------------------*\
-    Stop audio interface in draining mode if at end of item list
+    Stop audio interface in draining mode if at end of item list,
+    else drop data
 \*------------------------------------------------------------------------*/
-  if( playbackThreadState==PlayerThreadRunning ) {
-    if( audioIfStop(audioIf,AudioDrain) )
-      logerr( "Player thread: Could not stop audio interface \"%s\".", audioIf->devName );
-    else
-      audioIf = NULL;
-  }
+  if( audioIfStop(audioIf,playbackThreadState==PlayerThreadRunning?AudioDrain:AudioDrop) )
+    logerr( "Player thread: Could not stop audio interface \"%s\".", audioIf->devName );
 
 /*------------------------------------------------------------------------*\
     Set and broadcast new player state
