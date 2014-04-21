@@ -204,13 +204,13 @@ void hmiNewVolume( double volume, bool muted )
 /*=========================================================================*\
       Audio backend format has changed
 \*=========================================================================*/
-void hmiNewFormat( AudioFormat *format )
+void hmiNewFormat( const char *type, AudioFormat *format )
 {
   char buffer[64];
 
-  DBGMSG( "hmiNewFormat: %s.", audioFormatStr(NULL,format) );
+  DBGMSG( "hmiNewFormat: %s %s.", type, audioFormatStr(NULL,format) );
 
-  printf( "HMI Playback format  : %s\n", audioFormatStr(buffer,format) );  
+  printf( "HMI Playback format  : %s %s\n", type, audioFormatStr(buffer,format) );
 }
 
 

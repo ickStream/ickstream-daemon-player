@@ -1181,7 +1181,8 @@ static void *_playbackThread( void *arg )
     // Get next item
     playlistLock( playerQueue );
     item = playlistIncrCursorItem( playerQueue );
-    playlistItemIncRef( item );
+    if( item )
+      playlistItemIncRef( item );
     playlistUnlock( playerQueue );
     if( item )
       continue;
@@ -1190,7 +1191,8 @@ static void *_playbackThread( void *arg )
     if( playerPlaybackMode==PlaybackRepeatQueue ) {
       playlistLock( playerQueue );
       item = playlistSetCursorPos( playerQueue, 0 );
-      playlistItemIncRef( item );
+      if( item )
+        playlistItemIncRef( item );
       playlistUnlock( playerQueue );
     }
 
@@ -1199,7 +1201,8 @@ static void *_playbackThread( void *arg )
       playlistLock( playerQueue );
       playlistShuffle( playerQueue, 0, playlistGetLength(playerQueue)-1, false );
       item = playlistSetCursorPos( playerQueue, 0 );
-      playlistItemIncRef( item );
+      if( item )
+        playlistItemIncRef( item );
       playlistUnlock( playerQueue );
       ickMessageNotifyPlaylist( NULL );
      }
@@ -1217,13 +1220,13 @@ static void *_playbackThread( void *arg )
 /*------------------------------------------------------------------------*\
     Set and broadcast new player state
 \*------------------------------------------------------------------------*/
-  if( playbackThreadState==PlayerThreadRunning ) {
+  if( playbackThreadState==PlayerThreadRunning )
     lognotice( "_playerThread: End of queue." );
-    playerState = PlayerStateStop;
-    ickMessageNotifyPlayerState( NULL );
-    hmiNewState( playerState );
-    hmiNewPosition( 0.0 );
-  }
+  playerState = PlayerStateStop;
+  ickMessageNotifyPlayerState( NULL );
+  hmiNewState( playerState );
+  hmiNewPosition( 0.0 );
+
 
 /*------------------------------------------------------------------------*\
     Clean up, that's it ...
@@ -1252,6 +1255,7 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
   double         seekPos = 0;
   double         pos     = 0;
   int            retval = 0;
+  int            waitcntr;
 
   playlistItemLock( item );
   DBGMSG( "_playItem: Starting %s \"%s\" (%s)",
@@ -1348,9 +1352,22 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
   }
 
 /*------------------------------------------------------------------------*\
-    Wait till the audio format is known
+    Wait till audio format is completed from stream info
 \*------------------------------------------------------------------------*/
-  while( !audioFormatIsComplete(format) ) {
+  for( waitcntr=0; !audioFormatIsComplete(format); waitcntr++ ) {
+    if( playbackThreadState!=PlayerThreadRunning ) {
+      codecDeleteInstance( codecInst, true );
+      audioFeedDelete( feed, true );
+      return -1;
+    }
+    if( waitcntr>5 ) {
+      logerr( "_playItem (%s \"%s\"): Could not determine format (format %s).",
+              playlistItemGetType(item)==PlaylistItemStream?"Stream":"Track",
+              playlistItemGetText(item), audioFormatStr(NULL,format) );
+      codecDeleteInstance( codecInst, true );
+      audioFeedDelete( feed, true );
+      return -1;
+    }
     DBGMSG( "_playItem (%s \"%s\"): Waiting for audio format detection (%s).",
               playlistItemGetType(item)==PlaylistItemStream?"stream":"track",
               playlistItemGetText(item), audioFormatStr(NULL,format) );
@@ -1402,7 +1419,7 @@ static int _playItem( PlaylistItem *item, AudioFormat *format )
 /*------------------------------------------------------------------------*\
    Inform HMI
 \*------------------------------------------------------------------------*/
-  hmiNewFormat( format );
+  hmiNewFormat( type, format );
 
 /*------------------------------------------------------------------------*\
   Scrobble streams at start of playing

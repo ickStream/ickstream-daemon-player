@@ -216,6 +216,7 @@ CodecInstance *codecNewInstance( const Codec *codec, const char *type, const Aud
 \*------------------------------------------------------------------------*/
   ickMutexInit( &instance->mutex_access );
   ickMutexInit( &instance->mutex_state );
+  pthread_cond_init( &instance->condIsReady, NULL );
   pthread_cond_init( &instance->condEndOfTrack, NULL );
 
 /*------------------------------------------------------------------------*\
@@ -231,6 +232,11 @@ CodecInstance *codecNewInstance( const Codec *codec, const char *type, const Aud
 \*=========================================================================*/
 int codecStartInstance( CodecInstance *instance )
 {
+  int              rc;
+  int              perr;
+  struct timeval   now;
+  struct timespec  abstime;
+
   DBGMSG( "codecStartInstance (%p,%s): starting instance.",
           instance, instance->codec->name );
 
@@ -246,14 +252,42 @@ int codecStartInstance( CodecInstance *instance )
 /*------------------------------------------------------------------------*\
     Create codec thread
 \*------------------------------------------------------------------------*/
-  instance->state = CodecRunning;
-  int rc = pthread_create( &instance->thread, NULL, _codecThread, instance );
+  rc = pthread_create( &instance->thread, NULL, _codecThread, instance );
   if( rc ) {
     instance->state = CodecTerminatedError;
     logerr( "codecStartInstance (%s): Unable to start thread (%s).",
             instance->codec->name, strerror(rc) );
     return -1;
   }
+
+/*------------------------------------------------------------------------*\
+    Wait for max. 5 seconds till thread is up and running
+\*------------------------------------------------------------------------*/
+  perr = pthread_mutex_lock( &instance->mutex_state );
+  if( perr )
+    logerr( "codecStartInstance: locking state mutex: %s", strerror(perr) );
+  gettimeofday( &now, NULL );
+  abstime.tv_sec  = now.tv_sec + 5;
+  abstime.tv_nsec = now.tv_usec*1000UL;
+  while( instance->state==CodecInitialized  ) {
+    rc = pthread_cond_timedwait( &instance->condIsReady, &instance->mutex_state, &abstime );
+    if( rc )
+      break;
+  }
+  perr = pthread_mutex_unlock( &instance->mutex_state );
+  if( perr )
+    logerr( "codecStartInstance: unlocking state mutex: %s", strerror(perr) );
+
+  // Something went wrong.
+  if( rc ) {
+    logerr( "codecStartInstance: Unable to wait for thread: %s", strerror(rc) );
+    instance->state = CodecTerminatedError;
+    return -1;
+  }
+
+  // Signal codec initialization errors to caller
+  if( instance->state != CodecRunning )
+    return -1;
 
 /*------------------------------------------------------------------------*\
     That's all
@@ -479,9 +513,16 @@ static void *_codecThread( void *arg )
   if( instance->codec->newInstance(instance) ) {
     logerr( "Codec thread (%s): Could not init instance.", codec->name );
     instance->state = CodecTerminatedError;
-    pthread_cond_signal( &instance->condEndOfTrack );
+    pthread_cond_signal( &instance->condIsReady );
+//    pthread_cond_signal( &instance->condEndOfTrack );
     return NULL;
   }
+
+/*------------------------------------------------------------------------*\
+    We are up and running
+\*------------------------------------------------------------------------*/
+  instance->state = CodecRunning;
+  pthread_cond_signal( &instance->condIsReady );
 
 /*------------------------------------------------------------------------*\
     Thread main loop, used if deliverOutput is defined, else the codec

@@ -601,7 +601,7 @@ PlaylistItem *playlistIncrCursorItem( Playlist *plst )
   PlaylistItem *item = playlistGetCursorItem( plst );
 
   DBGMSG( "playlistIncrCursorPos %p: items %p->%p",
-           plst, item, item?item->nextOriginal:NULL );
+           plst, item, item?item->nextMapped:NULL );
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\

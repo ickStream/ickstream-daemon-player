@@ -124,6 +124,7 @@ struct _codecInstance {
   pthread_t                    thread;
   pthread_mutex_t              mutex_access;
   pthread_mutex_t              mutex_state;
+  pthread_cond_t               condIsReady;
   pthread_cond_t               condEndOfTrack;
 };
  

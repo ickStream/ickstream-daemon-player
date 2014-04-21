@@ -345,9 +345,9 @@ void hmiNewVolume( double volume, bool muted )
 /*=========================================================================*\
       Audio backend format has changed
 \*=========================================================================*/
-void hmiNewFormat( AudioFormat *format )
+void hmiNewFormat( const char *type, AudioFormat *format )
 {
-  DBGMSG( "hmiNewFormat: %s.", audioFormatStr(NULL,format) );
+  DBGMSG( "hmiNewFormat: %s %s.", type, audioFormatStr(NULL,format) );
 
 /*------------------------------------------------------------------------*\
     Buffer format locally

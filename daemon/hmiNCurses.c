@@ -424,15 +424,15 @@ void hmiNewVolume( double volume, bool muted )
 /*=========================================================================*\
       Audio backend format has changed
 \*=========================================================================*/
-void hmiNewFormat( AudioFormat *format )
+void hmiNewFormat( const char *type, AudioFormat *format )
 {
   char buffer[64];
 
-  DBGMSG( "hmiNewFormat: %s.", audioFormatStr(NULL,format) );
+  DBGMSG( "hmiNewFormat: %s %s.", type, audioFormatStr(NULL,format) );
 
   pthread_mutex_lock( &mutex );
   wmove( winStatus, 1, 0 );
-  wprintw( winStatus, "Playback format  : %s\n", audioFormatStr(buffer,format) );
+  wprintw( winStatus, "Playback format  : %s %s\n", type, audioFormatStr(buffer,format) );
   wrefresh( winStatus );
   pthread_mutex_unlock( &mutex );
 

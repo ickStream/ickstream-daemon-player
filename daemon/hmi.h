@@ -81,7 +81,7 @@ void hmiNewQueue( Playlist *plst );
 void hmiNewState( PlayerState state );
 void hmiNewPlaybackMode( PlayerPlaybackMode mode );
 void hmiNewVolume( double volume, bool muted );
-void hmiNewFormat( AudioFormat *format );
+void hmiNewFormat( const char *type, AudioFormat *format );
 void hmiNewPosition( double seekPos );
 
 
