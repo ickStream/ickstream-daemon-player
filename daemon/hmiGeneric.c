@@ -163,16 +163,9 @@ void hmiNewQueue( Playlist *plst )
 \*=========================================================================*/
 void hmiNewState( PlayerState state )
 {
-  DBGMSG( "hmiNewState: %d.", state );
+  DBGMSG( "hmiNewState: %d (%s).", state, playerStateToStr(state) );
 
-  char *stateStr = "Unknown";
-  switch( state ) {
-    case PlayerStateStop:  stateStr = "Stopped"; break;	
-    case PlayerStatePlay:  stateStr = "Playing"; break;
-    case PlayerStatePause: stateStr = "Paused"; break;
-  }
-
-  printf( "HMI Playback state   : %s\n", stateStr );
+  printf( "HMI Playback state   : %s\n", playerStateToStr(state) );
 }
 
 

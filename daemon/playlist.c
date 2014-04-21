@@ -75,6 +75,7 @@ struct _playlistItem {
   struct _playlistItem *prevOriginal;
   struct _playlistItem *nextMapped;       // Order as played (when shuffled)
   struct _playlistItem *prevMapped;
+  int                   refCounter;
   json_t               *jItem;
   const char           *id;               // weak
   const char           *text;             // weak
@@ -337,11 +338,15 @@ void playlistReset( Playlist *plst, bool resetHeader )
   CHKLIST( plst );
 
 /*------------------------------------------------------------------------*\
-    Free all items (unlinking not necessary)
+    Unreference all items
 \*------------------------------------------------------------------------*/
   for( item=plst->firstItemOriginal; item; item=next ) {
     next = item->nextOriginal;
-    playlistItemDelete( item );
+    item->nextMapped   = NULL;
+    item->prevMapped   = NULL;
+    item->nextOriginal = NULL;
+    item->prevOriginal = NULL;
+    playlistItemDecRef( item );
   }
 
 /*------------------------------------------------------------------------*\
@@ -979,8 +984,12 @@ int playlistDeleteItems( Playlist *plst, json_t *jItems )
       if( plst->_cursorItem==pItem )
         plst->_cursorItem = pItem->nextMapped ? pItem->nextMapped : pItem->prevMapped;
 
-      // Finally delete the item
-      playlistItemDelete( pItem );
+      // Finally unreference the item
+      pItem->nextMapped   = NULL;
+      pItem->prevMapped   = NULL;
+      pItem->nextOriginal = NULL;
+      pItem->prevOriginal = NULL;
+      playlistItemDecRef( pItem );
     }
 
 /*------------------------------------------------------------------------*\
@@ -1000,8 +1009,12 @@ int playlistDeleteItems( Playlist *plst, json_t *jItems )
       if( plst->_cursorItem==pItem )
         plst->_cursorItem = pItem->nextMapped ? pItem->nextMapped : pItem->prevMapped;
 
-      // Finally delete item
-      playlistItemDelete( pItem );
+      // Finally unreference the item
+      pItem->nextMapped   = NULL;
+      pItem->prevMapped   = NULL;
+      pItem->nextOriginal = NULL;
+      pItem->prevOriginal = NULL;
+      playlistItemDecRef( pItem );
     }
 
   }  // next item from list
@@ -1554,6 +1567,7 @@ static void _playlistUnlinkItem( Playlist *plst, PlaylistItem *pItem, PlaylistSo
 
 /*=========================================================================*\
        Create (allocate and init) an item from ickstream JSON object
+          reference counter is set to one
           return NULL on error
 \*=========================================================================*/
 PlaylistItem *playlistItemFromJSON( json_t *jItem )
@@ -1570,9 +1584,10 @@ PlaylistItem *playlistItemFromJSON( json_t *jItem )
   }
 
 /*------------------------------------------------------------------------*\
-    Init mutex
+    Init mutex and reference counter
 \*------------------------------------------------------------------------*/
   ickMutexInit( &item->mutex );
+  item->refCounter = 1;
 
 /*------------------------------------------------------------------------*\
     Keep instance of JSON object
@@ -1600,16 +1615,36 @@ PlaylistItem *playlistItemFromJSON( json_t *jItem )
 
 
 /*=========================================================================*\
-       Delete playlist item (needs to be unliked before!!!)
+  Increment reference counter of playlist item
 \*=========================================================================*/
-void playlistItemDelete( PlaylistItem *pItem )
+void playlistItemIncRef( PlaylistItem *pItem )
 {
-  DBGMSG( "playlistItemDelete (%p): jrefcnt=%d", pItem, pItem->jItem->refcount );
+  pItem->refCounter++;
+  DBGMSG( "playlistItemIncRef (%p): now %d references (jrefcnt=%d)",
+          pItem, pItem->refCounter, pItem->jItem->refcount );
+}
+
+
+/*=========================================================================*\
+  Increment reference counter of playlist item (needs to be unlinked before!!!)
+\*=========================================================================*/
+void playlistItemDecRef( PlaylistItem *pItem )
+{
+  pItem->refCounter--;
+  DBGMSG( "playlistItemDecRef (%p): now %d references (jrefcnt=%d)",
+          pItem, pItem->refCounter, pItem->jItem->refcount );
+
   /* {
     char *out = json_dumps( pItem->jItem, JSON_PRESERVE_ORDER | JSON_COMPACT | JSON_ENSURE_ASCII );
-    DBGMSG( "playlistItemDelete: %s", out );
+    DBGMSG( "playlistItemDecRef: %s", out );
     free( out );
   } */
+
+/*------------------------------------------------------------------------*\
+    Still referenced?
+\*------------------------------------------------------------------------*/
+  if( pItem->refCounter>0 )
+    return;
 
 /*------------------------------------------------------------------------*\
     Free all header features

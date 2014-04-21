@@ -129,7 +129,8 @@ const char       *playlistSortTypeToStr( PlaylistSortType order );
 PlaylistSortType  playlistSortTypeFromStr( const char *str );
 
 PlaylistItem     *playlistItemFromJSON( json_t *jItem );
-void              playlistItemDelete( PlaylistItem *pItem );
+void              playlistItemIncRef( PlaylistItem *pItem );
+void              playlistItemDecRef( PlaylistItem *pItem );
 void              playlistItemLock( PlaylistItem *item );
 void              playlistItemUnlock( PlaylistItem *item );
 PlaylistItem     *playlistItemGetNext( PlaylistItem *item, PlaylistSortType order );

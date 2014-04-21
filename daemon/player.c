@@ -904,7 +904,7 @@ int playerSetState( PlayerState state, bool broadcast )
   PlaylistItem *newTrack;
   const char   *newTrackId;
   
-  DBGMSG( "playerSetState: %d -> %d", playerState, state );
+  DBGMSG( "playerSetState: %s -> %s", playerStateToStr(playerState), playerStateToStr(state) );
   
 /*------------------------------------------------------------------------*\
     Lock player, we don't want concurrent modifications going on...
@@ -930,7 +930,56 @@ int playerSetState( PlayerState state, bool broadcast )
 \*------------------------------------------------------------------------*/
     case PlayerStatePlay:
 
-      // Try to setup audio interface if not yet done 
+      // Is there a track to play ?
+      if( !newTrack ) {
+        lognotice( "playerSetState (start): Empty queue or no cursor." );
+        rc = -1;
+       break;
+      }
+      
+      // Unpausing current track?
+      playlistItemLock( newTrack );
+      newTrackId = playlistItemGetId( newTrack );
+
+      if( playerState==PlayerStatePause && currentTrackId && !strcmp(newTrackId,currentTrackId) ) {
+        lognotice( "playerSetState (start): Unpausing current item \"%s\" (%s).",
+                   playlistItemGetText(newTrack), playlistItemGetId(newTrack) );
+        playlistItemUnlock( newTrack );
+        playerState = PlayerStatePlay;
+        rc = audioIfSetPause( audioIf, false );
+        break;
+      }
+      playlistItemUnlock( newTrack );
+
+     // Need to stop running track?
+      if( playerState==PlayerStatePlay || playerState==PlayerStatePause ) {
+        DBGMSG( "playerSetState (start): Request active playback thread to terminate." );
+        if( !currentTrackId )
+          logerr( "playerSetState (start): internal error (No current track)." );
+        else
+          lognotice( "playerSetState (start): Stopping current track (%s).", currentTrackId );
+        if( playbackThreadState!=PlayerThreadRunning )
+          logerr( "playerSetState (start): internal error: %s but no running playback thread.",
+                  playerStateToStr(playerState) );
+        else {
+          playbackThreadState = PlayerThreadTerminating;
+          pthread_join( playbackThread, NULL ); 
+        }
+
+        // Stop audio interface (if not done by _playbackThread() )
+        if( !audioIf ) {
+          DBGMSG( "playerSetState (play): No audio interface to drop." );
+        }
+        else {
+          DBGMSG( "playerSetState (play): Drop existing audio interface." );
+          if( audioIfStop(audioIf,AudioDrop) )
+            logerr( "playerSetState (play): Could not drop audio interface \"%s\".", audioIf->devName );
+          else
+            audioIf = NULL;
+        }
+      }
+
+      // Try to setup audio interface if not yet done
       if( !audioIf ) {
         const char         *device;
         const AudioBackend *backend = audioBackendByDeviceString( playerAudioDevice, &device );
@@ -944,43 +993,6 @@ int playerSetState( PlayerState state, bool broadcast )
         if( _playerSetVolume(playerVolume,playerMuted) )
           logwarn( "playerSetState (start): Could not set volume to %.2lf%% (%s).",
                    playerVolume*100, playerMuted?"muted":"unmuted" );
-      }
-
-      // Is there a track to play ?
-      if( !newTrack ) {
-        lognotice( "playerSetState (start): Empty queue or no cursor." );
-        rc = -1;
-       break;
-      }
-      
-      // Unpausing existing track ?
-      playlistItemLock( newTrack );
-      newTrackId = playlistItemGetId( newTrack );
-
-      if( playerState==PlayerStatePause && currentTrackId && 
-           !strcmp(newTrackId,currentTrackId) ) {
-        lognotice( "playerSetState (start): Unpausing item \"%s\" (%s).",
-                   playlistItemGetText(newTrack), playlistItemGetId(newTrack) );
-        playlistItemUnlock( newTrack );
-        playerState = PlayerStatePlay;
-        rc = audioIfSetPause( audioIf, false );
-        break;
-      }
-      playlistItemUnlock( newTrack );
-
-     // Need to stop running track?
-      if( playerState==PlayerStatePlay ) {
-        DBGMSG( "playerSetState (start): Request active playback thread to terminate." );
-        if( !currentTrackId )
-          logerr( "playerSetState (start): internal error (No current track)." );
-        else
-          lognotice( "playerSetState (start): Stopping current track (%s).", currentTrackId );
-        if( playbackThreadState!=PlayerThreadRunning )
-          logerr( "playerSetState (start): internal error: playing but no running playback thread." );
-        else {
-          playbackThreadState = PlayerThreadTerminating;
-          pthread_join( playbackThread, NULL ); 
-        }
       }
 
       // Create new playback thread
@@ -1061,6 +1073,7 @@ int playerSetState( PlayerState state, bool broadcast )
         DBGMSG( "playerSetState (stop): No audio interface to drop." );
       }
       else {
+        DBGMSG( "playerSetState (stop): Drop existing audio interface." );
         if( audioIfStop(audioIf,AudioDrop) )
           logerr( "playerSetState (stop): Could not drop audio interface \"%s\".", audioIf->devName );
         else
@@ -1106,6 +1119,29 @@ int playerSetState( PlayerState state, bool broadcast )
 /*=========================================================================*\
       Player thread
 \*=========================================================================*/
+const char *playerStateToStr( PlayerState state )
+{
+
+/*------------------------------------------------------------------------*\
+    Known player states
+\*------------------------------------------------------------------------*/
+  switch( state ) {
+    case PlayerStateStop:  return "Stopped";
+    case PlayerStatePlay:  return "Play";
+    case PlayerStatePause: return "Paused";
+    default: break;
+  }
+
+/*------------------------------------------------------------------------*\
+    Handle unknown states
+\*------------------------------------------------------------------------*/
+  logerr( "playerStateToStr: unknown state %d", state );
+  return "Unknown";
+}
+
+/*=========================================================================*\
+      Player thread
+\*=========================================================================*/
 static void *_playbackThread( void *arg )
 {
   PlaylistItem *item;
@@ -1127,6 +1163,7 @@ static void *_playbackThread( void *arg )
   playbackThreadState = PlayerThreadRunning;
   playlistLock( playerQueue );
   item = playlistGetCursorItem( playerQueue );
+  playlistItemIncRef( item );
   playlistUnlock( playerQueue );
   while( item && playbackThreadState==PlayerThreadRunning ) {
 
@@ -1135,17 +1172,21 @@ static void *_playbackThread( void *arg )
       playbackThreadState = PlayerThreadTerminatedError;
 
     // Error or stopped?
-    if( playbackThreadState!=PlayerThreadRunning )
+    if( playbackThreadState!=PlayerThreadRunning ) {
+      playlistItemDecRef( item );
       break;
+    }
 
     // Repeat track or reconnect stream?
     if( playerPlaybackMode==PlaybackRepeatItem ||
         playlistItemGetType(item)==PlaylistItemStream )
       continue;
+    playlistItemDecRef( item );
 
     // Get next item
     playlistLock( playerQueue );
     item = playlistIncrCursorItem( playerQueue );
+    playlistItemIncRef( item );
     playlistUnlock( playerQueue );
     if( item )
       continue;
@@ -1154,6 +1195,7 @@ static void *_playbackThread( void *arg )
     if( playerPlaybackMode==PlaybackRepeatQueue ) {
       playlistLock( playerQueue );
       item = playlistSetCursorPos( playerQueue, 0 );
+      playlistItemIncRef( item );
       playlistUnlock( playerQueue );
     }
 
@@ -1162,6 +1204,7 @@ static void *_playbackThread( void *arg )
       playlistLock( playerQueue );
       playlistShuffle( playerQueue, 0, playlistGetLength(playerQueue)-1, false );
       item = playlistSetCursorPos( playerQueue, 0 );
+      playlistItemIncRef( item );
       playlistUnlock( playerQueue );
       ickMessageNotifyPlaylist( NULL );
      }

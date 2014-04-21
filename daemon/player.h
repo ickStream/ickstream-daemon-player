@@ -115,6 +115,8 @@ void                playerSetName( const char *name, bool broadcast );
 double              playerSetVolume( double volume, bool muted, bool broadcast );
 int                 playerSetPlaybackMode( PlayerPlaybackMode state, bool broadcast );
 int                 playerSetState( PlayerState state, bool broadcast );
+const char         *playerStateToStr( PlayerState state );
+
 
 
 #endif  /* __PLAYER_H */

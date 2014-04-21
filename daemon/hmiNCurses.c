@@ -370,16 +370,9 @@ void hmiNewState( PlayerState state )
 {
   DBGMSG( "hmiNewState: %d.", state );
 
-  char *stateStr = "Unknown";
-  switch( state ) {
-    case PlayerStateStop:  stateStr = "Stopped"; break;	
-    case PlayerStatePlay:  stateStr = "Playing"; break;
-    case PlayerStatePause: stateStr = "Paused"; break;
-  }
-
   pthread_mutex_lock( &mutex );
   wmove( winStatus, 3, 0 );
-  wprintw( winStatus, "Playback state   : %s\n", stateStr );
+  wprintw( winStatus, "Playback state   : %s\n", playerStateToStr(state) );
   wrefresh(winStatus );
   pthread_mutex_unlock( &mutex );
 
