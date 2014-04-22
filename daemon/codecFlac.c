@@ -208,9 +208,13 @@ static int _codecNewInstance( CodecInstance *instance )
 \*------------------------------------------------------------------------*/
   if( !FLAC__stream_decoder_process_until_end_of_stream(decoder) ) {
     FLAC__StreamDecoderState state = FLAC__stream_decoder_get_state( decoder );
-    logerr( "flac: decoder returned with error (%s).",
-            FLAC__StreamDecoderStateString[state] );
-    return -1;
+
+    // ignore abortion (which was requested and is to be handled like EOT)
+    if( state!=FLAC__STREAM_DECODER_ABORTED ) {
+        logerr( "flac: decoder returned with error (%s).",
+                FLAC__StreamDecoderStateString[state] );
+        return -1;
+    }
   }
 
 /*------------------------------------------------------------------------*\

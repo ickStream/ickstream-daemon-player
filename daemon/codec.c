@@ -325,15 +325,18 @@ void codecInstanceIsInitialized( CodecInstance *instance, CodecInstanceState sta
 \*=========================================================================*/
 int codecDeleteInstance( CodecInstance *instance, bool wait )
 {
-  DBGMSG( "codecDeleteInstance (%s,%p): Deleting codec instance.",
-          instance->codec->name, instance );
+  DBGMSG( "codecDeleteInstance (%s,%p): Deleting instance (%s).",
+          instance->codec->name, instance, wait?"wait":"nowait" );
 
 /*------------------------------------------------------------------------*\
     Stop thread and optionally wait for termination   
 \*------------------------------------------------------------------------*/
   instance->state = CodecTerminating;
-  if( instance->state!=CodecInitialized && wait )
+  if( instance->state!=CodecInitialized && wait ) {
      pthread_join( instance->thread, NULL ); 
+      DBGMSG( "codecDeleteInstance (%s,%p): Instance has terminated.",
+            instance->codec->name, instance );
+  }
 
 /*------------------------------------------------------------------------*\
     Delete mutex and conditions
