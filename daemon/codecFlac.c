@@ -169,6 +169,7 @@ static int _codecNewInstance( CodecInstance *instance )
   decoder = FLAC__stream_decoder_new();
   if( !decoder ) {
     logerr( "flac: could not allocate decoder." );
+    codecInstanceIsInitialized( instance, CodecTerminatedError );
     return -1;
   }
   
@@ -192,8 +193,14 @@ static int _codecNewInstance( CodecInstance *instance )
     logerr( "flac: could not allocate decoder (%s).",
             FLAC__StreamDecoderInitStatusString[rc] );
     FLAC__stream_decoder_delete( decoder );
+    codecInstanceIsInitialized( instance, CodecTerminatedError );
     return -1;
 }
+
+/*------------------------------------------------------------------------*\
+    Signal that codec is up and running
+\*------------------------------------------------------------------------*/
+  codecInstanceIsInitialized(instance, CodecRunning );
 
 /*------------------------------------------------------------------------*\
     Execute decoder,
@@ -272,13 +279,15 @@ static FLAC__StreamDecoderReadStatus _read_callback( const FLAC__StreamDecoder *
   CodecInstance *instance = (CodecInstance *) client_data;
   ssize_t        result   = (ssize_t) *bytes;
 
-  DBGMSG( "flac (%p): request %ld bytes from input stream.", instance, (long)*bytes );
+  DBGMSG( "flac (%p): request %ld bytes from input stream.",
+          instance, (long)*bytes );
 
 /*------------------------------------------------------------------------*\
     Shall we terminate?
 \*------------------------------------------------------------------------*/
-  if( instance->state!=CodecRunning ) {
-    DBGMSG( "flac (%p): detected cancellation.", instance );
+  if( instance->state!=CodecRunning && instance->state!=CodecInitialized ) {
+    DBGMSG( "flac (%p): detected cancellation due to state %d.",
+            instance, instance->state );
     return FLAC__STREAM_DECODER_READ_STATUS_ABORT;
   }
 
@@ -337,9 +346,10 @@ static FLAC__StreamDecoderWriteStatus _write_callback( const FLAC__StreamDecoder
 /*------------------------------------------------------------------------*\
     Shall we terminate?
 \*------------------------------------------------------------------------*/
-  if( instance->state!=CodecRunning ) {
-    DBGMSG( "flac (%p): detected cancellation.", instance );
-    return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
+  if( instance->state!=CodecRunning && instance->state!=CodecInitialized ) {
+    DBGMSG( "flac (%p): detected cancellation due to state %d.",
+            instance, instance->state );
+    return FLAC__STREAM_DECODER_READ_STATUS_ABORT;
   }
 
 /*------------------------------------------------------------------------*\

@@ -166,6 +166,7 @@ static int _codecNewInstance( CodecInstance *instance )
   sfd = calloc( 1, sizeof(SndFileDscr) );
   if( !sfd ) {
     logerr( "sndfile: Out of memory." );
+    codecInstanceIsInitialized( instance, CodecTerminatedError );
     return -1;
   }
 
@@ -176,6 +177,7 @@ static int _codecNewInstance( CodecInstance *instance )
   if( !sfd->sf ) {
     logerr( "sndfile: could not open sound file (%s).", sf_strerror(NULL) );
     Sfree( sfd );
+    codecInstanceIsInitialized( instance, CodecTerminatedError );
     return -1;
   }
   DBGMSG( "sndfile (%p): format is 0x%x", instance, sfd->sfinfo.format );
@@ -189,6 +191,7 @@ static int _codecNewInstance( CodecInstance *instance )
     logerr( "sndfile: format 0x%x not supported.", sfd->sfinfo.format );
     sf_close( sfd->sf );
     Sfree( sfd );
+    codecInstanceIsInitialized( instance, CodecTerminatedError );
     return -1;
   }
   DBGMSG( "sndfile (%p): Item audio format information: \"%s\"",
@@ -206,6 +209,7 @@ static int _codecNewInstance( CodecInstance *instance )
         sfformat.channels, instance->format.channels );
     sf_close( sfd->sf );
     Sfree( sfd );
+    codecInstanceIsInitialized( instance, CodecTerminatedError );
     return -1;
   }
   if( sfformat.sampleRate != instance->format.sampleRate ) {
@@ -213,6 +217,7 @@ static int _codecNewInstance( CodecInstance *instance )
         sfformat.sampleRate, instance->format.sampleRate );
     sf_close( sfd->sf );
     Sfree( sfd );
+    codecInstanceIsInitialized( instance, CodecTerminatedError );
     return -1;
   }
   // fixme: float data is not handled right and probably triggers a bitwidth mismatch
@@ -221,6 +226,7 @@ static int _codecNewInstance( CodecInstance *instance )
         sfformat.bitWidth, instance->format.bitWidth );
     sf_close( sfd->sf );
     Sfree( sfd );
+    codecInstanceIsInitialized( instance, CodecTerminatedError );
     return -1;
   }
 
@@ -230,9 +236,14 @@ static int _codecNewInstance( CodecInstance *instance )
   sfd->frameData = malloc( instance->format.channels*instance->format.bitWidth/8 );
 
 /*------------------------------------------------------------------------*\
-  Store sound file library descriptor, that's all
+  Store sound file library descriptor
 \*------------------------------------------------------------------------*/
   instance->instanceData = sfd;
+
+/*------------------------------------------------------------------------*\
+    Signal that codec is up and running and return
+\*------------------------------------------------------------------------*/
+  codecInstanceIsInitialized( instance, CodecRunning );
   return 0;
 }
 

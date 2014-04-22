@@ -263,6 +263,8 @@ int codecStartInstance( CodecInstance *instance )
 /*------------------------------------------------------------------------*\
     Wait for max. 5 seconds till thread is up and running
 \*------------------------------------------------------------------------*/
+  DBGMSG( "codecStartInstance (%p,%s): waiting for codec thread to become ready.",
+          instance, instance->codec->name );
   perr = pthread_mutex_lock( &instance->mutex_state );
   if( perr )
     logerr( "codecStartInstance: locking state mutex: %s", strerror(perr) );
@@ -280,7 +282,8 @@ int codecStartInstance( CodecInstance *instance )
 
   // Something went wrong.
   if( rc ) {
-    logerr( "codecStartInstance: Unable to wait for thread: %s", strerror(rc) );
+    logerr( "codecStartInstance (%p,%s): codec thread did not become become ready (%s)",
+            instance, instance->codec->name, strerror(rc) );
     instance->state = CodecTerminatedError;
     return -1;
   }
@@ -293,6 +296,27 @@ int codecStartInstance( CodecInstance *instance )
     That's all
 \*------------------------------------------------------------------------*/
   return 0;
+}
+
+
+/*=========================================================================*\
+      To be called from codec thread when codec is ready
+\*=========================================================================*/
+void codecInstanceIsInitialized( CodecInstance *instance, CodecInstanceState state )
+{
+  DBGMSG( "codecInstanceIsReady (%s,%p): state %d -> %d",
+          instance->codec->name, instance, instance->state, state );
+
+/*------------------------------------------------------------------------*\
+    Set new state
+\*------------------------------------------------------------------------*/
+  instance->state = state;
+
+/*------------------------------------------------------------------------*\
+    Signal this to start up function
+\*------------------------------------------------------------------------*/
+  pthread_cond_signal( &instance->condIsReady );
+
 }
 
 
@@ -517,12 +541,6 @@ static void *_codecThread( void *arg )
 //    pthread_cond_signal( &instance->condEndOfTrack );
     return NULL;
   }
-
-/*------------------------------------------------------------------------*\
-    We are up and running
-\*------------------------------------------------------------------------*/
-  instance->state = CodecRunning;
-  pthread_cond_signal( &instance->condIsReady );
 
 /*------------------------------------------------------------------------*\
     Thread main loop, used if deliverOutput is defined, else the codec

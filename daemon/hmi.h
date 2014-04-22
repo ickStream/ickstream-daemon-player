@@ -97,7 +97,7 @@ void hmiNewPosition( double seekPos );
 #define hmiNewState(a)        {}
 #define hmiNewPlaybackMode(a) {}
 #define hmiNewVolume(a,b)     {}
-#define hmiNewFormat(a)       {}
+#define hmiNewFormat(a,b)     {}
 #define hmiNewPosition(a)     {}
 #endif
 

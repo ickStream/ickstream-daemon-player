@@ -232,6 +232,7 @@ static int _codecNewInstance( CodecInstance *instance )
   mh = mpg123_new( NULL, &rc );   
   if( !mh ) {
     logerr( "mpg123: could not init instance (%s).", mpg123_plain_strerror(rc) );
+    codecInstanceIsInitialized( instance, CodecTerminatedError );
     return -1;
   }
   
@@ -245,6 +246,7 @@ static int _codecNewInstance( CodecInstance *instance )
     logerr( "mpg123: could not set verbosity level to %d (%d, %s).",
             logGetStreamLevel(), rc, MPG123ERRSTR(rc,mh) );
     mpg123_delete( mh );
+    codecInstanceIsInitialized( instance, CodecTerminatedError );
     return -1;
   }
 #endif
@@ -258,6 +260,7 @@ static int _codecNewInstance( CodecInstance *instance )
     if( !mpg123_feature(MPG123_FEATURE_PARSE_ICY) ) {
       logerr( "mpg123: icy not supported by this library version." );
       mpg123_delete( mh );
+      codecInstanceIsInitialized( instance, CodecTerminatedError );
       return -1;
     }
     rc = mpg123_param( mh, MPG123_ICY_INTERVAL, instance->icyInterval, 0);
@@ -265,6 +268,7 @@ static int _codecNewInstance( CodecInstance *instance )
       logerr( "mpg123: could not set icy interval to %ld (%d, %s).",
               instance->icyInterval, rc, MPG123ERRSTR(rc,mh) );
       mpg123_delete( mh );
+      codecInstanceIsInitialized( instance, CodecTerminatedError );
       return -1;
     }
     // mpg123_param( mh, MPG123_ADD_FLAGS, MPG123_IGNORE_STREAMLENGTH, 0);
@@ -279,13 +283,19 @@ static int _codecNewInstance( CodecInstance *instance )
     logerr( "mpg123: could not open file handle %d (%d, %s).",
             instance->fdIn, rc, MPG123ERRSTR(rc,mh) );
     mpg123_delete( mh );
+    codecInstanceIsInitialized( instance, CodecTerminatedError );
     return -1;
   }
 
 /*------------------------------------------------------------------------*\
-    Store auxiliary data in instance and return 
+    Store auxiliary data in instance
 \*------------------------------------------------------------------------*/
   instance->instanceData = mh;
+
+/*------------------------------------------------------------------------*\
+    Signal that codec is up and running and return
+\*------------------------------------------------------------------------*/
+  codecInstanceIsInitialized( instance, CodecRunning );
   return 0;    
 }
 

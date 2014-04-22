@@ -162,6 +162,8 @@ int                 codecSetVolume( CodecInstance *instance, double volume, bool
 int                 codecGetSeekTime( CodecInstance *instance, double *pos );
 const AudioFormat  *codecGetAudioFormat( CodecInstance *instance );
 
+void                codecInstanceIsInitialized( CodecInstance *instance, CodecInstanceState state );
+
 #endif  /* __CODEC_H */
 
 
